@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "author": "Anonymous maker",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 38.4, "left": -110.36, "attrs": {} },
+    {
+      "type": "wokwi-lcd2004",
+      "id": "lcd1",
+      "top": 54.4,
+      "left": 53.6,
+      "attrs": { "pins": "i2c" }
+    },
+    { "type": "wokwi-ky-040", "id": "encoder1", "top": 116.9, "left": -260, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:GND.2", "lcd1:GND", "black", [ "v0", "h48", "v19.2" ] ],
+    [ "esp:21", "lcd1:SDA", "green", [ "h28.8", "v-9.8" ] ],
+    [ "esp:22", "lcd1:SCL", "green", [ "h38.4", "v28.8" ] ],
+    [ "encoder1:GND", "esp:CMD", "black", [ "h19.2", "v68" ] ],
+    [ "esp:3V3", "encoder1:VCC", "green", [ "h-19.05", "v86.4" ] ],
+    [ "encoder1:DT", "esp:33", "green", [ "h0" ] ],
+    [ "esp:32", "encoder1:CLK", "green", [ "h0" ] ],
+    [ "encoder1:SW", "esp:25", "green", [ "h0" ] ],
+    [ "lcd1:VCC", "esp:5V", "red", [ "h-48", "v172.9", "h-115.35" ] ]
+  ],
+  "dependencies": {}
+}
