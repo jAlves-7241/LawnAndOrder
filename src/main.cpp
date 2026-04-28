@@ -1,39 +1,33 @@
 #include <Arduino.h>
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
 
-// ── Hardware ──────────────────────────────────────────────
-LiquidCrystal_I2C lcd(0x27, 20, 4);
+#include "config.h"
+#include "AppState.h"
+#include "Display.h"
+#include "Encoder.h"
+#include "UI.h"
 
-const uint8_t PIN_CLK = 32;
-const uint8_t PIN_DT  = 33;
-const uint8_t PIN_SW  = 25;
-
-// ── Estado do encoder ─────────────────────────────────────
-const int ZONA_MIN = 1;
-const int ZONA_MAX = 8;
-
-volatile int  contador    = ZONA_MIN;
-volatile bool encoderMoveu = false;
-
-// ── Estado do botão ───────────────────────────────────────
-bool          botaoPressionado = false;
-unsigned long ultimoClique     = 0;
-const unsigned long DEBOUNCE_MS = 200;
-
-// ── Cache do LCD (evita flickering) ───────────────────────
-int  ultimoContador  = -1;
-int  ultimaZonaSel   = -1;
+// ── Singletons ────────────────────────────────────────────
+static Display display;
+static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
+static UI      ui(display, encoder);
 
 // ─────────────────────────────────────────────────────────
-// ISR – corre na IRAM, variáveis partilhadas são volatile
-// ─────────────────────────────────────────────────────────
-void IRAM_ATTR lerEncoder() {
-  contador += (digitalRead(PIN_DT) != digitalRead(PIN_CLK)) ? 1 : -1;
-  if (contador < ZONA_MIN) contador = ZONA_MAX;
-  if (contador > ZONA_MAX) contador = ZONA_MIN;
-  encoderMoveu = true;
+void setup() {
+    Serial.begin(115200);
+    Serial.println("[REGA] Arrancar...");
+
+    initAppState();
+    display.begin();
+    encoder.begin();
+    ui.begin();
+
+    Serial.println("[REGA] Pronto.");
 }
 
 // ─────────────────────────────────────────────────────────
-// Atualiza só a linha 2 – sem lcd.clear(), sem flicke
+void loop() {
+    ui.update();
+
+    // TODO: scheduler.update()  — check RTC, fire zones
+    // TODO: wateringCtrl.update() — drive relays, update gState.watering
+}
