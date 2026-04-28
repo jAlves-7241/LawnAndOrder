@@ -177,8 +177,8 @@ void UI::_dispatch(const char* action) {
     if (strncmp(action, "cfgz:", 5) == 0) {
         uint8_t i = (uint8_t)atoi(action + 5);
         Zone& z = gState.zones[i];
-        if (!z.enabled) { z.enabled = true;  z.duration_min = 20; }
-        else if (z.duration_min < 60)          z.duration_min += 10;
+        if (!z.enabled) { z.enabled = true;  z.duration_min = 5;  }
+        else if (z.duration_min < 20)          z.duration_min += 5;
         else            { z.enabled = false; z.duration_min = 0;  }
         _buildMenu(MenuID::CFG_ZONAS);   // rebuild to reflect new state
         _renderMenu();
@@ -287,7 +287,6 @@ void UI::_buildMenu(MenuID mid) {
     case MenuID::MAIN:
         makeItem(it++, "Rega Manual",       "go:manual");
         makeItem(it++, "Programacao",       "go:prog");
-        makeItem(it++, "Historico",         "go:hist");
         makeItem(it++, "Definicoes",        "go:def");
         makeItem(it++, "<- Voltar",         "go:idle");
         break;
@@ -343,7 +342,7 @@ void UI::_buildMenu(MenuID mid) {
         break;
 
     case MenuID::CUSTOM_DUR:
-        { const uint8_t opts[] = { 5,10,15,20,25,30,40,60 };
+        { const uint8_t opts[] = { 5, 8, 10, 12, 15, 18, 20 };
           for (uint8_t d : opts) {
               snprintf(lbuf, sizeof(lbuf), "  %2d min", d);
               char act[12]; snprintf(act, sizeof(act), "cdur:%d", d);
@@ -355,17 +354,18 @@ void UI::_buildMenu(MenuID mid) {
 
     case MenuID::HISTORICO:
         // TODO: pull from NVS / RTC log; static placeholders for now
-        makeItem(it++, "26Abr  Z1-3  88min",
-                 "info:26 ABR  18:02|Z1 Jardim:  30min|Z2 Horta:   30min|Z3 Relvado: 28min|hist");
-        makeItem(it++, "25Abr  Z1-3  85min",
-                 "info:25 ABR  18:01|Z1 Jardim:  30min|Z2 Horta:   28min|Z3 Relvado: 27min|hist");
-        makeItem(it++, "24Abr  Z1-3  87min",
-                 "info:24 ABR  07:00|Z1 Jardim:  29min|Z2 Horta:   30min|Z3 Relvado: 28min|hist");
+        makeItem(it++, "26Abr  Z1-4  50min",
+                 "info:26 ABR  18:02|Z1 Jardim:  15min|Z2 Horta:   15min|Z3+4: 10+10min|hist");
+        makeItem(it++, "25Abr  Z1-4  48min",
+                 "info:25 ABR  18:01|Z1 Jardim:  15min|Z2 Horta:   13min|Z3+4: 10+10min|hist");
+        makeItem(it++, "24Abr  Z1-4  50min",
+                 "info:24 ABR  07:00|Z1 Jardim:  15min|Z2 Horta:   15min|Z3+4: 10+10min|hist");
         makeItem(it++, "<- Voltar", "go:main");
         break;
 
     case MenuID::DEF:
         makeItem(it++, "Testar Zonas",     "go:testes");
+        makeItem(it++, "Historico",        "go:hist");
         makeItem(it++, "Acertar Hora",     "info:HORA / DATA|14:32   27/04/2026||Em desenvolvimento|def");
         makeItem(it++, "Brilho LCD",       "info:BRILHO LCD|Nivel atual:  80%|Rode p/ ajustar|Click p/ guardar|def");
         makeItem(it++, "Versao Firmware",  "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def");
@@ -397,7 +397,7 @@ void UI::_buildMenu(MenuID mid) {
 // Renderers
 // ─────────────────────────────────────────────────────────
 void UI::_renderIdle() {
-    char b0[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
+    char b0[LCD_COLS+1], b3[LCD_COLS+1];
 
     // Row 0: time (centred)
     // TODO: replace with RTC once clock module is added
@@ -408,10 +408,6 @@ void UI::_renderIdle() {
     snprintf(time_str, sizeof(time_str), "%02lu:%02lu", hh, mm);
     _d.cx(b0, time_str);
 
-    // Row 2: active zone count
-    uint8_t active = 0;
-    for (int i = 0; i < NUM_ZONES; i++) active += gState.zones[i].enabled;
-
     if (gState.watering.active) {
         char zname[LCD_COLS+1];
         snprintf(zname, sizeof(zname), "  Z%d %s:",
@@ -421,12 +417,10 @@ void UI::_renderIdle() {
         _d.pbar(pb, gState.watering.progress_pct);
         _d.setRows(b0, nullptr, zname, pb);
     } else {
-        char z_str[LCD_COLS+1];
-        snprintf(z_str, sizeof(z_str), "%d zonas ativas", active);
         char nx_str[LCD_COLS+1];
         snprintf(nx_str, sizeof(nx_str), "Prox: %02d:%02d",
                  gState.next_hour, gState.next_min);
-        _d.setRows(b0, nullptr, _d.cx(b2, z_str), _d.cx(b3, nx_str));
+        _d.setRows(b0, nullptr, nullptr, _d.cx(b3, nx_str));
     }
 }
 
