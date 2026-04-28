@@ -6,8 +6,8 @@ AppState gState;
 void initAppState() {
     // ── Zone defaults ────────────────────────────────────
     const char*  names[NUM_ZONES]   = { "Jardim", "Horta", "Relvado", "Sebe" };
-    const bool   enabled[NUM_ZONES] = { true,     true,    true,      false  };
-    const uint8_t durs[NUM_ZONES]   = { 30,       30,      20,        0      };
+    const bool   enabled[NUM_ZONES] = { true,  true,  true,  true };
+    const uint8_t durs[NUM_ZONES]   = { 15,    15,    10,    10   };
 
     for (int i = 0; i < NUM_ZONES; i++) {
         strncpy(gState.zones[i].name, names[i], sizeof(gState.zones[i].name) - 1);
