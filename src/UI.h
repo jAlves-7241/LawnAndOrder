@@ -13,6 +13,7 @@ enum class Screen : uint8_t {
     INFO,       // read-only info panel (4 lines)
     CONFIRM,    // yes/no prompt
     DONE,       // execution feedback
+    DUR_PICK,   // encoder-driven duration picker (1–20 min, 1-min steps)
 };
 
 // ─────────────────────────────────────────────────────────
@@ -25,7 +26,6 @@ enum class MenuID : uint8_t {
     MODOS,
     CFG_ZONAS,
     CUSTOM_ZONAS,
-    CUSTOM_DUR,
     HISTORICO,
     DEF,
     TESTES,
@@ -33,54 +33,71 @@ enum class MenuID : uint8_t {
 };
 
 // ─────────────────────────────────────────────────────────
-// MenuItem
+// DurContext — what the duration picker commits to on click
 // ─────────────────────────────────────────────────────────
-// action  — compact encoded string:
-//   "go:<MenuID>"      → navigate to menu
-//   "go:idle"          → return to idle
-//   "info:<l0>|<l1>…"  → show info panel
-//   "confirm:<l1>|<l2>|<backMenu>" → show confirm dialog
-//   "sel:<modeIdx>"    → select AppMode
-//   "cfgz:<zoneIdx>"   → toggle/bump zone config
-//   "cz:<zoneIdx>"     → toggle custom zone selection
-//   "cdur:<minutes>"   → set custom duration & execute
-
-struct MenuItem {
-    char    label[21];   // fits one LCD row (20 chars + \0)
-    char    action[48];
+enum class DurContext : uint8_t {
+    CUSTOM_RUN,  // writes gState.custom_dur_min → confirm screen
+    CFG_ZONE,    // writes gState.zones[zoneIdx].duration_min → back to CFG_ZONAS
 };
 
 // ─────────────────────────────────────────────────────────
-// UI class
+// MenuItem
+// ─────────────────────────────────────────────────────────
+// Action encoding:
+//   "go:<menuID>"                       navigate to menu
+//   "go:idle"                           return to idle
+//   "info:<l0>|<l1>|<l2>|<l3>|<back>"  info panel
+//   "confirm:<l1>|<l2>|<back>|<tag>"    confirm dialog
+//   "sel:<modeIdx>"                     select AppMode
+//   "cfgz:<zoneIdx>"                    toggle zone / open DUR_PICK
+//   "cz:<zoneIdx>"                      toggle custom zone selection
+//   "dur_pick:custom"                   open DUR_PICK for custom run
+//   "horarios"                          computed info screen
+
+struct MenuItem {
+    char label[21];   // 20 LCD chars + \0
+    char action[56];
+};
+
+// ─────────────────────────────────────────────────────────
+// UI
 // ─────────────────────────────────────────────────────────
 class UI {
 public:
     UI(Display& disp, Encoder& enc);
 
     void begin();
-    void update();   // call every loop iteration
+    void update();  // call every loop() iteration
 
 private:
     Display& _d;
     Encoder& _enc;
 
-    // ── FSM state ─────────────────────────────────────────
+    // ── FSM ───────────────────────────────────────────────
     Screen  _screen;
     MenuID  _mid;
-    uint8_t _cur;          // cursor index within current menu
-    uint8_t _off;          // scroll offset
-    MenuID  _backMenu;     // where CONFIRM/INFO/DONE returns to
+    uint8_t _cur;
+    uint8_t _off;
+    MenuID  _backMenu;
 
-    // Static panels (filled by _showInfo / _showConfirm)
+    // ── Static display buffers ────────────────────────────
     char _infoRows[4][LCD_COLS + 1];
     char _confirmRows[4][LCD_COLS + 1];
 
-    // Idle timeout
+    // ── Duration picker ───────────────────────────────────
+    uint8_t   _durValue;     // selected minutes 1–20
+    DurContext _durContext;
+    uint8_t   _durZoneIdx;   // relevant only for CFG_ZONE context
+
+    // ── Confirm tag ───────────────────────────────────────
+    // Keywords: "general" | "custom" | "test_all" | "test_N" |
+    //           "suspend" | "reset"  | ""
+    char _pendingConfirmTag[16];
+
+    // ── Idle timeout ──────────────────────────────────────
     uint32_t _lastActivity;
 
-    // ── Menu tables (rebuilt when state changes) ──────────
-    // We use a flat array per menu.  Menus are rebuilt via
-    // _buildMenu() only when needed — not every frame.
+    // ── Menu table ────────────────────────────────────────
     static const uint8_t MAX_ITEMS = 12;
     MenuItem _items[MAX_ITEMS];
     uint8_t  _itemCount;
@@ -93,26 +110,28 @@ private:
     void _renderInfo();
     void _renderConfirm();
     void _renderDone();
+    void _renderDurPick();
 
-    // ── Input handlers ────────────────────────────────────
+    // ── Input ─────────────────────────────────────────────
     void _handleRotation(int8_t dir);
     void _handleClick();
 
-    // ── Action dispatcher ─────────────────────────────────
+    // ── Dispatcher & navigation ───────────────────────────
     void _dispatch(const char* action);
-
-    // ── Navigation helpers ────────────────────────────────
+    void _executeConfirmed();
     void _goMenu(MenuID mid);
     void _goIdle();
     void _showInfo(const char* l0, const char* l1,
-                   const char* l2, const char* l3,
-                   MenuID back);
-    void _showConfirm(const char* l1, const char* l2, MenuID back);
+                   const char* l2, const char* l3, MenuID back);
+    void _showConfirm(const char* l1, const char* l2,
+                      MenuID back, const char* tag = "");
     void _showDone(const char* l1, const char* l2);
+    void _showDurPick(uint8_t initial, DurContext ctx,
+                      uint8_t zoneIdx = 0);
+    void _commitDurPick();   // called on click inside DUR_PICK
 
     // ── Utilities ─────────────────────────────────────────
-    static MenuID   _parseMenuID(const char* s);
-    static AppMode  _parseMode(uint8_t idx);
+    static MenuID      _parseMenuID(const char* s);
     static const char* _modeName(AppMode m);
     static const char* _modeHours(AppMode m);
 };

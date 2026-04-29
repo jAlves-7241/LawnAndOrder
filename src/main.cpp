@@ -5,6 +5,7 @@
 #include "Display.h"
 #include "Encoder.h"
 #include "UI.h"
+#include "WateringController.h"
 
 // ── Singletons ────────────────────────────────────────────
 static Display display;
@@ -19,6 +20,7 @@ void setup() {
     initAppState();
     display.begin();
     encoder.begin();
+    wateringCtrl.begin();   // configure relay GPIO pins
     ui.begin();
 
     Serial.println("[REGA] Pronto.");
@@ -27,7 +29,7 @@ void setup() {
 // ─────────────────────────────────────────────────────────
 void loop() {
     ui.update();
+    wateringCtrl.update();  // advances zone timer, drives relays
 
-    // TODO: scheduler.update()  — check RTC, fire zones
-    // TODO: wateringCtrl.update() — drive relays, update gState.watering
+    // TODO: scheduler.update()  — check RTC, auto-trigger watering
 }
