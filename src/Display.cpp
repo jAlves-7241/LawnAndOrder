@@ -3,17 +3,20 @@
 #include <stdio.h>
 
 Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS) {
-    // Initialise shadow to something that won't match any real content
-    memset(_shadow, 0xFF, sizeof(_shadow));
+    // Shadow cleared to spaces in begin(); no init needed here.
+    memset(_shadow, ' ', sizeof(_shadow));
+    for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
 }
 
 void Display::begin() {
     _lcd.init();
     _lcd.backlight();
     _lcd.clear();
-    // Blank shadow so first render always writes every row
-    for (int r = 0; r < LCD_ROWS; r++)
-        memset(_shadow[r], ' ', LCD_COLS), _shadow[r][LCD_COLS] = '\0';
+    // Reset shadow to spaces so first render writes every row cleanly
+    for (int r = 0; r < LCD_ROWS; r++) {
+        memset(_shadow[r], ' ', LCD_COLS);
+        _shadow[r][LCD_COLS] = '\0';
+    }
 }
 
 void Display::setRows(const char* r0, const char* r1,
