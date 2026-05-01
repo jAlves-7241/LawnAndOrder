@@ -78,13 +78,15 @@ void WateringController::startTest(int8_t zone_idx) {
 }
 
 void WateringController::stop() {
-    if (!_active) return;
-    _deactivateAll();
-    _active    = false;
-    _queueLen  = 0;
-    _queuePos  = 0;
+    if (_active) {
+        _deactivateAll();
+        _active = false;
+        Serial.println("[WATER] stopped");
+    }
+    // Always reset queue so no stale entries remain
+    _queueLen = 0;
+    _queuePos = 0;
     _syncState();
-    Serial.println("[WATER] stopped");
 }
 
 // ─────────────────────────────────────────────────────────
@@ -124,6 +126,7 @@ void WateringController::update() {
 
 void WateringController::_buildQueue(const bool zones[NUM_ZONES],
                                      uint32_t dur_ms) {
+    if (dur_ms == 0) return;  // guard: zero-duration would fire instantly
     stop();
     _queueLen = 0;
     for (int i = 0; i < NUM_ZONES; i++) {

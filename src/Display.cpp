@@ -2,8 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS) {
-    // Shadow cleared to spaces in begin(); no init needed here.
+Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false) {
     memset(_shadow, ' ', sizeof(_shadow));
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
 }
@@ -11,12 +10,32 @@ Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS) {
 void Display::begin() {
     _lcd.init();
     _lcd.backlight();
+    _backlightOn = true;
     _lcd.clear();
-    // Reset shadow to spaces so first render writes every row cleanly
     for (int r = 0; r < LCD_ROWS; r++) {
         memset(_shadow[r], ' ', LCD_COLS);
         _shadow[r][LCD_COLS] = '\0';
     }
+}
+
+void Display::backlightOn() {
+    if (_backlightOn) return;
+    _lcd.backlight();
+    _backlightOn = true;
+    // Invalidate shadow: the LCD controller may have lost state while off
+    _invalidateShadow();
+}
+
+void Display::backlightOff() {
+    if (!_backlightOn) return;
+    _lcd.noBacklight();
+    _backlightOn = false;
+}
+
+void Display::_invalidateShadow() {
+    // Fill shadow with an impossible value so every row gets rewritten
+    memset(_shadow, 0x01, sizeof(_shadow));
+    for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
 }
 
 void Display::setRows(const char* r0, const char* r1,
@@ -29,6 +48,7 @@ void Display::setRows(const char* r0, const char* r1,
 
 // Only send to LCD if the row content differs from shadow
 void Display::_writeRow(uint8_t row, const char* text) {
+    if (row >= LCD_ROWS) return;  // bounds guard
     // Build padded version
     char padded[LCD_COLS + 1];
     int len = strlen(text);
