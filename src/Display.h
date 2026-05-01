@@ -15,9 +15,17 @@ public:
     Display();
     void begin();
 
-    // Write all four rows at once. Pass nullptr to skip a row.
+    // Write all four rows at once.
+    // Pass "" to write a blank row. Pass nullptr to leave a row unchanged.
     void setRows(const char* r0, const char* r1,
                  const char* r2, const char* r3);
+
+    // Backlight control.
+    // backlightOn() also invalidates the shadow so a full redraw happens —
+    // the LCD forgets its contents when power was cut to the backlight circuit.
+    void backlightOn();
+    void backlightOff();
+    bool isBacklightOn() const { return _backlightOn; }
 
     // ── Formatting helpers (return into caller-supplied buf) ──
     // Left-pad with spaces to LCD_COLS
@@ -34,9 +42,11 @@ public:
 
 private:
     LiquidCrystal_I2C _lcd;
+    bool _backlightOn;
 
     // Shadow buffer — only writes row if content actually changed
     char _shadow[LCD_ROWS][LCD_COLS + 1];
 
     void _writeRow(uint8_t row, const char* text);
+    void _invalidateShadow();  // force full redraw on next setRows()
 };

@@ -11,20 +11,25 @@
       "left": 53.6,
       "attrs": { "pins": "i2c" }
     },
-    { "type": "wokwi-ky-040", "id": "encoder1", "top": 116.9, "left": -260, "attrs": {} }
+    { "type": "wokwi-ky-040", "id": "encoder1", "top": 116.9, "left": -260, "attrs": {} },
+    { "type": "wokwi-ds1307", "id": "rtc1", "top": 253.8, "left": 57.7, "attrs": {} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
     [ "esp:GND.2", "lcd1:GND", "black", [ "v0", "h48", "v19.2" ] ],
     [ "esp:21", "lcd1:SDA", "green", [ "h28.8", "v-9.8" ] ],
-    [ "esp:22", "lcd1:SCL", "green", [ "h38.4", "v28.8" ] ],
+    [ "esp:22", "lcd1:SCL", "yellow", [ "h38.4", "v28.8" ] ],
     [ "encoder1:GND", "esp:CMD", "black", [ "h19.2", "v68" ] ],
     [ "esp:3V3", "encoder1:VCC", "green", [ "h-19.05", "v86.4" ] ],
     [ "encoder1:DT", "esp:33", "green", [ "h0" ] ],
     [ "esp:32", "encoder1:CLK", "green", [ "h0" ] ],
     [ "encoder1:SW", "esp:25", "green", [ "h0" ] ],
-    [ "lcd1:VCC", "esp:5V", "red", [ "h-48", "v172.9", "h-115.35" ] ]
+    [ "lcd1:VCC", "esp:5V", "red", [ "h-48", "v172.9", "h-115.35" ] ],
+    [ "rtc1:SCL", "esp:22", "yellow", [ "h-38.4", "v-211.4" ] ],
+    [ "rtc1:SDA", "esp:21", "green", [ "h-48", "v-173.1" ] ],
+    [ "rtc1:5V", "esp:5V", "red", [ "h0" ] ],
+    [ "esp:GND.3", "rtc1:GND", "black", [ "h48", "v144" ] ]
   ],
   "dependencies": {}
 }

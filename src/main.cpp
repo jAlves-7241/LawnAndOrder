@@ -4,10 +4,10 @@
 #include "AppState.h"
 #include "Display.h"
 #include "Encoder.h"
+#include "RTClock.h"
 #include "UI.h"
 #include "WateringController.h"
 
-// ── Singletons ────────────────────────────────────────────
 static Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 static UI      ui(display, encoder);
@@ -20,7 +20,12 @@ void setup() {
     initAppState();
     display.begin();
     encoder.begin();
-    wateringCtrl.begin();   // configure relay GPIO pins
+
+    if (!rtclock.begin()) {
+        Serial.println("[REGA] AVISO: RTC nao disponivel");
+    }
+
+    wateringCtrl.begin();
     ui.begin();
 
     Serial.println("[REGA] Pronto.");
@@ -28,8 +33,9 @@ void setup() {
 
 // ─────────────────────────────────────────────────────────
 void loop() {
-    ui.update();
+    rtclock.update();       // reads DS3231 into gState.now once/sec
+    ui.update();            // handles encoder, redraws LCD
     wateringCtrl.update();  // advances zone timer, drives relays
 
-    // TODO: scheduler.update()  — check RTC, auto-trigger watering
+    // TODO: scheduler.update() — check gState.now vs schedule, auto-trigger
 }

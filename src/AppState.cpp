@@ -18,9 +18,14 @@ void initAppState() {
 
     // ── Mode & schedule ──────────────────────────────────
     gState.mode      = AppMode::MEDIO;
-    gState.suspended = false;
-    gState.next_hour = 18;
-    gState.next_min  = 0;
+    gState.suspended          = false;
+    gState.next_hour          = 18;
+    gState.next_min           = 0;
+    gState.backlight_timeout_ms = 120000UL;  // default: 2 minutes
+
+    // ── RTC ──────────────────────────────────────────────
+    gState.rtc_valid = false;
+    gState.now = { 2026, 1, 1, 0, 0, 0, 4 };  // placeholder until RTC is read
 
     // ── Watering ─────────────────────────────────────────
     gState.watering = { false, 0, 0 };

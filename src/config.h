@@ -24,8 +24,9 @@
 #define RELAY_OFF     HIGH
 
 // ── Application ───────────────────────────────────────────
-#define NUM_ZONES            4
-#define MENU_VISIBLE         3        // rows visible in a list at once
-#define DEBOUNCE_MS          200UL
-#define IDLE_TIMEOUT_MS      30000UL  // return to idle after 30 s of inactivity
-#define ZONE_TEST_DURATION_S 5        // seconds per zone in test mode
+#define NUM_ZONES               4
+#define MENU_VISIBLE            3         // rows visible in a list at once
+#define DEBOUNCE_MS             200UL
+#define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity
+#define ZONE_TEST_DURATION_S    5         // seconds per zone in test mode
+#define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL  // sentinel — never turn off
