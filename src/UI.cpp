@@ -567,13 +567,16 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, lbuf, "bl:300000");
         snprintf(lbuf, sizeof(lbuf), "%s  Sempre",     blmc(BACKLIGHT_TIMEOUT_NEVER));
         makeItem(it++, lbuf, "bl:4294967295");
+        makeItem(it++, "<- Voltar", "go:def");
+        break;
+    }
+
     default:
         makeItem(it++, "<- Voltar", "go:main");
         break;
     }
 
     _itemCount = (uint8_t)(it - _items);
-}
 }
 
 // ─────────────────────────────────────────────────────────
