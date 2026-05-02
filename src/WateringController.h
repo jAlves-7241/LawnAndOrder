@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include "config.h"
-#include "AppState.h"
-#include "History.h"   // WateringType, HistoryEntry
+#include "AppState.h"   // WaterTrigger, HistoryEntry
+#include "History.h"
 
 // ─────────────────────────────────────────────────────────
 // WateringController
@@ -39,12 +39,12 @@ private:
     uint32_t _zoneDurationMs;
 
     // ── History tracking ──────────────────────────────────
-    WateringType _runType;                 // type of the current cycle
+    WaterTrigger _runTrigger;              // trigger type of current cycle
     SystemTime   _cycleStart;             // gState.now snapshot at cycle start
     uint8_t      _zoneDurMin[NUM_ZONES];  // actual minutes per zone (0 = not run)
 
     void _buildQueue(const bool zones[NUM_ZONES], uint32_t dur_ms,
-                     WateringType type);
+                     WaterTrigger trigger);
     void _startNextZone();
     void _finishCycle();     // record to history and notify scheduler
     void _activateRelay(uint8_t zone_idx);

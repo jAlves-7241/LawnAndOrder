@@ -13,7 +13,7 @@ WateringController::WateringController()
     : _queueLen(0), _queuePos(0),
       _active(false), _zoneIdx(0),
       _zoneStartMs(0), _zoneDurationMs(0),
-      _runType(WateringType::GENERAL)
+      _runTrigger(WaterTrigger::MANUAL)
 {
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _cycleStart = {};
@@ -48,7 +48,7 @@ void WateringController::startGeneral() {
     }
     if (_queueLen == 0) return;
 
-    _runType    = WateringType::GENERAL;
+    _runTrigger    = WaterTrigger::MANUAL;
     _cycleStart = gState.now;
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _queuePos   = 0;
@@ -61,7 +61,7 @@ void WateringController::startGeneral() {
 void WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
-    _buildQueue(zones, dur_ms, WateringType::CUSTOM);
+    _buildQueue(zones, dur_ms, WaterTrigger::CUSTOM);
     Serial.printf("[WATER] startCustom %d min\n", dur_min);
 }
 
@@ -73,7 +73,7 @@ void WateringController::startTest(int8_t zone_idx) {
     else
         for (int i = 0; i < NUM_ZONES; i++) zones[i] = (i == (int)zone_idx);
 
-    _buildQueue(zones, dur_ms, WateringType::TEST);
+    _buildQueue(zones, dur_ms, WaterTrigger::TEST);
     Serial.printf("[WATER] startTest zone=%d\n", zone_idx);
 }
 
@@ -104,7 +104,7 @@ void WateringController::update() {
     if (elapsed >= _zoneDurationMs) {
         // Record actual duration for this zone (convert ms → min, min 1)
         uint8_t ran_min = (uint8_t)max(1UL, _zoneDurationMs / 60000UL);
-        if (_runType != WateringType::TEST)
+        if (_runTrigger != WaterTrigger::TEST)
             _zoneDurMin[_zoneIdx] = ran_min;
 
         _deactivateAll();
@@ -128,7 +128,7 @@ void WateringController::update() {
 
 void WateringController::_buildQueue(const bool zones[NUM_ZONES],
                                      uint32_t dur_ms,
-                                     WateringType type) {
+                                     WaterTrigger trigger) {
     if (dur_ms == 0) return;
     stop();
     _queueLen = 0;
@@ -138,7 +138,7 @@ void WateringController::_buildQueue(const bool zones[NUM_ZONES],
     }
     if (_queueLen == 0) return;
 
-    _runType    = type;
+    _runTrigger    = trigger;
     _cycleStart = gState.now;
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _queuePos   = 0;
@@ -158,13 +158,15 @@ void WateringController::_startNextZone() {
 }
 
 void WateringController::_finishCycle() {
-    // Notify scheduler so it advances next_*
     scheduler.onWateringDone();
 
-    // Record to history (TEST cycles are filtered inside history.record())
     HistoryEntry entry;
-    entry.start = _cycleStart;
-    entry.type  = _runType;
+    entry.year    = _cycleStart.year;
+    entry.month   = _cycleStart.month;
+    entry.day     = _cycleStart.day;
+    entry.hour    = _cycleStart.hour;
+    entry.min     = _cycleStart.min;
+    entry.trigger = _runTrigger;
     memcpy(entry.zone_dur, _zoneDurMin, sizeof(_zoneDurMin));
     history.record(entry);
 }

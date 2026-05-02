@@ -532,11 +532,10 @@ void UI::_buildMenu(MenuID mid) {
                     "","Jan","Fev","Mar","Abr","Mai","Jun",
                     "Jul","Ago","Set","Out","Nov","Dez"
                 };
-                uint8_t m = (e.start.month <= 12) ? e.start.month : 0;
+                uint8_t m = (e.month <= 12) ? e.month : 0;
                 snprintf(lbuf, sizeof(lbuf), "%02d%s %02d:%02d %s",
-                         e.start.day, MON[m],
-                         e.start.hour, e.start.min,
-                         e.type == WateringType::CUSTOM ? "CUSTOM" : "GERAL");
+                         e.day, MON[m], e.hour, e.min,
+                         e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL");
 
                 // Detail info lines — two zones per line
                 char l1[LCD_COLS+1], l2[LCD_COLS+1];
@@ -548,9 +547,7 @@ void UI::_buildMenu(MenuID mid) {
                 char act[64];
                 snprintf(act, sizeof(act),
                          "info:%02d/%02d %02d:%02d|%s|%s||hist",
-                         e.start.day, m,
-                         e.start.hour, e.start.min,
-                         l1, l2);
+                         e.day, m, e.hour, e.min, l1, l2);
                 makeItem(it++, lbuf, act);
             }
         }
