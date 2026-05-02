@@ -1,6 +1,7 @@
 #include "UI.h"
 #include "WateringController.h"
 #include "RTClock.h"
+#include "Scheduler.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -333,6 +334,7 @@ void UI::_dispatch(const char* action) {
         uint8_t idx = (uint8_t)atoi(action + 4);
         if (idx < (uint8_t)AppMode::_COUNT)
             gState.mode = (AppMode)idx;
+        scheduler.onModeChanged();   // recomputes next_hour / next_min immediately
         _showInfo("MODO SELECIONADO", _modeName(gState.mode),
                   "", "Guardado!  OK", MenuID::MODOS);
         return;
@@ -737,11 +739,26 @@ const char* UI::_modeName(AppMode m) {
 }
 
 const char* UI::_modeHours(AppMode m) {
-    switch (m) {
-        case AppMode::INTENSO:    return "07:00 + 18:00";
-        case AppMode::MEDIO:      return "18:00";
-        case AppMode::FRACO:      return "18:00 (x2/sem)";
-        case AppMode::DESATIVADO: return "---";
-        default:                  return "definido";
+    // Build display string from the live schedule table so it always
+    // reflects the defines in config.h, even if they are changed.
+    static char buf[16];
+    const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)m];
+
+    if (sched.slot_count == 0) return "---";
+
+    if (sched.slot_count == 1) {
+        snprintf(buf, sizeof(buf), "%02d:%02d",
+                 sched.slots[0].hour, sched.slots[0].minute);
+        if (sched.day_pattern == DayPattern::ODD_DAYS ||
+            sched.day_pattern == DayPattern::EVEN_DAYS) {
+            strncat(buf, " alt.", sizeof(buf) - strlen(buf) - 1);
+        }
+        return buf;
     }
+
+    // Two slots
+    snprintf(buf, sizeof(buf), "%02d:%02d+%02d:%02d",
+             sched.slots[0].hour, sched.slots[0].minute,
+             sched.slots[1].hour, sched.slots[1].minute);
+    return buf;
 }
