@@ -2,6 +2,7 @@
 #include "WateringController.h"
 #include "RTClock.h"
 #include "Scheduler.h"
+#include "Storage.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -231,6 +232,7 @@ void UI::_commitDurPick() {
             gState.zones[_durZoneIdx].duration_min = _durValue;
             Serial.printf("[UI] Z%d dur=%d min\n", _durZoneIdx + 1, _durValue);
         }
+        storage.save();
         _goMenu(MenuID::CFG_ZONAS);
         return;
     }
@@ -300,10 +302,13 @@ void UI::_executeConfirmed() {
 
     } else if (strcmp(tag, "suspend") == 0) {
         gState.suspended = true;
+        storage.save();
         Serial.println("[UI] rega suspensa 3 dias");
 
     } else if (strcmp(tag, "reset") == 0) {
-        initAppState();
+        storage.clear();   // wipe NVS first
+        initAppState();    // restore RAM defaults
+        scheduler.onModeChanged();  // recompute next_* for default mode
         Serial.println("[UI] reset de fabrica");
 
     } else if (strcmp(tag, "test_all") == 0) {
@@ -334,7 +339,8 @@ void UI::_dispatch(const char* action) {
         uint8_t idx = (uint8_t)atoi(action + 4);
         if (idx < (uint8_t)AppMode::_COUNT)
             gState.mode = (AppMode)idx;
-        scheduler.onModeChanged();   // recomputes next_hour / next_min immediately
+        scheduler.onModeChanged();
+        storage.save();
         _showInfo("MODO SELECIONADO", _modeName(gState.mode),
                   "", "Guardado!  OK", MenuID::MODOS);
         return;
@@ -410,9 +416,10 @@ void UI::_dispatch(const char* action) {
     if (strncmp(action, "bl:", 3) == 0) {
         uint32_t ms = (uint32_t)strtoul(action + 3, nullptr, 10);
         gState.backlight_timeout_ms = ms;
-        _d.backlightOn();            // wake if needed
-        _lastActivity = millis();    // reset so it doesn't immediately sleep
-        _buildMenu(MenuID::BLSEL);   // rebuild to update [*] marker
+        storage.save();
+        _d.backlightOn();
+        _lastActivity = millis();
+        _buildMenu(MenuID::BLSEL);
         _renderMenu();
         return;
     }
