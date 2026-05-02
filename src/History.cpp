@@ -6,24 +6,23 @@
 
 History history;
 
-static const size_t LINE_BUF = 52;  // max CSV line length + \0
+static const size_t LINE_BUF = 52;
 
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
     _ready = LittleFS.begin(formatOnFail);
-    if (!_ready) {
+    if (!_ready)
         Serial.println("[HIST] Erro ao montar LittleFS");
-    } else {
+    else
         Serial.printf("[HIST] Pronto — %d entradas\n", entryCount());
-    }
     return _ready;
 }
 
 // ─────────────────────────────────────────────────────────
 void History::record(const HistoryEntry& entry) {
-    if (!_ready)                          return;
-    if (entry.type == WateringType::TEST)  return;
-    if (!gState.rtc_valid)                return;
+    if (!_ready)                              return;
+    if (entry.trigger == WaterTrigger::TEST)  return;
+    if (!gState.rtc_valid)                    return;
 
     char line[LINE_BUF];
     _entryToLine(entry, line, sizeof(line));
@@ -36,7 +35,6 @@ void History::record(const HistoryEntry& entry) {
         f.println(line);
         f.close();
     }
-
     Serial.printf("[HIST] Registado: %s\n", line);
 }
 
@@ -48,15 +46,13 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return 0;
 
-    // Ring buffer of `count` lines — reads the whole file but only keeps
-    // the last `count` non-empty lines. File is at most ~2 KB.
     char lines[HISTORY_DISPLAY][LINE_BUF];
-    uint8_t head  = 0;
+    uint8_t  head  = 0;
     uint16_t total = 0;
 
     while (f.available()) {
         String s = f.readStringUntil('\n');
-        s.trim();
+        s.trim();                           // trim() returns void — call before length()
         if (s.length() == 0) continue;
         strncpy(lines[head % count], s.c_str(), LINE_BUF - 1);
         lines[head % count][LINE_BUF - 1] = '\0';
@@ -67,7 +63,6 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
 
     uint8_t kept   = (total < count) ? (uint8_t)total : count;
     uint8_t filled = 0;
-
     for (uint8_t i = 0; i < kept; i++) {
         uint8_t slot = (uint8_t)((head - kept + i) % count);
         if (_lineToEntry(lines[slot], out[filled]))
@@ -83,20 +78,17 @@ void History::clear() {
     Serial.println("[HIST] Historico apagado");
 }
 
-// ─────────────────────────────────────────────────────────
-uint16_t History::entryCount() const {
-    return _countLines();
-}
+uint16_t History::entryCount() const { return _countLines(); }
 
 // ─────────────────────────────────────────────────────────
 // Private
 // ─────────────────────────────────────────────────────────
 
+// CSV: "YYYY-MM-DDTHH:MM,<trigger_char>,d0,d1,d2,d3"
 void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
-    const char* t = (e.type == WateringType::CUSTOM) ? "CUSTOM" : "GENERAL";
-    snprintf(buf, len, "%04d-%02d-%02dT%02d:%02d,%s",
-             e.start.year, e.start.month, e.start.day,
-             e.start.hour, e.start.min, t);
+    char tc = (char)e.trigger;   // 'A', 'M', 'C' — already encoded in enum value
+    snprintf(buf, len, "%04d-%02d-%02dT%02d:%02d,%c",
+             e.year, e.month, e.day, e.hour, e.min, tc);
     for (int i = 0; i < NUM_ZONES; i++) {
         char tmp[5];
         snprintf(tmp, sizeof(tmp), ",%d", e.zone_dur[i]);
@@ -106,21 +98,28 @@ void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
 
 bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     int yr, mo, dy, hh, mm;
-    char type[8] = {};
+    char tc = 0;
 
-    if (sscanf(line, "%4d-%2d-%2dT%2d:%2d,%7s",
-               &yr, &mo, &dy, &hh, &mm, type) != 6) return false;
+    // "YYYY-MM-DDTHH:MM,C,d0,..."
+    if (sscanf(line, "%4d-%2d-%2dT%2d:%2d,%c",
+               &yr, &mo, &dy, &hh, &mm, &tc) != 6) return false;
 
-    out.start = { (uint16_t)yr, (uint8_t)mo, (uint8_t)dy,
-                  (uint8_t)hh, (uint8_t)mm, 0, 0 };
-    out.type  = (strncmp(type, "CUSTOM", 6) == 0)
-                ? WateringType::CUSTOM : WateringType::GENERAL;
+    out.year  = (uint16_t)yr;
+    out.month = (uint8_t)mo;
+    out.day   = (uint8_t)dy;
+    out.hour  = (uint8_t)hh;
+    out.min   = (uint8_t)mm;
 
-    // Advance past first two commas to reach zone durations
+    // Validate trigger char
+    if (tc == 'A' || tc == 'M' || tc == 'C' || tc == 'T')
+        out.trigger = (WaterTrigger)tc;
+    else
+        out.trigger = WaterTrigger::MANUAL;
+
+    // Parse zone durations — after the second comma
     const char* p = line;
     int commas = 0;
     while (*p && commas < 2) { if (*p++ == ',') commas++; }
-
     for (int i = 0; i < NUM_ZONES; i++) {
         out.zone_dur[i] = (uint8_t)atoi(p);
         while (*p && *p != ',') p++;
@@ -136,7 +135,8 @@ uint16_t History::_countLines() const {
     uint16_t n = 0;
     while (f.available()) {
         String s = f.readStringUntil('\n');
-        if (s.trim().length() > 0) n++;
+        s.trim();
+        if (s.length() > 0) n++;
     }
     f.close();
     return n;
@@ -144,10 +144,8 @@ uint16_t History::_countLines() const {
 
 void History::_rotateAndAppend(const char* newLine) {
     const uint16_t keep = HISTORY_MAX_ENTRIES - 1;
-    // keep * LINE_BUF ≈ 49 * 52 ≈ 2.5 KB — fine on ESP32
     char* buf = (char*)malloc((size_t)keep * LINE_BUF);
     if (!buf) {
-        // Fallback: just append (file exceeds max by 1 line — harmless)
         File f = LittleFS.open(HISTORY_FILE, "a");
         if (f) { f.println(newLine); f.close(); }
         return;
@@ -157,12 +155,11 @@ void History::_rotateAndAppend(const char* newLine) {
     File src = LittleFS.open(HISTORY_FILE, "r");
     uint16_t n = 0;
     bool skipped = false;
-
     while (src.available() && n < keep) {
         String s = src.readStringUntil('\n');
         s.trim();
         if (s.length() == 0) continue;
-        if (!skipped) { skipped = true; continue; }  // discard oldest
+        if (!skipped) { skipped = true; continue; }
         strncpy(buf + n * LINE_BUF, s.c_str(), LINE_BUF - 1);
         n++;
     }
