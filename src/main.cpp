@@ -5,6 +5,7 @@
 #include "Display.h"
 #include "Encoder.h"
 #include "RTClock.h"
+#include "History.h"
 #include "Scheduler.h"
 #include "Storage.h"
 #include "UI.h"
@@ -23,6 +24,8 @@ void setup() {
 
     storage.begin();      // open NVS namespace
     storage.load();       // overwrite defaults with persisted values
+
+    history.begin();      // mount LittleFS, open/create history file
 
     display.begin();
     encoder.begin();

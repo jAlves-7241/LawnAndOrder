@@ -40,6 +40,26 @@ struct SystemTime {
 };
 
 // ─────────────────────────────────────────────────────────
+// History
+// ─────────────────────────────────────────────────────────
+
+// Trigger type for a watering cycle
+enum class WaterTrigger : uint8_t {
+    AUTO   = 'A',   // fired by Scheduler
+    MANUAL = 'M',   // Rega Geral triggered by user
+    CUSTOM = 'C',   // Personalizado triggered by user
+    TEST   = 'T',   // test run — not written to history file
+};
+
+// One history record — one full watering cycle
+struct HistoryEntry {
+    uint16_t    year;
+    uint8_t     month, day, hour, min;
+    uint8_t     zone_dur[NUM_ZONES];  // actual minutes run per zone (0 = skipped)
+    WaterTrigger trigger;
+};
+
+// ─────────────────────────────────────────────────────────
 // Schedule data structures
 // ─────────────────────────────────────────────────────────
 

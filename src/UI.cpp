@@ -3,6 +3,7 @@
 #include "RTClock.h"
 #include "Scheduler.h"
 #include "Storage.h"
+#include "History.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -306,9 +307,10 @@ void UI::_executeConfirmed() {
         Serial.println("[UI] rega suspensa 3 dias");
 
     } else if (strcmp(tag, "reset") == 0) {
-        storage.clear();   // wipe NVS first
-        initAppState();    // restore RAM defaults
-        scheduler.onModeChanged();  // recompute next_* for default mode
+        storage.clear();
+        history.clear();
+        initAppState();
+        scheduler.onModeChanged();
         Serial.println("[UI] reset de fabrica");
 
     } else if (strcmp(tag, "test_all") == 0) {
@@ -514,16 +516,47 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "<- Voltar",          "go:manual");
         break;
 
-    case MenuID::HISTORICO:
-        // TODO: replace with entries read from LittleFS CSV once storage module is added
-        makeItem(it++, "26Abr  Z1-4  50min",
-                 "info:26 ABR  18:02|Z1+2: 15+15min|Z3+4: 10+10min||hist");
-        makeItem(it++, "25Abr  Z1-4  48min",
-                 "info:25 ABR  18:01|Z1+2: 15+13min|Z3+4: 10+10min||hist");
-        makeItem(it++, "24Abr  Z1-4  50min",
-                 "info:24 ABR  07:00|Z1+2: 15+15min|Z3+4: 10+10min||hist");
+    case MenuID::HISTORICO: {
+        HistoryEntry entries[HISTORY_DISPLAY];
+        uint8_t n = history.readLast(HISTORY_DISPLAY, entries);
+
+        if (n == 0) {
+            makeItem(it++, "Sem registos", "info:HISTORICO|Sem registos||Inicia uma rega|hist");
+        } else {
+            // Build one menu item per entry (most recent last → show in reverse)
+            for (int8_t i = (int8_t)n - 1; i >= 0; i--) {
+                const HistoryEntry& e = entries[i];
+
+                // Label: "26Abr 18:02 GENERAL"
+                static const char* MON[] = {
+                    "","Jan","Fev","Mar","Abr","Mai","Jun",
+                    "Jul","Ago","Set","Out","Nov","Dez"
+                };
+                uint8_t m = (e.start.month <= 12) ? e.start.month : 0;
+                snprintf(lbuf, sizeof(lbuf), "%02d%s %02d:%02d %s",
+                         e.start.day, MON[m],
+                         e.start.hour, e.start.min,
+                         e.type == WateringType::CUSTOM ? "CUSTOM" : "GERAL");
+
+                // Detail info lines — two zones per line
+                char l1[LCD_COLS+1], l2[LCD_COLS+1];
+                snprintf(l1, sizeof(l1), "Z1:%dmin  Z2:%dmin",
+                         e.zone_dur[0], e.zone_dur[1]);
+                snprintf(l2, sizeof(l2), "Z3:%dmin  Z4:%dmin",
+                         e.zone_dur[2], e.zone_dur[3]);
+
+                char act[64];
+                snprintf(act, sizeof(act),
+                         "info:%02d/%02d %02d:%02d|%s|%s||hist",
+                         e.start.day, m,
+                         e.start.hour, e.start.min,
+                         l1, l2);
+                makeItem(it++, lbuf, act);
+            }
+        }
         makeItem(it++, "<- Voltar", "go:def");
         break;
+    }
 
     case MenuID::DEF: {
         makeItem(it++, "Testar Zonas",    "go:testes");

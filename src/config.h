@@ -39,6 +39,16 @@
 #define SCHED_FRACO_SLOT0_H     18    // 18:00
 #define SCHED_FRACO_SLOT0_M     0
 
+// ── History (LittleFS CSV) ────────────────────────────────
+#define HISTORY_FILE          "/history.csv"
+#define HISTORY_MAX_ENTRIES   50    // max lines kept in file; oldest rotated out
+#define HISTORY_CACHE_SIZE    10    // most-recent entries kept in RAM for UI
+
+// ── History / LittleFS ────────────────────────────────────
+#define HISTORY_FILE         "/history.csv"
+#define HISTORY_MAX_ENTRIES  50    // oldest entry dropped when exceeded
+#define HISTORY_DISPLAY      3     // entries shown in the UI menu
+
 // ── Application ───────────────────────────────────────────
 #define NUM_ZONES               4
 #define MAX_SLOTS_PER_MODE      2         // Intenso has 2 daily slots; all others have 1
