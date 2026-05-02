@@ -6,6 +6,7 @@
 #include "Encoder.h"
 #include "RTClock.h"
 #include "Scheduler.h"
+#include "Storage.h"
 #include "UI.h"
 #include "WateringController.h"
 
@@ -18,7 +19,11 @@ void setup() {
     Serial.begin(115200);
     Serial.println("[REGA] Arrancar...");
 
-    initAppState();
+    initAppState();       // load firmware defaults into RAM
+
+    storage.begin();      // open NVS namespace
+    storage.load();       // overwrite defaults with persisted values
+
     display.begin();
     encoder.begin();
 
@@ -27,7 +32,7 @@ void setup() {
     }
 
     wateringCtrl.begin();
-    scheduler.begin();   // computes first next_hour/min from live RTC time
+    scheduler.begin();    // computes next_hour/min from live RTC + current mode
     ui.begin();
 
     Serial.println("[REGA] Pronto.");
