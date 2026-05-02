@@ -5,6 +5,7 @@
 #include "Display.h"
 #include "Encoder.h"
 #include "RTClock.h"
+#include "Scheduler.h"
 #include "UI.h"
 #include "WateringController.h"
 
@@ -26,6 +27,7 @@ void setup() {
     }
 
     wateringCtrl.begin();
+    scheduler.begin();   // computes first next_hour/min from live RTC time
     ui.begin();
 
     Serial.println("[REGA] Pronto.");
@@ -34,8 +36,7 @@ void setup() {
 // ─────────────────────────────────────────────────────────
 void loop() {
     rtclock.update();       // reads DS3231 into gState.now once/sec
+    scheduler.update();     // checks trigger, advances next_*, fires watering
     ui.update();            // handles encoder, redraws LCD
     wateringCtrl.update();  // advances zone timer, drives relays
-
-    // TODO: scheduler.update() — check gState.now vs schedule, auto-trigger
 }

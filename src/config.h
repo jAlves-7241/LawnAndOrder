@@ -23,8 +23,25 @@
 #define RELAY_ON      LOW    // change to HIGH if your board is active-HIGH
 #define RELAY_OFF     HIGH
 
+// ── Schedule defaults — alter these to change the built-in mode timetables ───
+//
+// INTENSO: two daily slots
+#define SCHED_INTENSO_SLOT0_H   7     // 07:00
+#define SCHED_INTENSO_SLOT0_M   0
+#define SCHED_INTENSO_SLOT1_H   18    // 18:00
+#define SCHED_INTENSO_SLOT1_M   0
+
+// MEDIO: one daily slot
+#define SCHED_MEDIO_SLOT0_H     18    // 18:00
+#define SCHED_MEDIO_SLOT0_M     0
+
+// FRACO: one slot, every other day (odd calendar days: 1, 3, 5 …)
+#define SCHED_FRACO_SLOT0_H     18    // 18:00
+#define SCHED_FRACO_SLOT0_M     0
+
 // ── Application ───────────────────────────────────────────
 #define NUM_ZONES               4
+#define MAX_SLOTS_PER_MODE      2         // Intenso has 2 daily slots; all others have 1
 #define MENU_VISIBLE            3         // rows visible in a list at once
 #define DEBOUNCE_MS             200UL
 #define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity

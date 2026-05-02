@@ -40,6 +40,38 @@ struct SystemTime {
 };
 
 // ─────────────────────────────────────────────────────────
+// Schedule data structures
+// ─────────────────────────────────────────────────────────
+
+// When during the day a watering cycle triggers.
+struct ScheduleSlot {
+    uint8_t hour;    // 0–23
+    uint8_t minute;  // 0–59
+};
+
+// Which days of the week/month the schedule is active.
+enum class DayPattern : uint8_t {
+    DAILY,      // every day
+    ODD_DAYS,   // odd calendar days  (1, 3, 5 …)
+    EVEN_DAYS,  // even calendar days (2, 4, 6 …)
+    DOW_MASK,   // specific days of week — see dow_mask below
+                // bit 0 = Sun, bit 1 = Mon, … bit 6 = Sat
+};
+
+// Full schedule definition for one AppMode.
+// DESATIVADO and PERSONALIZADO have slot_count == 0 (no automatic watering).
+struct ModeSchedule {
+    ScheduleSlot slots[MAX_SLOTS_PER_MODE];
+    uint8_t      slot_count;   // 0 = no automatic watering
+    DayPattern   day_pattern;
+    uint8_t      dow_mask;     // only used when day_pattern == DOW_MASK
+};
+
+// Table indexed by (uint8_t)AppMode.
+// Declared extern so any module can read it; defined once in AppState.cpp.
+extern const ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT];
+
+// ─────────────────────────────────────────────────────────
 // Global state — single source of truth for the whole app
 // ─────────────────────────────────────────────────────────
 
