@@ -42,12 +42,7 @@
 // ── History (LittleFS CSV) ────────────────────────────────
 #define HISTORY_FILE          "/history.csv"
 #define HISTORY_MAX_ENTRIES   50    // max lines kept in file; oldest rotated out
-#define HISTORY_CACHE_SIZE    10    // most-recent entries kept in RAM for UI
-
-// ── History / LittleFS ────────────────────────────────────
-#define HISTORY_FILE         "/history.csv"
-#define HISTORY_MAX_ENTRIES  50    // oldest entry dropped when exceeded
-#define HISTORY_DISPLAY      3     // entries shown in the UI menu
+#define HISTORY_DISPLAY       3     // entries shown in the UI menu
 
 // ── Application ───────────────────────────────────────────
 #define NUM_ZONES               4
