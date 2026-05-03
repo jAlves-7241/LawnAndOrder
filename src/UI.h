@@ -40,6 +40,7 @@ enum class MenuID : uint8_t {
 enum class DurContext : uint8_t {
     CUSTOM_RUN,  // writes gState.custom_dur_min → confirm screen
     CFG_ZONE,    // writes gState.zones[zoneIdx].duration_min → CFG_ZONAS
+    SUSPEND,     // writes gState.suspended_until → IDLE
 };
 
 // ─────────────────────────────────────────────────────────

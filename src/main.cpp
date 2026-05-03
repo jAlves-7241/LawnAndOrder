@@ -18,7 +18,7 @@ static UI      ui(display, encoder);
 // ─────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("[REGA] Arrancar...");
+    Serial.println("[SYS] A iniciar sistema...");
 
     initAppState();       // load firmware defaults into RAM
 
@@ -31,14 +31,14 @@ void setup() {
     encoder.begin();
 
     if (!rtclock.begin()) {
-        Serial.println("[REGA] AVISO: RTC nao disponivel");
+        Serial.println("[SYS] Erro: RTC nao disponivel");
     }
 
     wateringCtrl.begin();
     scheduler.begin();    // computes next_hour/min from live RTC + current mode
     ui.begin();
 
-    Serial.println("[REGA] Pronto.");
+    Serial.println("[SYS] Sistema pronto.");
 }
 
 // ─────────────────────────────────────────────────────────

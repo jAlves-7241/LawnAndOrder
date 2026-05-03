@@ -60,38 +60,56 @@ bool Storage::load() {
         prefs.getULong(KEY_BL, gState.backlight_timeout_ms);
 
     // ── Suspended ─────────────────────────────────────────
-    gState.suspended =
-        (bool)prefs.getUChar(KEY_SUSP, gState.suspended ? 1 : 0);
+    gState.suspended_until =
+        prefs.getUInt(KEY_SUNT, gState.suspended_until);
 
-    Serial.printf("[NVS] Carregado — modo=%d, suspenso=%d\n",
+    Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
                   (uint8_t)gState.mode, gState.suspended);
     return true;
-}
+    }
+
 
 // ─────────────────────────────────────────────────────────
 void Storage::save() {
     if (!_ready) return;
 
-    prefs.putUChar(KEY_VER,  NVS_VERSION);
-    prefs.putUChar(KEY_MODE, (uint8_t)gState.mode);
-    prefs.putULong(KEY_BL,   gState.backlight_timeout_ms);
-    prefs.putUChar(KEY_SUSP, gState.suspended ? 1 : 0);
+    bool changed = false;
+
+    auto updateUChar = [&](const char* k, uint8_t v) {
+        if (prefs.getUChar(k, 0xFF) != v) { prefs.putUChar(k, v); changed = true; }
+    };
+    auto updateUInt = [&](const char* k, uint32_t v) {
+        if (prefs.getUInt(k, 0) != v) { prefs.putUInt(k, v); changed = true; }
+    };
+    auto updateULong = [&](const char* k, uint32_t v) {
+        if (prefs.getULong(k, 0) != v) { prefs.putULong(k, v); changed = true; }
+    };
+
+    updateUChar(KEY_VER,  NVS_VERSION);
+    updateUChar(KEY_MODE, (uint8_t)gState.mode);
+    updateULong(KEY_BL,   gState.backlight_timeout_ms);
+    updateUChar(KEY_SUSP, gState.suspended ? 1 : 0);
+    updateUInt(KEY_SUNT,  gState.suspended_until);
 
     char key[5];
     for (int i = 0; i < NUM_ZONES; i++) {
         snprintf(key, sizeof(key), "z%de", i);
-        prefs.putUChar(key, gState.zones[i].enabled ? 1 : 0);
+        updateUChar(key, gState.zones[i].enabled ? 1 : 0);
 
         snprintf(key, sizeof(key), "z%dd", i);
-        prefs.putUChar(key, gState.zones[i].duration_min);
+        updateUChar(key, gState.zones[i].duration_min);
     }
 
-    Serial.println("[NVS] Guardado");
+    if (changed) {
+        Serial.println("[NVS] Dados actualizados");
+    }
 }
 
 // ─────────────────────────────────────────────────────────
 void Storage::clear() {
     if (!_ready) return;
     prefs.clear();   // erases all keys in the namespace
-    Serial.println("[NVS] Apagado");
+    Serial.println("[NVS] Memoria limpa (Reset)");
+}
+rial.println("[NVS] Apagado");
 }

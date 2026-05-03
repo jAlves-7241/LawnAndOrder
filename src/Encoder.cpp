@@ -25,14 +25,19 @@ void IRAM_ATTR Encoder::_isr() {
 }
 
 int8_t Encoder::getRotation() {
+    int8_t ret = 0;
+    
     noInterrupts();
-    int16_t d = _delta;
-    _delta    = 0;
+    if (_delta > 0) {
+        _delta--;
+        ret = 1;
+    } else if (_delta < 0) {
+        _delta++;
+        ret = -1;
+    }
     interrupts();
 
-    if (d > 0) return  1;
-    if (d < 0) return -1;
-    return 0;
+    return ret;
 }
 
 bool Encoder::getClick() {
