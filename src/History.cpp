@@ -173,5 +173,3 @@ void History::_rotateAndAppend(const char* newLine) {
     }
     free(buf);
 }
-
-}

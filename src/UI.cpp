@@ -825,19 +825,3 @@ const char* UI::_modeHours(AppMode m) {
              sched.slots[1].hour, sched.slots[1].minute);
     return buf;
 }
- if (sched.slot_count == 1) {
-        snprintf(buf, sizeof(buf), "%02d:%02d",
-                 sched.slots[0].hour, sched.slots[0].minute);
-        if (sched.day_pattern == DayPattern::ODD_DAYS ||
-            sched.day_pattern == DayPattern::EVEN_DAYS) {
-            strncat(buf, " alt.", sizeof(buf) - strlen(buf) - 1);
-        }
-        return buf;
-    }
-
-    // Two slots
-    snprintf(buf, sizeof(buf), "%02d:%02d+%02d:%02d",
-             sched.slots[0].hour, sched.slots[0].minute,
-             sched.slots[1].hour, sched.slots[1].minute);
-    return buf;
-}

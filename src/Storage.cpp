@@ -9,6 +9,7 @@ static const char* KEY_VER      = "ver";
 static const char* KEY_MODE     = "mode";
 static const char* KEY_BL       = "bl";
 static const char* KEY_SUSP     = "susp";
+static const char* KEY_SUNT     = "sunt";
 // Zone keys are built dynamically: "z0e","z0d","z1e","z1d"…
 
 static Preferences prefs;
@@ -66,7 +67,7 @@ bool Storage::load() {
     Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
                   (uint8_t)gState.mode, gState.suspended);
     return true;
-    }
+}
 
 
 // ─────────────────────────────────────────────────────────
@@ -110,6 +111,4 @@ void Storage::clear() {
     if (!_ready) return;
     prefs.clear();   // erases all keys in the namespace
     Serial.println("[NVS] Memoria limpa (Reset)");
-}
-rial.println("[NVS] Apagado");
 }
