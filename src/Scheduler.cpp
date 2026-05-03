@@ -20,9 +20,20 @@ void Scheduler::begin() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::update() {
     if (!gState.rtc_valid)  return;
-    if (gState.suspended)   return;
 
     const SystemTime& t = gState.now;
+
+    // Auto-wake from suspension
+    if (gState.suspended) {
+        if (t.unix >= gState.suspended_until) {
+            gState.suspended = false;
+            gState.suspended_until = 0;
+            storage.save();
+            Serial.println("[SCHED] Suspensao expirou — rega reativada");
+        } else {
+            return; // Still suspended
+        }
+    }
 
     // Detect watering completion so we can advance next_*
     bool isWatering = gState.watering.active;
@@ -79,7 +90,7 @@ void Scheduler::onModeChanged() {
     }
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Modo alterado — proxima rega: %02d:%02d\n",
+    Serial.printf("[SCHED] Modo alterado: Proxima rega %02d:%02d\n",
                   gState.next_hour, gState.next_min);
 }
 
@@ -95,7 +106,7 @@ void Scheduler::onWateringDone() {
 
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Rega concluida — proxima: %02d:%02d\n",
+    Serial.printf("[SCHED] Ciclo concluido: Proxima rega %02d:%02d\n",
                   gState.next_hour, gState.next_min);
 }
 
@@ -113,27 +124,24 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         return false;
     }
 
-    // We search up to 2 days ahead (today + tomorrow) to handle
-    // FRACO (every other day) without looping indefinitely.
+    // Use RTClib's DateTime for proper date arithmetic (month ends, leap years)
+    DateTime current(now.unix);
+
+    // We search up to 2 days ahead (today + tomorrow)
     for (uint8_t dayOffset = 0; dayOffset <= 2; dayOffset++) {
-        // Build a hypothetical "day" to check
-        SystemTime candidate = now;
-        if (dayOffset > 0) {
-            // Advance by dayOffset days (simple, ignores month boundaries —
-            // acceptable since we only look 2 days ahead)
-            candidate.day  += dayOffset;
-            candidate.hour  = 0;
-            candidate.min   = 0;
-            candidate.sec   = 0;
-            // Advance dow
-            candidate.dow = (candidate.dow + dayOffset) % 7;
-        }
+        DateTime candidateDt = current + TimeSpan(dayOffset, 0, 0, 0);
+        
+        // Convert back to SystemTime-like fields for _dayMatches
+        SystemTime candidate;
+        candidate.day = candidateDt.day();
+        candidate.dow = candidateDt.dayOfTheWeek();
 
         if (!_dayMatches(sched, candidate)) continue;
 
-        // Scan slots in order (they are defined earliest→latest in config.h)
+        // Scan slots in order
         for (uint8_t i = 0; i < sched.slot_count; i++) {
             const ScheduleSlot& sl = sched.slots[i];
+            
             // For today (dayOffset==0) skip slots already past
             if (dayOffset == 0) {
                 if (sl.hour < now.hour) continue;
@@ -144,13 +152,7 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
             return true;
         }
     }
-
-    // All slots today and tomorrow are in the past (shouldn't happen normally)
-    // Fall back to first slot of next matching day
-    const ScheduleSlot& first = sched.slots[0];
-    out_hour = first.hour;
-    out_min  = first.minute;
-    return true;
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────

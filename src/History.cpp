@@ -75,7 +75,7 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
 void History::clear() {
     if (!_ready) return;
     LittleFS.remove(HISTORY_FILE);
-    Serial.println("[HIST] Historico apagado");
+    Serial.println("[FS] Historico apagado");
 }
 
 uint16_t History::entryCount() const { return _countLines(); }
@@ -172,4 +172,6 @@ void History::_rotateAndAppend(const char* newLine) {
         dst.close();
     }
     free(buf);
+}
+
 }

@@ -31,7 +31,7 @@ void WateringController::begin() {
 // Start commands
 // ─────────────────────────────────────────────────────────
 
-void WateringController::startGeneral() {
+void WateringController::startGeneral(WaterTrigger trigger) {
     bool zones[NUM_ZONES];
     uint32_t durations_ms[NUM_ZONES];
 
@@ -48,7 +48,7 @@ void WateringController::startGeneral() {
     }
     if (_queueLen == 0) return;
 
-    _runTrigger    = WaterTrigger::MANUAL;
+    _runTrigger    = trigger;
     _cycleStart = gState.now;
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _queuePos   = 0;
@@ -117,7 +117,7 @@ void WateringController::update() {
             _queueLen = 0;
             _syncState();
             _finishCycle();
-            Serial.println("[WATER] cycle complete");
+            Serial.println("[WATER] OK: Ciclo concluido");
         }
     }
 }

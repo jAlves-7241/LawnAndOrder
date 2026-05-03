@@ -37,6 +37,7 @@ struct SystemTime {
     uint8_t  min;     // 0–59
     uint8_t  sec;     // 0–59
     uint8_t  dow;     // 0=Sun … 6=Sat
+    uint32_t unix;    // seconds since 1970
 };
 
 // ─────────────────────────────────────────────────────────
@@ -109,7 +110,9 @@ struct AppState {
     uint8_t custom_dur_min;
 
     // Schedule
-    bool    suspended;
+    bool     suspended;
+    uint32_t suspended_until;
+
     uint8_t next_hour;
     uint8_t next_min;
 

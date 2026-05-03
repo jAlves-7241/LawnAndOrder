@@ -211,11 +211,14 @@ void UI::_showDone(const char* l1, const char* l2) {
 }
 
 void UI::_showDurPick(uint8_t initial, DurContext ctx, uint8_t zoneIdx) {
-    // CFG_ZONE allows 0 (= disable); clamp accordingly
+    // Limits based on context
     if (ctx == DurContext::CFG_ZONE)
         _durValue = (initial <= 20) ? initial : 5;
-    else
+    else if (ctx == DurContext::SUSPEND)
+        _durValue = (initial >= 1 && initial <= 15) ? initial : 3;
+    else // CUSTOM_RUN
         _durValue = (initial >= 1 && initial <= 20) ? initial : 5;
+
     _durContext  = ctx;
     _durZoneIdx  = zoneIdx;
     _screen      = Screen::DUR_PICK;
@@ -227,14 +230,26 @@ void UI::_commitDurPick() {
         if (_durValue == 0) {
             gState.zones[_durZoneIdx].enabled      = false;
             gState.zones[_durZoneIdx].duration_min = 0;
-            Serial.printf("[UI] Z%d desativada\n", _durZoneIdx + 1);
+            Serial.printf("[UI] Zona %d: Desativada\n", _durZoneIdx + 1);
         } else {
             gState.zones[_durZoneIdx].enabled      = true;
             gState.zones[_durZoneIdx].duration_min = _durValue;
-            Serial.printf("[UI] Z%d dur=%d min\n", _durZoneIdx + 1, _durValue);
+            Serial.printf("[UI] Zona %d: Duracao %d min\n", _durZoneIdx + 1, _durValue);
         }
         storage.save();
         _goMenu(MenuID::CFG_ZONAS);
+        return;
+    }
+
+    if (_durContext == DurContext::SUSPEND) {
+        gState.suspended = true;
+        // _durValue is days. 1 day = 86400 seconds.
+        gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
+        storage.save();
+        char msg[21];
+        snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
+        _showDone("REGA SUSPENSA", msg);
+        Serial.printf("[UI] Acao: Suspender rega %d dias\n", _durValue);
         return;
     }
 
@@ -302,16 +317,20 @@ void UI::_executeConfirmed() {
         wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
 
     } else if (strcmp(tag, "suspend") == 0) {
-        gState.suspended = true;
-        storage.save();
-        Serial.println("[UI] rega suspensa 3 dias");
+        if (gState.rtc_valid) {
+            gState.suspended = true;
+            // 3 days = 3 * 24 * 3600 = 259200 seconds
+            gState.suspended_until = gState.now.unix + 259200UL;
+            storage.save();
+            Serial.printf("[UI] Acao: Suspender rega 3 dias (Ate: %u)\n", gState.suspended_until);
+        }
 
     } else if (strcmp(tag, "reset") == 0) {
         storage.clear();
         history.clear();
         initAppState();
         scheduler.onModeChanged();
-        Serial.println("[UI] reset de fabrica");
+        Serial.println("[UI] Acao: Reset de fabrica");
 
     } else if (strcmp(tag, "test_all") == 0) {
         wateringCtrl.startTest(-1);
@@ -477,7 +496,10 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "Ver Horarios",     "horarios");
         makeItem(it++, "Alterar Modo",     "go:modos");
         makeItem(it++, "Configurar Zonas", "go:cfgz");
-        makeItem(it++, "Suspender Rega",   "confirm:Suspender rega|por 3 dias?|prog|suspend");
+        if (gState.suspended)
+            makeItem(it++, "Retomar Rega", "cancel_susp");
+        else
+            makeItem(it++, "Suspender Rega", "dur_pick:suspend");
         makeItem(it++, "<- Voltar",        "go:main");
         break;
 
@@ -642,10 +664,11 @@ void UI::_renderIdle() {
         _d.pbar(pb, gState.watering.progress_pct);
         _d.setRows(b0, "", zrow, pb);
     } else {
-        // Row 3: next scheduled watering
-        // Show RTC warning on row 3 if clock not set
+        // Row 3: next scheduled watering or suspension status
         if (!gState.rtc_valid) {
             _d.setRows(b0, "", "", _d.cx(b3, "! Acertar hora !"));
+        } else if (gState.suspended) {
+            _d.setRows(b0, "", _d.cx(b3, "** SUSPENSO **"), _d.cx(b3, "3 dias (pausa)"));
         } else {
             char nxstr[LCD_COLS+1];
             snprintf(nxstr, sizeof(nxstr), "Prox: %02d:%02d",
@@ -705,6 +728,8 @@ void UI::_renderDurPick() {
         snprintf(htxt, sizeof(htxt), "DUR Z%d %s",
                  _durZoneIdx+1, gState.zones[_durZoneIdx].name);
         _d.hdr(hbuf, htxt);
+    } else if (_durContext == DurContext::SUSPEND) {
+        _d.hdr(hbuf, "DIAS DE PAUSA");
     } else {
         _d.hdr(hbuf, "DURACAO / ZONA");
     }
@@ -713,7 +738,8 @@ void UI::_renderDurPick() {
     if (_durContext == DurContext::CFG_ZONE && _durValue == 0)
         snprintf(vstr, sizeof(vstr), "OFF");
     else
-        snprintf(vstr, sizeof(vstr), "%d min", _durValue);
+        snprintf(vstr, sizeof(vstr), "%d %s", _durValue, 
+                 _durContext == DurContext::SUSPEND ? "dias" : "min");
     _d.cx(vbuf, vstr);
 
     _d.cx(h1, "rode p/ ajustar");
@@ -784,6 +810,22 @@ const char* UI::_modeHours(AppMode m) {
     if (sched.slot_count == 0) return "---";
 
     if (sched.slot_count == 1) {
+        snprintf(buf, sizeof(buf), "%02d:%02d",
+                 sched.slots[0].hour, sched.slots[0].minute);
+        if (sched.day_pattern == DayPattern::ODD_DAYS ||
+            sched.day_pattern == DayPattern::EVEN_DAYS) {
+            strncat(buf, " alt.", sizeof(buf) - strlen(buf) - 1);
+        }
+        return buf;
+    }
+
+    // Two slots
+    snprintf(buf, sizeof(buf), "%02d:%02d+%02d:%02d",
+             sched.slots[0].hour, sched.slots[0].minute,
+             sched.slots[1].hour, sched.slots[1].minute);
+    return buf;
+}
+ if (sched.slot_count == 1) {
         snprintf(buf, sizeof(buf), "%02d:%02d",
                  sched.slots[0].hour, sched.slots[0].minute);
         if (sched.day_pattern == DayPattern::ODD_DAYS ||

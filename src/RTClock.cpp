@@ -59,7 +59,7 @@ void RTClock::update() {
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
             gState.rtc_valid = false;
-            Serial.println("[RTC] Bateria falhou em operacao — acertar hora");
+            Serial.println("[RTC] Erro: Falha na bateria em operacao");
         }
     }
 #endif
@@ -97,4 +97,5 @@ void RTClock::_copyToState(const DateTime& dt) {
     gState.now.min   = dt.minute();
     gState.now.sec   = dt.second();
     gState.now.dow   = dt.dayOfTheWeek();
+    gState.now.unix  = dt.unixtime();
 }

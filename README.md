@@ -152,9 +152,9 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Relógio RTC DS3231 com acerto de hora | ✅ Completo |
 | Suspensão de rega | ✅ Completo |
 | Gestão de ecrã (sleep/wake) | ✅ Completo |
-| Persistência de configurações (NVS) | 🔲 Pendente |
-| Agendamento automático por hora | 🔲 Pendente |
-| Histórico em ficheiro CSV (LittleFS) | 🔲 Pendente |
+| Persistência de configurações (NVS) | ✅ Completo |
+| Agendamento automático por hora | ✅ Completo |
+| Histórico em ficheiro CSV (LittleFS) | ✅ Completo |
 | Modo Personalizado (horário livre) | 🔲 Futuro |
 
 ---
@@ -207,7 +207,10 @@ rega-esp32/
 │   ├── AppState.h / .cpp        # estado global único (gState)
 │   ├── Display.h / .cpp         # wrapper LCD com shadow buffer
 │   ├── Encoder.h / .cpp         # driver ISR do encoder rotativo
+│   ├── History.h / .cpp         # gestão de ficheiro CSV em LittleFS
 │   ├── RTClock.h / .cpp         # módulo DS3231
+│   ├── Scheduler.h / .cpp       # agendamento automático
+│   ├── Storage.h / .cpp         # persistência NVS (Preferences)
 │   ├── WateringController.h/.cpp# fila de zonas + controlo de relés
 │   ├── UI.h / .cpp              # máquina de estados da interface
 │   └── main.cpp                 # setup() e loop()
@@ -221,10 +224,13 @@ rega-esp32/
 ```
 main.cpp
   ├── initAppState()          inicializa gState
+  ├── Storage                 lê/escreve NVS → gState
+  ├── History                 lê/escreve LittleFS (CSV)
   ├── Display                 LCD I2C
   ├── Encoder                 ISR + debounce
   ├── RTClock                 DS3231 → escreve gState.now
   ├── WateringController      fila de zonas → controla relés → escreve gState.watering
+  ├── Scheduler               compara gState.now com horários → dispara WateringController
   └── UI                      lê Encoder, escreve Display, lê/escreve gState
 ```
 
@@ -238,7 +244,13 @@ main.cpp
 `lcd.clear()` causa um flash visível. O `Display` mantém uma cópia em memória do conteúdo atual do LCD e só envia para o hardware as linhas que efetivamente mudaram. O resultado é atualização sem flickering.
 
 **ISR no encoder**
-A rotação é capturada por interrupção hardware (`IRAM_ATTR`, RISING edge em CLK). O `loop()` apenas lê o delta acumulado desde a última leitura. Isto evita perder passos quando o loop está ocupado com I2C ou Serial.
+A rotação é capturada por interrupção hardware (`IRAM_ATTR`). O driver processa todos os passos acumulados de forma sequencial, garantindo que mesmo rotações muito rápidas sejam registadas sem perda de passos, resultando numa interface fluida.
+
+**Aritmética de calendário no Scheduler**
+O agendador utiliza aritmética de tempo Unix (através da `RTClib`) para calcular as próximas regas. Isto garante que transições de mês, anos bissextos e modos de dias alternados funcionem com precisão absoluta, sem erros de lógica de calendário manual.
+
+**Otimização de Memória Flash (NVS)**
+O sistema monitoriza o estado atual das configurações e apenas realiza escritas físicas na memória flash quando deteta uma alteração real nos valores. Esta técnica de "escrita diferencial" aumenta drasticamente a vida útil do chip ESP32.
 
 **Máquina de estados da UI**
 A UI é uma FSM com seis estados (`IDLE`, `MENU`, `INFO`, `CONFIRM`, `DONE`, `DUR_PICK`, `TIME_EDIT`). Transições são acionadas por rotação ou clique. O sistema de ações é codificado em strings compactas nos itens de menu (ex: `"confirm:Iniciar rega|...|main|general"`) — permite declarar menus como dados estáticos sem callbacks.
@@ -262,9 +274,25 @@ Instaladas automaticamente pelo PlatformIO na primeira compilação.
 
 ---
 
+## Logs e Diagnóstico
+
+O sistema envia informações de estado via Serial (115200 baud) utilizando prefixos padronizados para facilitar a monitorização:
+
+| Categoria | Descrição |
+|---|---|
+| **[SYS]** | Inicialização e estado global do sistema. |
+| **[RTC]** | Estado do relógio em tempo real (DS3231). |
+| **[NVS]** | Persistência de dados na memória Flash. |
+| **[FS]** | Operações de ficheiros no LittleFS (Histórico). |
+| **[SCHED]** | Lógica de agendamento e suspensão. |
+| **[WATER]** | Controlo das zonas de rega e relés. |
+| **[UI]** | Interações do utilizador e navegação de menus. |
+
+---
+
 ### Próximas iterações
 
-1. **NVS (Preferences)** — guardar `gState` em flash; configurações sobrevivem a reboots
-2. **Scheduler** — comparar `gState.now` com os horários e disparar `wateringCtrl.startGeneral()` automaticamente
-3. **LittleFS + CSV** — histórico real de ciclos com timestamps do RTC
-4. **Modo Personalizado** — horário e zonas completamente livres
+1. **Modo Personalizado** — implementar configuração de horários livres pelo utilizador
+2. **Sensores de Humidade** — bloquear rega se o solo estiver húmido
+3. **Deteção de Corrente** — monitorizar se a bomba/válvula está efetivamente a consumir energia
+4. **Exportação de Dados** — interface simples para descarregar o histórico CSV via Serial

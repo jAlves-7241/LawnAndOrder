@@ -63,8 +63,9 @@ void initAppState() {
     }
 
     // ── Mode & schedule ──────────────────────────────────
-    gState.mode      = AppMode::MEDIO;
-    gState.suspended = false;
+    gState.mode            = AppMode::MEDIO;
+    gState.suspended       = false;
+    gState.suspended_until = 0;
     // next_hour/next_min are computed by Scheduler after RTC is ready.
     // Set a visible placeholder so the IDLE screen is never blank.
     gState.next_hour = SCHED_MEDIO_SLOT0_H;
@@ -74,7 +75,7 @@ void initAppState() {
 
     // ── RTC ──────────────────────────────────────────────
     gState.rtc_valid = false;
-    gState.now = { 2026, 1, 1, 0, 0, 0, 4 };  // placeholder until RTC is read
+    gState.now = { 2026, 1, 1, 0, 0, 0, 4, 1767225600UL };  // placeholder until RTC is read
 
     // ── Watering ─────────────────────────────────────────
     gState.watering = { false, 0, 0 };
