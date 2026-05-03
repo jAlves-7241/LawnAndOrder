@@ -63,6 +63,9 @@ bool Storage::load() {
     // ── Suspended ─────────────────────────────────────────
     gState.suspended_until =
         prefs.getUInt(KEY_SUNT, gState.suspended_until);
+    // Restore suspended flag — the Scheduler will auto-clear it once
+    // gState.now.unix >= suspended_until (checked every second in update()).
+    gState.suspended = (gState.suspended_until > 0);
 
     Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
                   (uint8_t)gState.mode, gState.suspended);

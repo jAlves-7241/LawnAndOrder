@@ -69,7 +69,7 @@ void Scheduler::update() {
             _triggered = true;
             Serial.printf("[SCHED] Disparar rega automatica %02d:%02d\n",
                           t.hour, t.min);
-            wateringCtrl.startGeneral();
+            wateringCtrl.startGeneral(WaterTrigger::AUTO);
             return;
         }
     }
