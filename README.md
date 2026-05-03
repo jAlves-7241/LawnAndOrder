@@ -1,4 +1,4 @@
-# Sistema de Rega — ESP32
+# Sistema de Rega - ESP32
 
 Controlador autónomo de rega para jardim, com interface física por ecrã LCD e encoder rotativo. Sem aplicação, sem Wi-Fi, sem dependências de rede — funciona de forma completamente independente.
 
