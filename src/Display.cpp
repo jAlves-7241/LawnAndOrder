@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false) {
+Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false), _displayOn(false) {
     memset(_shadow, ' ', sizeof(_shadow));
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
 }
@@ -10,7 +10,9 @@ Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false) {
 void Display::begin() {
     _lcd.init();
     _lcd.backlight();
+    _lcd.display();
     _backlightOn = true;
+    _displayOn = true;
     _lcd.clear();
     for (int r = 0; r < LCD_ROWS; r++) {
         memset(_shadow[r], ' ', LCD_COLS);
@@ -22,14 +24,26 @@ void Display::backlightOn() {
     if (_backlightOn) return;
     _lcd.backlight();
     _backlightOn = true;
-    // Invalidate shadow: the LCD controller may have lost state while off
-    _invalidateShadow();
 }
 
 void Display::backlightOff() {
     if (!_backlightOn) return;
     _lcd.noBacklight();
     _backlightOn = false;
+}
+
+void Display::displayOn() {
+    if (_displayOn) return;
+    _lcd.display();
+    _displayOn = true;
+    // Force redraw because state might be stale
+    _invalidateShadow();
+}
+
+void Display::displayOff() {
+    if (!_displayOn) return;
+    _lcd.noDisplay();
+    _displayOn = false;
 }
 
 void Display::_invalidateShadow() {

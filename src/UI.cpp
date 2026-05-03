@@ -48,9 +48,10 @@ void UI::update() {
 
     bool hadInput = (rot != 0 || click);
 
-    // Any input wakes the backlight first; if it was off, swallow the input
+    // Any input wakes the display first; if it was off, swallow the input
     // so the user doesn't accidentally trigger an action while waking.
-    if (hadInput && !_d.isBacklightOn()) {
+    if (hadInput && (!_d.isBacklightOn() || !_d.isDisplayOn())) {
+        _d.displayOn();
         _d.backlightOn();
         _lastActivity = millis();
         _renderIdle();   // repaint immediately after wake
@@ -67,16 +68,21 @@ void UI::update() {
     }
 
     // Backlight sleep after inactivity (only from idle screen)
-    if (_screen == Screen::IDLE && _d.isBacklightOn() &&
-        gState.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER) {
-        if ((millis() - _lastActivity) >= gState.backlight_timeout_ms) {
+    if (_screen == Screen::IDLE && gState.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER) {
+        uint32_t elapsed = millis() - _lastActivity;
+        
+        if (_d.isBacklightOn() && elapsed >= gState.backlight_timeout_ms) {
             _d.backlightOff();
+        }
+        
+        if (_d.isDisplayOn() && elapsed >= (gState.backlight_timeout_ms + DISPLAY_OFF_DELAY_MS)) {
+            _d.displayOff();
         }
     }
 
-    // Clock refresh: repaint idle once per second (only when backlight is on)
+    // Clock refresh: repaint idle once per second (only when characters are on)
     static uint32_t lastClockMs = 0;
-    if (_screen == Screen::IDLE && _d.isBacklightOn() &&
+    if (_screen == Screen::IDLE && _d.isDisplayOn() &&
         (millis() - lastClockMs) >= 1000) {
         lastClockMs = millis();
         _renderIdle();
@@ -119,10 +125,9 @@ void UI::_handleRotation(int8_t dir) {
             }
 
             int v = (int)_durValue + dir;
-            if (v < vmin) v = vmin;
-            if (v > vmax) v = vmax;
-            _durValue = (uint8_t)v;
-            _renderDurPick();
+            if (v < vmin) v = vmax;
+            else if (v > vmax) v = vmin;
+            _durValue = (uint8_t)v;            _renderDurPick();
             break;
         }
 
@@ -1018,24 +1023,20 @@ const char* UI::_modeName(AppMode m) {
 const char* UI::_modeHours(AppMode m) {
     // Build display string from the live schedule table so it always
     // reflects the defines in config.h, even if they are changed.
-    static char buf[16];
+    static char buf[32];
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)m];
 
     if (sched.slot_count == 0) return "---";
 
-    if (sched.slot_count == 1) {
-        snprintf(buf, sizeof(buf), "%02d:%02d",
-                 sched.slots[0].hour, sched.slots[0].minute);
-        if (sched.day_pattern == DayPattern::ODD_DAYS ||
-            sched.day_pattern == DayPattern::EVEN_DAYS) {
-            strncat(buf, " alt.", sizeof(buf) - strlen(buf) - 1);
-        }
-        return buf;
+    buf[0] = '\0';
+    for (uint8_t i = 0; i < sched.slot_count; i++) {
+        char tbuf[8];
+        snprintf(tbuf, sizeof(tbuf), "%02d:%02d", 
+                 sched.slots[i].hour, sched.slots[i].minute);
+        
+        if (i > 0) strncat(buf, "+", sizeof(buf) - strlen(buf) - 1);
+        strncat(buf, tbuf, sizeof(buf) - strlen(buf) - 1);
     }
 
-    // Two slots
-    snprintf(buf, sizeof(buf), "%02d:%02d+%02d:%02d",
-             sched.slots[0].hour, sched.slots[0].minute,
-             sched.slots[1].hour, sched.slots[1].minute);
     return buf;
 }
