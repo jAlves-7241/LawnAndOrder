@@ -159,7 +159,7 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Persistência de configurações (NVS) | ✅ Completo |
 | Agendamento automático por hora | ✅ Completo |
 | Histórico em ficheiro CSV (LittleFS) | ✅ Completo |
-| Modo Personalizado (horário livre) | 🔲 Futuro |
+| Modo Personalizado (horário livre) | ✅ Completo |
 
 ---
 

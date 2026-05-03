@@ -611,6 +611,21 @@ void UI::_dispatch(const char* action) {
         _showInfo("HORARIOS ATIVOS", mstr, hstr, zstr, MenuID::PROG);
         return;
     }
+
+    // dur_pick:suspend — open picker for suspension days
+    if (strcmp(action, "dur_pick:suspend") == 0) {
+        _showDurPick(3, DurContext::SUSPEND); // default 3 days
+        return;
+    }
+
+    // cancel_susp — reactivate watering immediately
+    if (strcmp(action, "cancel_susp") == 0) {
+        gState.suspended = false;
+        gState.suspended_until = 0;
+        storage.save();
+        _showDone("REGA REATIVADA", "Suspensao cancelada");
+        return;
+    }
 }
 
 // ─────────────────────────────────────────────────────────
