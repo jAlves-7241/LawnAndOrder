@@ -27,6 +27,7 @@ enum class MenuID : uint8_t {
     MODOS,
     CFG_ZONAS,
     CUSTOM_ZONAS,
+    CFG_CUSTOM,
     HISTORICO,
     DEF,
     TESTES,
@@ -41,6 +42,13 @@ enum class DurContext : uint8_t {
     CUSTOM_RUN,  // writes gState.custom_dur_min → confirm screen
     CFG_ZONE,    // writes gState.zones[zoneIdx].duration_min → CFG_ZONAS
     SUSPEND,     // writes gState.suspended_until → IDLE
+    FREQ_DAYS,   // writes cs.interval_days (1-14)
+    NUM_CYCLES,  // writes cs.slot_count (1-4)
+};
+
+enum class TimeEditContext : uint8_t {
+    RTC,
+    CUSTOM_CYCLE, // edits cs.slots[_teCycleIdx]
 };
 
 // ─────────────────────────────────────────────────────────
@@ -96,6 +104,8 @@ private:
     uint8_t _teHour;   // value being edited
     uint8_t _teMin;
     uint8_t _teField;  // 0 = hour, 1 = minute
+    TimeEditContext _teContext;
+    uint8_t _teCycleIdx;
 
     // ── Confirm tag ───────────────────────────────────────
     char _pendingConfirmTag[16];
@@ -135,11 +145,12 @@ private:
     void _showDone(const char* l1, const char* l2);
     void _showDurPick(uint8_t initial, DurContext ctx, uint8_t zoneIdx = 0);
     void _commitDurPick();
-    void _showTimeEdit();
+    void _showTimeEdit(TimeEditContext ctx, uint8_t cycleIdx = 0);
     void _commitTimeEdit();
 
     // ── Utilities ─────────────────────────────────────────
     static MenuID      _parseMenuID(const char* s);
     static const char* _modeName(AppMode m);
     static const char* _modeHours(AppMode m);
+    uint8_t            _totalZoneDuration();
 };

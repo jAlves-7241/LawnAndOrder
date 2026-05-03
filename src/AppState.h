@@ -77,6 +77,7 @@ enum class DayPattern : uint8_t {
     EVEN_DAYS,  // even calendar days (2, 4, 6 …)
     DOW_MASK,   // specific days of week — see dow_mask below
                 // bit 0 = Sun, bit 1 = Mon, … bit 6 = Sat
+    EVERY_X_DAYS, // every interval_days, starting from custom_ref_day
 };
 
 // Full schedule definition for one AppMode.
@@ -86,11 +87,12 @@ struct ModeSchedule {
     uint8_t      slot_count;   // 0 = no automatic watering
     DayPattern   day_pattern;
     uint8_t      dow_mask;     // only used when day_pattern == DOW_MASK
+    uint8_t      interval_days; // only used when day_pattern == EVERY_X_DAYS
 };
 
 // Table indexed by (uint8_t)AppMode.
-// Declared extern so any module can read it; defined once in AppState.cpp.
-extern const ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT];
+// Declared extern so any module can read/write it; defined once in AppState.cpp.
+extern ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT];
 
 // ─────────────────────────────────────────────────────────
 // Global state — single source of truth for the whole app
@@ -112,6 +114,7 @@ struct AppState {
     // Schedule
     bool     suspended;
     uint32_t suspended_until;
+    uint32_t custom_ref_day; // epoch (days since 1970) for EVERY_X_DAYS
 
     uint8_t next_hour;
     uint8_t next_min;

@@ -7,53 +7,55 @@ AppState gState;
 // Mode schedule table — indexed by (uint8_t)AppMode
 // Built entirely from config.h defines; change those, this follows.
 // ─────────────────────────────────────────────────────────
-extern const ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
+ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
     // INTENSO — two daily slots
     {
         {{ SCHED_INTENSO_SLOT0_H, SCHED_INTENSO_SLOT0_M },
-         { SCHED_INTENSO_SLOT1_H, SCHED_INTENSO_SLOT1_M }},
+         { SCHED_INTENSO_SLOT1_H, SCHED_INTENSO_SLOT1_M },
+         { 0, 0 }, { 0, 0 }},
         2,
         DayPattern::DAILY,
-        0
+        0, 1
     },
     // MEDIO — one daily slot
     {
         {{ SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M },
-         { 0, 0 }},
+         { 0, 0 }, { 0, 0 }, { 0, 0 }},
         1,
         DayPattern::DAILY,
-        0
+        0, 1
     },
     // FRACO — one slot, odd calendar days only
     {
         {{ SCHED_FRACO_SLOT0_H, SCHED_FRACO_SLOT0_M },
-         { 0, 0 }},
+         { 0, 0 }, { 0, 0 }, { 0, 0 }},
         1,
         DayPattern::ODD_DAYS,
-        0
+        0, 1
     },
     // DESATIVADO — no automatic watering
     {
-        {{ 0, 0 }, { 0, 0 }},
+        {{ 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }},
         0,
         DayPattern::DAILY,
-        0
+        0, 1
     },
-    // PERSONALIZADO — no slots until user defines them (future)
+    // PERSONALIZADO — default initial settings
     {
-        {{ 0, 0 }, { 0, 0 }},
-        0,
-        DayPattern::DAILY,
-        0
+        {{ SCHED_CUSTOM_SLOT0_H, SCHED_CUSTOM_SLOT0_M },
+         { 0, 0 }, { 0, 0 }, { 0, 0 }},
+        SCHED_CUSTOM_SLOTS,
+        DayPattern::EVERY_X_DAYS,
+        0, SCHED_CUSTOM_INTERVAL
     },
 };
 
 // ─────────────────────────────────────────────────────────
 void initAppState() {
     // ── Zone defaults ────────────────────────────────────
-    const char*   names[NUM_ZONES]   = { "Jardim", "Horta", "Relvado", "Sebe" };
+    const char*   names[NUM_ZONES]   = { ZONE1_NAME, ZONE2_NAME, ZONE3_NAME, ZONE4_NAME };
     const bool    enabled[NUM_ZONES] = { true,  true,  true,  true };
-    const uint8_t durs[NUM_ZONES]    = { 15,    15,    10,    10   };
+    const uint8_t durs[NUM_ZONES]    = { ZONE1_DUR, ZONE2_DUR, ZONE3_DUR, ZONE4_DUR };
 
     for (int i = 0; i < NUM_ZONES; i++) {
         strncpy(gState.zones[i].name, names[i], sizeof(gState.zones[i].name) - 1);
@@ -66,6 +68,7 @@ void initAppState() {
     gState.mode            = AppMode::MEDIO;
     gState.suspended       = false;
     gState.suspended_until = 0;
+    gState.custom_ref_day  = 0;
     // next_hour/next_min are computed by Scheduler after RTC is ready.
     // Set a visible placeholder so the IDLE screen is never blank.
     gState.next_hour = SCHED_MEDIO_SLOT0_H;

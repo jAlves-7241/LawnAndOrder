@@ -61,6 +61,8 @@ void Display::_writeRow(uint8_t row, const char* text) {
 
     memcpy(_shadow[row], padded, LCD_COLS);
     _lcd.setCursor(0, row);
+    // LiquidCrystal_I2C::print returns size_t, but doesn't always reflect I2C success.
+    // We just ensure the call is made.
     _lcd.print(padded);
 }
 

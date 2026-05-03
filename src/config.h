@@ -26,18 +26,34 @@
 // ── Schedule defaults — alter these to change the built-in mode timetables ───
 //
 // INTENSO: two daily slots
-#define SCHED_INTENSO_SLOT0_H   7     // 07:00
+#define SCHED_INTENSO_SLOT0_H   7
 #define SCHED_INTENSO_SLOT0_M   0
-#define SCHED_INTENSO_SLOT1_H   18    // 18:00
+#define SCHED_INTENSO_SLOT1_H   18
 #define SCHED_INTENSO_SLOT1_M   0
 
 // MEDIO: one daily slot
-#define SCHED_MEDIO_SLOT0_H     18    // 18:00
+#define SCHED_MEDIO_SLOT0_H     18
 #define SCHED_MEDIO_SLOT0_M     0
 
 // FRACO: one slot, every other day (odd calendar days: 1, 3, 5 …)
-#define SCHED_FRACO_SLOT0_H     18    // 18:00
+#define SCHED_FRACO_SLOT0_H     18
 #define SCHED_FRACO_SLOT0_M     0
+
+// PERSONALIZADO: default initial settings
+#define SCHED_CUSTOM_SLOT0_H    6
+#define SCHED_CUSTOM_SLOT0_M    0
+#define SCHED_CUSTOM_INTERVAL   1
+#define SCHED_CUSTOM_SLOTS      1
+
+// ── Zone Defaults ─────────────────────────────────────────
+#define ZONE1_NAME    "Jardim"
+#define ZONE1_DUR     15
+#define ZONE2_NAME    "Horta"
+#define ZONE2_DUR     15
+#define ZONE3_NAME    "Relvado"
+#define ZONE3_DUR     10
+#define ZONE4_NAME    "Sebe"
+#define ZONE4_DUR     10
 
 // ── History (LittleFS CSV) ────────────────────────────────
 #define HISTORY_FILE          "/history.csv"
@@ -46,7 +62,7 @@
 
 // ── Application ───────────────────────────────────────────
 #define NUM_ZONES               4
-#define MAX_SLOTS_PER_MODE      2         // Intenso has 2 daily slots; all others have 1
+#define MAX_SLOTS_PER_MODE      4         // Personalizado can have up to 4 cycles
 #define MENU_VISIBLE            3         // rows visible in a list at once
 #define DEBOUNCE_MS             200UL
 #define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity

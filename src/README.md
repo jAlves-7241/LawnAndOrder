@@ -54,7 +54,7 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 | Opção | Comportamento |
 |---|---|
 | **Rega Geral** | Executa um ciclo completo seguindo o modo automático atual — zonas ativas, pela duração configurada para cada uma |
-| **Personalizado** | Seleciona quais zonas incluir e define uma duração uniforme (1–20 min); pede confirmação antes de iniciar |
+| **Personalizado** | Seleciona frequência (cada X dias), número de ciclos (1-4) e horários livres; inclui proteção contra sobreposição de ciclos |
 
 ---
 
@@ -64,8 +64,9 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 |---|---|
 | **Ver Horários** | Mostra o modo ativo, hora de disparo e zonas incluídas |
 | **Alterar Modo** | Escolhe entre Intenso, Médio, Fraco, Desativado ou Personalizado |
+| **Config. Personaliz.** | (Novo) Define frequência (1-14 dias) e até 4 horários de rega diários |
 | **Configurar Zonas** | Ativa/desativa cada zona e define a duração individual (0 = desativar) |
-| **Suspender Rega** | Pausa a rega automática por 3 dias sem alterar os horários |
+| **Suspender Rega** | Pausa a rega automática por N dias sem alterar os horários |
 
 #### Modos automáticos
 
@@ -75,15 +76,18 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 | **Médio** | 18:00, todos os dias | Primavera / Outono |
 | **Fraco** | 18:00, dias alternados | Inverno suave |
 | **Desativado** | — | Inverno / ausência prolongada |
-| **Personalizado** | Definido pelo utilizador | Uso avançado (futuro) |
+| **Personalizado** | Definido pelo utilizador | Total flexibilidade (1-14 dias, 1-4 ciclos/dia) |
 
 ---
 
 ### Definições
 
-| Opção | Comportamento |
-|---|---|
-| **Testar Zonas** | Ativa cada zona por 5 segundos para verificar as electroválvulas |
+...
+
+1. **Modo Personalizado** — Horários e frequência totalmente configuráveis pelo utilizador ✅
+2. **Proteção contra sobreposição** — Sistema valida se os ciclos configurados não se atropelam com base na duração das zonas ✅
+3. **Persistência NVS** — Todas as configurações personalizadas são guardadas na memória flash ✅
+
 | **Histórico** | Registo dos últimos ciclos de rega com data/hora e duração |
 | **Acertar Hora** | Editor de hora via encoder: primeiro as horas, depois os minutos, clica para guardar no RTC |
 | **Tempo Ecrã** | Define quando o ecrã adormece após inatividade: 30s / 1min / **2min** / 5min / Sempre |
