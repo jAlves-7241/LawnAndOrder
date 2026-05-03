@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION     "v0.1.0-alpha"
-#define FW_BUILD_DATE  "27Abr2026"
+#define FW_VERSION     "v0.1.0-beta"
+#define FW_BUILD_DATE  "03Mai2026"
 
 // ── LCD ───────────────────────────────────────────────────
 #define LCD_ADDR   0x27
@@ -25,18 +25,22 @@
 
 // ── Schedule defaults — alter these to change the built-in mode timetables ───
 //
-// INTENSO: two daily slots
+// INTENSO: three daily slots
 #define SCHED_INTENSO_SLOT0_H   7
 #define SCHED_INTENSO_SLOT0_M   0
-#define SCHED_INTENSO_SLOT1_H   18
+#define SCHED_INTENSO_SLOT1_H   13
 #define SCHED_INTENSO_SLOT1_M   0
+#define SCHED_INTENSO_SLOT2_H   19
+#define SCHED_INTENSO_SLOT2_M   0
 
-// MEDIO: one daily slot
-#define SCHED_MEDIO_SLOT0_H     18
+// MEDIO: two daily slots
+#define SCHED_MEDIO_SLOT0_H     8
 #define SCHED_MEDIO_SLOT0_M     0
+#define SCHED_MEDIO_SLOT1_H     20
+#define SCHED_MEDIO_SLOT1_M     0
 
-// FRACO: one slot, every other day (odd calendar days: 1, 3, 5 …)
-#define SCHED_FRACO_SLOT0_H     18
+// FRACO: one daily slot
+#define SCHED_FRACO_SLOT0_H     8
 #define SCHED_FRACO_SLOT0_M     0
 
 // PERSONALIZADO: default initial settings
@@ -68,3 +72,4 @@
 #define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity
 #define ZONE_TEST_DURATION_S    5         // seconds per zone in test mode
 #define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL  // sentinel — never turn off
+#define DISPLAY_OFF_DELAY_MS    60000UL   // turn off pixels 60s after backlight

@@ -169,10 +169,6 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
     switch (sched.day_pattern) {
         case DayPattern::DAILY:
             return true;
-        case DayPattern::ODD_DAYS:
-            return (now.day % 2) != 0;
-        case DayPattern::EVEN_DAYS:
-            return (now.day % 2) == 0;
         case DayPattern::DOW_MASK:
             return (sched.dow_mask & (1 << now.dow)) != 0;
         case DayPattern::EVERY_X_DAYS: {

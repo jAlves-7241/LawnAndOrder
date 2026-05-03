@@ -8,29 +8,31 @@ AppState gState;
 // Built entirely from config.h defines; change those, this follows.
 // ─────────────────────────────────────────────────────────
 ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
-    // INTENSO — two daily slots
+    // INTENSO — three daily slots
     {
         {{ SCHED_INTENSO_SLOT0_H, SCHED_INTENSO_SLOT0_M },
          { SCHED_INTENSO_SLOT1_H, SCHED_INTENSO_SLOT1_M },
+         { SCHED_INTENSO_SLOT2_H, SCHED_INTENSO_SLOT2_M },
+         { 0, 0 }},
+        3,
+        DayPattern::DAILY,
+        0, 1
+    },
+    // MEDIO — two daily slots
+    {
+        {{ SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M },
+         { SCHED_MEDIO_SLOT1_H, SCHED_MEDIO_SLOT1_M },
          { 0, 0 }, { 0, 0 }},
         2,
         DayPattern::DAILY,
         0, 1
     },
-    // MEDIO — one daily slot
-    {
-        {{ SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M },
-         { 0, 0 }, { 0, 0 }, { 0, 0 }},
-        1,
-        DayPattern::DAILY,
-        0, 1
-    },
-    // FRACO — one slot, odd calendar days only
+    // FRACO — one daily slot
     {
         {{ SCHED_FRACO_SLOT0_H, SCHED_FRACO_SLOT0_M },
          { 0, 0 }, { 0, 0 }, { 0, 0 }},
         1,
-        DayPattern::ODD_DAYS,
+        DayPattern::DAILY,
         0, 1
     },
     // DESATIVADO — no automatic watering

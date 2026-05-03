@@ -7,9 +7,9 @@
 // ─────────────────────────────────────────────────────────
 
 enum class AppMode : uint8_t {
-    INTENSO = 0,   // 07:00 + 18:00, every day
-    MEDIO,         // 18:00, every day
-    FRACO,         // 18:00, every other day
+    INTENSO = 0,   // 3 cycles/day
+    MEDIO,         // 2 cycles/day
+    FRACO,         // 1 cycle/day
     DESATIVADO,    // no automatic watering
     PERSONALIZADO, // user-defined (future)
     _COUNT
@@ -73,8 +73,6 @@ struct ScheduleSlot {
 // Which days of the week/month the schedule is active.
 enum class DayPattern : uint8_t {
     DAILY,      // every day
-    ODD_DAYS,   // odd calendar days  (1, 3, 5 …)
-    EVEN_DAYS,  // even calendar days (2, 4, 6 …)
     DOW_MASK,   // specific days of week — see dow_mask below
                 // bit 0 = Sun, bit 1 = Mon, … bit 6 = Sat
     EVERY_X_DAYS, // every interval_days, starting from custom_ref_day

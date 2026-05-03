@@ -72,9 +72,9 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 
 | Modo | Horário | Indicado para |
 |---|---|---|
-| **Intenso** | 07:00 + 18:00, todos os dias | Verão, calor intenso |
-| **Médio** | 18:00, todos os dias | Primavera / Outono |
-| **Fraco** | 18:00, dias alternados | Inverno suave |
+| **Intenso** | 07:00 + 13:00 + 19:00, todos os dias | Verão, calor intenso (3 ciclos/dia) |
+| **Médio** | 08:00 + 20:00, todos os dias | Primavera / Outono (2 ciclos/dia) |
+| **Fraco** | 08:00, todos os dias | Manutenção ligeira (1 ciclo/dia) |
 | **Desativado** | — | Inverno / ausência prolongada |
 | **Personalizado** | Definido pelo utilizador | Total flexibilidade (1-14 dias, 1-4 ciclos/dia) |
 
@@ -89,14 +89,24 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 3. **Persistência NVS** — Todas as configurações personalizadas são guardadas na memória flash ✅
 
 | **Histórico** | Registo dos últimos ciclos de rega com data/hora e duração |
-| **Acertar Hora** | Editor de hora via encoder: primeiro as horas, depois os minutos, clica para guardar no RTC |
+| **Acertar Hora** | Editor de hora via encoder: primeiro as horas, depois os minutos, clica para guardar no RTC (seleção circular) |
 | **Tempo Ecrã** | Define quando o ecrã adormece após inatividade: 30s / 1min / **2min** / 5min / Sempre |
 | **Versão Firmware** | Número de versão, data de build, modelo do microcontrolador |
 | **Reset de Fábrica** | Repõe todas as configurações para os valores padrão (pede confirmação) |
 
-#### Tempo de ecrã
+#### Gestão de Ecrã e Longevidade
 
-Após o período de inatividade configurado, o backlight do LCD apaga-se automaticamente para poupar energia e aumentar a vida do LED. O primeiro toque no encoder volta a ligar o ecrã — esse toque é ignorado para não disparar ações acidentais.
+Após o período de inatividade configurado, o sistema executa um desligamento faseado do display para maximizar a sua vida útil:
+1. **Backlight**: A luz de fundo apaga-se primeiro.
+2. **Cristais Líquidos**: 60 segundos depois, os caracteres (píxeis) são também desligados, colocando o display em repouso total.
+
+Qualquer interação com o encoder volta a ligar instantaneamente ambos os componentes — esse primeiro toque é ignorado para segurança.
+
+---
+
+### Navegação e Edição
+
+Todos os seletores do sistema (horas, minutos, durações, intervalos e menus) possuem **navegação circular**. Ao atingir o valor máximo, o seletor volta automaticamente ao início, facilitando ajustes rápidos.
 
 ---
 

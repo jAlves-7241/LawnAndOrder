@@ -21,11 +21,14 @@ public:
                  const char* r2, const char* r3);
 
     // Backlight control.
-    // backlightOn() also invalidates the shadow so a full redraw happens —
-    // the LCD forgets its contents when power was cut to the backlight circuit.
     void backlightOn();
     void backlightOff();
     bool isBacklightOn() const { return _backlightOn; }
+
+    // Character display control (pixels).
+    void displayOn();
+    void displayOff();
+    bool isDisplayOn() const { return _displayOn; }
 
     // ── Formatting helpers (return into caller-supplied buf) ──
     // Left-pad with spaces to LCD_COLS
@@ -43,6 +46,7 @@ public:
 private:
     LiquidCrystal_I2C _lcd;
     bool _backlightOn;
+    bool _displayOn;
 
     // Shadow buffer — only writes row if content actually changed
     char _shadow[LCD_ROWS][LCD_COLS + 1];
