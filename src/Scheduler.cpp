@@ -101,10 +101,14 @@ void Scheduler::onWateringDone() {
     if (!gState.rtc_valid) return;
     // Advance time by 1 minute past the just-fired slot so computeNext
     // doesn't return the same slot again.
-    SystemTime advanced = gState.now;
-    advanced.min++;
-    if (advanced.min >= 60) { advanced.min = 0; advanced.hour++; }
-    if (advanced.hour >= 24) { advanced.hour = 0; advanced.day++; }
+    DateTime next(gState.now.unix + 60);
+
+    SystemTime advanced;
+    advanced.unix = next.unixtime();
+    advanced.hour = next.hour();
+    advanced.min  = next.minute();
+    advanced.day  = next.day();
+    advanced.dow  = next.dayOfTheWeek();
 
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
@@ -129,14 +133,15 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     // Use RTClib's DateTime for proper date arithmetic (month ends, leap years)
     DateTime current(now.unix);
 
-    // We search up to 2 days ahead (today + tomorrow)
-    for (uint8_t dayOffset = 0; dayOffset <= 2; dayOffset++) {
+    // We search up to 15 days ahead to accommodate EVERY_X_DAYS (max 14)
+    for (uint8_t dayOffset = 0; dayOffset <= 15; dayOffset++) {
         DateTime candidateDt = current + TimeSpan(dayOffset, 0, 0, 0);
         
         // Convert back to SystemTime-like fields for _dayMatches
         SystemTime candidate;
-        candidate.day = candidateDt.day();
-        candidate.dow = candidateDt.dayOfTheWeek();
+        candidate.day  = candidateDt.day();
+        candidate.dow  = candidateDt.dayOfTheWeek();
+        candidate.unix = candidateDt.unixtime();
 
         if (!_dayMatches(sched, candidate)) continue;
 
@@ -170,6 +175,13 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
             return (now.day % 2) == 0;
         case DayPattern::DOW_MASK:
             return (sched.dow_mask & (1 << now.dow)) != 0;
+        case DayPattern::EVERY_X_DAYS: {
+            uint32_t current_day = now.unix / 86400UL;
+            uint32_t ref_day     = gState.custom_ref_day;
+            // Calculate absolute difference in days
+            uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);
+            return (diff % sched.interval_days) == 0;
+        }
         default:
             return false;
     }

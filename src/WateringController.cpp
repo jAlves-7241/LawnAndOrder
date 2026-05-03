@@ -183,7 +183,7 @@ void WateringController::_deactivateAll() {
 }
 
 void WateringController::_syncState() {
-    gState.watering.active       = _active;
-    gState.watering.zone_idx     = _active ? _zoneIdx : 0;
-    gState.watering.progress_pct = _active ? gState.watering.progress_pct : 0;
+    gState.watering.active   = _active;
+    gState.watering.zone_idx = _active ? _zoneIdx : 0;
+    if (!_active) gState.watering.progress_pct = 0;
 }

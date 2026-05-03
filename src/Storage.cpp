@@ -10,7 +10,11 @@ static const char* KEY_MODE     = "mode";
 static const char* KEY_BL       = "bl";
 static const char* KEY_SUSP     = "susp";
 static const char* KEY_SUNT     = "sunt";
+static const char* KEY_CRD      = "crd";
+static const char* KEY_CIF      = "cif";
+static const char* KEY_CSC      = "csc";
 // Zone keys are built dynamically: "z0e","z0d","z1e","z1d"…
+// Custom slot keys: "c0h","c0m"…
 
 static Preferences prefs;
 Storage storage;
@@ -67,6 +71,21 @@ bool Storage::load() {
     // gState.now.unix >= suspended_until (checked every second in update()).
     gState.suspended = (gState.suspended_until > 0);
 
+    // ── Custom Schedule ───────────────────────────────────
+    gState.custom_ref_day = prefs.getUInt(KEY_CRD, gState.custom_ref_day);
+    
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.interval_days = prefs.getUChar(KEY_CIF, cs.interval_days);
+    cs.slot_count    = prefs.getUChar(KEY_CSC, cs.slot_count);
+
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        char kh[5], km[5];
+        snprintf(kh, sizeof(kh), "c%dh", i);
+        snprintf(km, sizeof(km), "c%dm", i);
+        cs.slots[i].hour   = prefs.getUChar(kh, cs.slots[i].hour);
+        cs.slots[i].minute = prefs.getUChar(km, cs.slots[i].minute);
+    }
+
     Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
                   (uint8_t)gState.mode, gState.suspended);
     return true;
@@ -94,6 +113,19 @@ void Storage::save() {
     updateULong(KEY_BL,   gState.backlight_timeout_ms);
     updateUChar(KEY_SUSP, gState.suspended ? 1 : 0);
     updateUInt(KEY_SUNT,  gState.suspended_until);
+    updateUInt(KEY_CRD,   gState.custom_ref_day);
+
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    updateUChar(KEY_CIF, cs.interval_days);
+    updateUChar(KEY_CSC, cs.slot_count);
+
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        char kh[5], km[5];
+        snprintf(kh, sizeof(kh), "c%dh", i);
+        snprintf(km, sizeof(km), "c%dm", i);
+        updateUChar(kh, cs.slots[i].hour);
+        updateUChar(km, cs.slots[i].minute);
+    }
 
     char key[5];
     for (int i = 0; i < NUM_ZONES; i++) {
