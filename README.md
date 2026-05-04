@@ -169,7 +169,7 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Persistência de configurações em NVS flash | ✅ Completo |
 | Histórico de ciclos em CSV (LittleFS) | ✅ Completo |
 | Simulação Wokwi (env:wokwi com DS1307) | ✅ Completo |
-| Modo Personalizado (horário livre) | 🔲 Futuro |
+| Modo Personalizado (horário livre) | ✅ Completo |
 | Acertar data completa (dia/mês/ano) via encoder | 🔲 Futuro |
 | Editar nomes das zonas | 🔲 Futuro |
 | Duração de suspensão configurável | 🔲 Futuro |
