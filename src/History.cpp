@@ -11,10 +11,13 @@ static const size_t LINE_BUF = 52;
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
     _ready = LittleFS.begin(formatOnFail);
-    if (!_ready)
+    if (!_ready) {
         Serial.println("[HIST] Erro ao montar LittleFS");
-    else
-        Serial.printf("[HIST] Pronto — %d entradas\n", entryCount());
+        _lineCount = 0;
+    } else {
+        _lineCount = _countLines();   // warm the cache once at boot
+        Serial.printf("[HIST] Pronto — %d entradas\n", _lineCount);
+    }
     return _ready;
 }
 
@@ -27,13 +30,16 @@ void History::record(const HistoryEntry& entry) {
     char line[LINE_BUF];
     _entryToLine(entry, line, sizeof(line));
 
-    if (_countLines() >= HISTORY_MAX_ENTRIES) {
+    if (_lineCount >= HISTORY_MAX_ENTRIES) {
         _rotateAndAppend(line);
+        // _lineCount stays at HISTORY_MAX_ENTRIES after rotation
+        _lineCount = HISTORY_MAX_ENTRIES;
     } else {
         File f = LittleFS.open(HISTORY_FILE, "a");
         if (!f) { Serial.println("[HIST] Erro ao abrir ficheiro"); return; }
         f.println(line);
         f.close();
+        _lineCount++;
     }
     Serial.printf("[HIST] Registado: %s\n", line);
 }
@@ -75,10 +81,11 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
 void History::clear() {
     if (!_ready) return;
     LittleFS.remove(HISTORY_FILE);
-    Serial.println("[FS] Historico apagado");
+    _lineCount = 0;
+    Serial.println("[HIST] Historico apagado");
 }
 
-uint16_t History::entryCount() const { return _countLines(); }
+uint16_t History::entryCount() const { return _lineCount; }
 
 // ─────────────────────────────────────────────────────────
 // Private

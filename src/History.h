@@ -27,7 +27,8 @@ public:
     uint16_t entryCount() const;
 
 private:
-    bool _ready;
+    bool     _ready;
+    uint16_t _lineCount;   // cached line count — avoids re-reading file on every record()
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
