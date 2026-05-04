@@ -70,7 +70,7 @@ void initAppState() {
     gState.mode            = AppMode::MEDIO;
     gState.suspended       = false;
     gState.suspended_until = 0;
-    gState.custom_ref_day  = 0;
+    gState.custom_ref_day  = 0xFFFFFFFFUL; // sentinel: "not yet set" — Scheduler will initialise on first use
     // next_hour/next_min are computed by Scheduler after RTC is ready.
     // Set a visible placeholder so the IDLE screen is never blank.
     gState.next_hour = SCHED_MEDIO_SLOT0_H;

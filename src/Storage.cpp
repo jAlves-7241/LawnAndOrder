@@ -8,7 +8,6 @@ static const char* NVS_NS = "rega";
 static const char* KEY_VER      = "ver";
 static const char* KEY_MODE     = "mode";
 static const char* KEY_BL       = "bl";
-static const char* KEY_SUSP     = "susp";
 static const char* KEY_SUNT     = "sunt";
 static const char* KEY_CRD      = "crd";
 static const char* KEY_CIF      = "cif";
@@ -111,7 +110,6 @@ void Storage::save() {
     updateUChar(KEY_VER,  NVS_VERSION);
     updateUChar(KEY_MODE, (uint8_t)gState.mode);
     updateULong(KEY_BL,   gState.backlight_timeout_ms);
-    updateUChar(KEY_SUSP, gState.suspended ? 1 : 0);
     updateUInt(KEY_SUNT,  gState.suspended_until);
     updateUInt(KEY_CRD,   gState.custom_ref_day);
 

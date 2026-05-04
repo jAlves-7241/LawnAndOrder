@@ -6,7 +6,7 @@ Controlador autónomo de rega para jardim, com interface física por ecrã LCD e
 
 ## O que faz
 
-O sistema controla até **4 zonas de rega** de forma independente, com horários automáticos configuráveis e a possibilidade de disparar regas manuais a qualquer momento. Toda a interação é feita através de um único botão rotativo: rodar para navegar, clicar para selecionar.
+O sistema controla até **4 zonas de rega** de forma independente, com horários automáticos configuráveis e a possibilidade de disparar regas manuais a qualquer momento. Toda a interação é feita através de um único encoder rotativo: rodar para navegar, clicar para selecionar.
 
 O ecrã principal mostra a hora atual e o horário da próxima rega. Quando uma rega está em curso, o ecrã passa a mostrar a zona ativa e uma barra de progresso em tempo real.
 
@@ -18,8 +18,8 @@ O ecrã principal mostra a hora atual e o horário da próxima rega. Quando uma 
 
 ```
      14:32
-                        ← linha vazia
-   4 zonas ativas
+
+
     Prox: 18:00
 ```
 
@@ -30,6 +30,15 @@ Com rega em curso:
 
   Z2 Horta:
 [######-------]  47%
+```
+
+Sem RTC configurado:
+
+```
+     --:--
+
+
+  ! Acertar hora !
 ```
 
 Qualquer interação com o encoder abre o menu principal.
@@ -45,7 +54,7 @@ Qualquer interação com o encoder abre o menu principal.
  Definicoes
 ```
 
-Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível anterior; sem ação durante 30 segundos o sistema volta automaticamente ao ecrã de idle.
+Navega rodando o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível anterior. Sem ação durante 30 segundos, o sistema volta automaticamente ao ecrã de idle.
 
 ---
 
@@ -53,8 +62,8 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 
 | Opção | Comportamento |
 |---|---|
-| **Rega Geral** | Executa um ciclo completo seguindo o modo automático atual — zonas ativas, pela duração configurada para cada uma |
-| **Personalizado** | Seleciona frequência (cada X dias), número de ciclos (1-4) e horários livres; inclui proteção contra sobreposição de ciclos |
+| **Rega Geral** | Executa um ciclo completo seguindo o modo automático atual — zonas ativas pela duração configurada para cada uma |
+| **Personalizado** | Seleciona as zonas a incluir e define uma duração uniforme (1–20 min); pede confirmação antes de iniciar |
 
 ---
 
@@ -64,49 +73,37 @@ Navega com o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nível a
 |---|---|
 | **Ver Horários** | Mostra o modo ativo, hora de disparo e zonas incluídas |
 | **Alterar Modo** | Escolhe entre Intenso, Médio, Fraco, Desativado ou Personalizado |
-| **Config. Personaliz.** | (Novo) Define frequência (1-14 dias) e até 4 horários de rega diários |
-| **Configurar Zonas** | Ativa/desativa cada zona e define a duração individual (0 = desativar) |
-| **Suspender Rega** | Pausa a rega automática por N dias sem alterar os horários |
+| **Configurar Zonas** | Clica numa zona para abrir o selector de duração (0 = desativar, 1–20 min); roda para ajustar |
+| **Suspender Rega** | Pausa a rega automática por 3 dias sem alterar os horários; expira automaticamente |
 
 #### Modos automáticos
 
 | Modo | Horário | Indicado para |
 |---|---|---|
-| **Intenso** | 07:00 + 13:00 + 19:00, todos os dias | Verão, calor intenso (3 ciclos/dia) |
-| **Médio** | 08:00 + 20:00, todos os dias | Primavera / Outono (2 ciclos/dia) |
-| **Fraco** | 08:00, todos os dias | Manutenção ligeira (1 ciclo/dia) |
+| **Intenso** | 07:00 + 18:00, todos os dias | Verão, calor intenso |
+| **Médio** | 18:00, todos os dias | Primavera / Outono |
+| **Fraco** | 18:00, dias alternados (dias ímpares) | Inverno suave |
 | **Desativado** | — | Inverno / ausência prolongada |
-| **Personalizado** | Definido pelo utilizador | Total flexibilidade (1-14 dias, 1-4 ciclos/dia) |
+| **Personalizado** | Reservado para implementação futura | — |
+
+Os horários padrão são definidos em `config.h` com `SCHED_*` e podem ser alterados sem tocar no resto do código.
 
 ---
 
 ### Definições
 
-...
-
-1. **Modo Personalizado** — Horários e frequência totalmente configuráveis pelo utilizador ✅
-2. **Proteção contra sobreposição** — Sistema valida se os ciclos configurados não se atropelam com base na duração das zonas ✅
-3. **Persistência NVS** — Todas as configurações personalizadas são guardadas na memória flash ✅
-
-| **Histórico** | Registo dos últimos ciclos de rega com data/hora e duração |
-| **Acertar Hora** | Editor de hora via encoder: primeiro as horas, depois os minutos, clica para guardar no RTC (seleção circular) |
+| Opção | Comportamento |
+|---|---|
+| **Testar Zonas** | Ativa cada zona por 5 segundos para verificar as electroválvulas (não registado no histórico) |
+| **Histórico** | Últimos 3 ciclos de rega com data, hora, tipo e duração por zona; lidos do ficheiro CSV em LittleFS |
+| **Acertar Hora** | Editor de hora via encoder: ajusta horas, clica, ajusta minutos, clica para guardar no RTC DS3231 |
 | **Tempo Ecrã** | Define quando o ecrã adormece após inatividade: 30s / 1min / **2min** / 5min / Sempre |
-| **Versão Firmware** | Número de versão, data de build, modelo do microcontrolador |
-| **Reset de Fábrica** | Repõe todas as configurações para os valores padrão (pede confirmação) |
+| **Versão Firmware** | Versão, data de build e modelo do microcontrolador |
+| **Reset de Fábrica** | Repõe configurações para os valores padrão e apaga o histórico (pede confirmação) |
 
-#### Gestão de Ecrã e Longevidade
+#### Tempo de ecrã
 
-Após o período de inatividade configurado, o sistema executa um desligamento faseado do display para maximizar a sua vida útil:
-1. **Backlight**: A luz de fundo apaga-se primeiro.
-2. **Cristais Líquidos**: 60 segundos depois, os caracteres (píxeis) são também desligados, colocando o display em repouso total.
-
-Qualquer interação com o encoder volta a ligar instantaneamente ambos os componentes — esse primeiro toque é ignorado para segurança.
-
----
-
-### Navegação e Edição
-
-Todos os seletores do sistema (horas, minutos, durações, intervalos e menus) possuem **navegação circular**. Ao atingir o valor máximo, o seletor volta automaticamente ao início, facilitando ajustes rápidos.
+Após o período de inatividade configurado, o backlight do LCD apaga-se automaticamente. O primeiro toque no encoder volta a ligar o ecrã — esse toque é descartado para não disparar ações acidentais.
 
 ---
 
@@ -119,7 +116,7 @@ Todos os seletores do sistema (horas, minutos, durações, intervalos e menus) p
   click -> minutos
 ```
 
-Roda para ajustar as horas → clica → roda para ajustar os minutos → clica para guardar. A hora é escrita no módulo RTC DS3231 e mantém-se mesmo sem energia no ESP32, desde que a bateria do módulo esteja carregada.
+Roda para ajustar as horas → clica → roda para ajustar os minutos → clica para guardar. A hora é escrita no módulo RTC DS3231 e mantém-se mesmo sem energia no ESP32, desde que a bateria CR2032 do módulo esteja carregada.
 
 ---
 
@@ -142,14 +139,16 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Encoder CLK | 32 |
 | Encoder DT | 33 |
 | Encoder SW | 25 |
-| RTC SDA | 21 (mesmo barramento I2C) |
-| RTC SCL | 22 (mesmo barramento I2C) |
-| Relé Zona 1 | 26 |
-| Relé Zona 2 | 27 |
-| Relé Zona 3 | 14 |
-| Relé Zona 4 | 12 |
+| RTC SDA | 21 (mesmo barramento I2C que o LCD) |
+| RTC SCL | 22 (mesmo barramento I2C que o LCD) |
+| Relé Zona 1 — Jardim | 26 |
+| Relé Zona 2 — Horta | 27 |
+| Relé Zona 3 — Relvado | 14 |
+| Relé Zona 4 — Sebe | 12 |
 
-> Os relés são ativados em LOW (padrão dos módulos de relé com optoacoplador). Se o teu módulo for ativo em HIGH, altera `RELAY_ON` / `RELAY_OFF` em `config.h`.
+> **I2C partilhado:** LCD (0x27) e DS3231 (0x68) coexistem nos mesmos dois fios SDA/SCL sem conflito — cada dispositivo responde apenas ao seu endereço.
+
+> **Relés active-LOW:** padrão nos módulos com optoacoplador. Se o teu módulo for active-HIGH, altera `RELAY_ON` / `RELAY_OFF` em `config.h`.
 
 ---
 
@@ -157,19 +156,23 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 
 | Funcionalidade | Estado |
 |---|---|
-| Interface LCD + encoder | ✅ Completo |
-| Modos automáticos (Intenso / Médio / Fraco / Desativado) | ✅ Completo |
+| Interface LCD + encoder (FSM com 7 estados) | ✅ Completo |
+| Modos automáticos com horários configuráveis | ✅ Completo |
 | Rega manual geral e personalizada | ✅ Completo |
-| Testes de zona | ✅ Completo |
-| Configuração de zonas (duração, ativar/desativar) | ✅ Completo |
+| Testes de zona (5s por zona) | ✅ Completo |
+| Configuração de zonas (duração 0–20 min, ativar/desativar) | ✅ Completo |
 | Controlo de relés GPIO | ✅ Completo |
-| Relógio RTC DS3231 com acerto de hora | ✅ Completo |
-| Suspensão de rega | ✅ Completo |
-| Gestão de ecrã (sleep/wake) | ✅ Completo |
-| Persistência de configurações (NVS) | ✅ Completo |
-| Agendamento automático por hora | ✅ Completo |
-| Histórico em ficheiro CSV (LittleFS) | ✅ Completo |
-| Modo Personalizado (horário livre) | ✅ Completo |
+| Relógio RTC DS3231 com acerto de hora via encoder | ✅ Completo |
+| Agendamento automático por hora (Scheduler) | ✅ Completo |
+| Suspensão de rega com expiração automática (3 dias) | ✅ Completo |
+| Gestão de ecrã (sleep/wake, timeout configurável) | ✅ Completo |
+| Persistência de configurações em NVS flash | ✅ Completo |
+| Histórico de ciclos em CSV (LittleFS) | ✅ Completo |
+| Simulação Wokwi (env:wokwi com DS1307) | ✅ Completo |
+| Modo Personalizado (horário livre) | 🔲 Futuro |
+| Acertar data completa (dia/mês/ano) via encoder | 🔲 Futuro |
+| Editar nomes das zonas | 🔲 Futuro |
+| Duração de suspensão configurável | 🔲 Futuro |
 
 ---
 
@@ -185,13 +188,18 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Extensão PlatformIO IDE | `platformio.ide` |
 | Extensão Wokwi for VSCode | `wokwi.wokwi-vscode` + conta gratuita em wokwi.com |
 
-**Compilar:**
+**Compilar para hardware real:**
 ```
-Ctrl + Alt + B   (ou botão ✓ na barra inferior do VSCode)
+Ctrl + Alt + B
 ```
-Via terminal:
+Ou via terminal:
 ```bash
-pio run
+pio run -e esp32dev
+```
+
+**Compilar para Wokwi** (usa DS1307 em vez de DS3231):
+```bash
+pio run -e wokwi
 ```
 
 **Simular no Wokwi** (requer firmware compilado):
@@ -202,12 +210,12 @@ Na primeira utilização: `F1 → Wokwi: Request License`
 
 **Upload para hardware real:**
 ```
-Ctrl + Alt + U   (ou botão → na barra inferior)
+Ctrl + Alt + U
 ```
 
 **Monitor série** (115200 baud):
 ```
-Ctrl + Alt + S   (ou botão de tomada na barra inferior)
+Ctrl + Alt + S
 ```
 
 ---
@@ -217,63 +225,84 @@ Ctrl + Alt + S   (ou botão de tomada na barra inferior)
 ```
 rega-esp32/
 ├── src/
-│   ├── config.h                 # pinos, constantes, versão de firmware
-│   ├── AppState.h / .cpp        # estado global único (gState)
-│   ├── Display.h / .cpp         # wrapper LCD com shadow buffer
-│   ├── Encoder.h / .cpp         # driver ISR do encoder rotativo
-│   ├── History.h / .cpp         # gestão de ficheiro CSV em LittleFS
-│   ├── RTClock.h / .cpp         # módulo DS3231
-│   ├── Scheduler.h / .cpp       # agendamento automático
-│   ├── Storage.h / .cpp         # persistência NVS (Preferences)
-│   ├── WateringController.h/.cpp# fila de zonas + controlo de relés
-│   ├── UI.h / .cpp              # máquina de estados da interface
-│   └── main.cpp                 # setup() e loop()
-├── diagram.json                 # circuito para o simulador Wokwi
-├── platformio.ini               # configuração PlatformIO + dependências
-└── wokwi.toml                   # apontador para o firmware compilado
+│   ├── config.h                   pinos, constantes, horários padrão, versão
+│   ├── AppState.h / .cpp          estado global (gState), tabela de horários
+│   ├── Display.h / .cpp           wrapper LCD com shadow buffer anti-flickering
+│   ├── Encoder.h / .cpp           driver ISR do encoder rotativo
+│   ├── RTClock.h / .cpp           módulo DS3231 (DS1307 em Wokwi)
+│   ├── Scheduler.h / .cpp         agendamento automático, cálculo de próxima rega
+│   ├── WateringController.h/.cpp  fila de zonas, controlo de relés, registo de histórico
+│   ├── History.h / .cpp           leitura/escrita do histórico CSV em LittleFS
+│   ├── Storage.h / .cpp           persistência de configurações em NVS
+│   ├── UI.h / .cpp                máquina de estados da interface (7 estados, 10 menus)
+│   └── main.cpp                   setup() e loop()
+├── diagram.json                   circuito para o simulador Wokwi
+├── platformio.ini                 configuração PlatformIO (esp32dev + wokwi)
+└── wokwi.toml                     apontador para o firmware compilado
 ```
 
-### Dependências entre módulos
+### Fluxo de inicialização
 
 ```
-main.cpp
-  ├── initAppState()          inicializa gState
-  ├── Storage                 lê/escreve NVS → gState
-  ├── History                 lê/escreve LittleFS (CSV)
-  ├── Display                 LCD I2C
-  ├── Encoder                 ISR + debounce
-  ├── RTClock                 DS3231 → escreve gState.now
-  ├── WateringController      fila de zonas → controla relés → escreve gState.watering
-  ├── Scheduler               compara gState.now com horários → dispara WateringController
-  └── UI                      lê Encoder, escreve Display, lê/escreve gState
+setup()
+  initAppState()          defaults em RAM
+  storage.begin/load()    sobrescreve RAM com valores guardados em NVS
+  history.begin()         monta LittleFS
+  display/encoder.begin() hardware UI
+  rtclock.begin()         DS3231 → gState.now, gState.rtc_valid
+  wateringCtrl.begin()    configura pinos de relé
+  scheduler.begin()       calcula primeiro next_hour/min
+  ui.begin()              desenha ecrã de idle
 ```
 
-`gState` é o único estado partilhado em RAM. Todos os módulos leem e escrevem nele diretamente — não há passagem de mensagens. Este modelo funciona bem num sistema single-threaded (loop Arduino) e simplifica a adição de novos módulos.
+### Fluxo do loop
+
+```
+loop() — executado continuamente
+  rtclock.update()       lê DS3231 → gState.now (1×/seg)
+  scheduler.update()     verifica trigger, dispara rega, expira suspensão
+  ui.update()            trata encoder, redesenha LCD
+  wateringCtrl.update()  avança temporizador de zona, controla relés
+```
 
 ---
 
 ### Decisões de design
 
-**Shadow buffer no Display**
-`lcd.clear()` causa um flash visível. O `Display` mantém uma cópia em memória do conteúdo atual do LCD e só envia para o hardware as linhas que efetivamente mudaram. O resultado é atualização sem flickering.
+**Shadow buffer no Display** — `lcd.clear()` causa um flash visível. O `Display` mantém uma cópia do conteúdo atual e só escreve para o hardware as linhas que mudaram, eliminando o flickering.
 
-**ISR no encoder**
-A rotação é capturada por interrupção hardware (`IRAM_ATTR`). O driver processa todos os passos acumulados de forma sequencial, garantindo que mesmo rotações muito rápidas sejam registadas sem perda de passos, resultando numa interface fluida.
+**ISR no encoder** — A rotação é capturada por interrupção hardware (`IRAM_ATTR`). O `loop()` lê apenas o delta acumulado, evitando perder passos quando o bus I2C está ocupado.
 
-**Aritmética de calendário no Scheduler**
-O agendador utiliza aritmética de tempo Unix (através da `RTClib`) para calcular as próximas regas. Isto garante que transições de mês, anos bissextos e modos de dias alternados funcionem com precisão absoluta, sem erros de lógica de calendário manual.
+**Máquina de estados da UI** — 7 estados (`IDLE`, `MENU`, `INFO`, `CONFIRM`, `DONE`, `DUR_PICK`, `TIME_EDIT`). Ações codificadas em strings compactas nos itens de menu (ex: `"confirm:...|main|general"`) — menus declarados como dados estáticos, sem callbacks.
 
-**Otimização de Memória Flash (NVS)**
-O sistema monitoriza o estado atual das configurações e apenas realiza escritas físicas na memória flash quando deteta uma alteração real nos valores. Esta técnica de "escrita diferencial" aumenta drasticamente a vida útil do chip ESP32.
+**`WaterTrigger` no histórico** — Cada ciclo é marcado com `AUTO`/`MANUAL`/`CUSTOM`/`TEST`. O caractere ASCII do enum é escrito diretamente no CSV (`A`, `M`, `C`, `T`), eliminando conversões.
 
-**Máquina de estados da UI**
-A UI é uma FSM com seis estados (`IDLE`, `MENU`, `INFO`, `CONFIRM`, `DONE`, `DUR_PICK`, `TIME_EDIT`). Transições são acionadas por rotação ou clique. O sistema de ações é codificado em strings compactas nos itens de menu (ex: `"confirm:Iniciar rega|...|main|general"`) — permite declarar menus como dados estáticos sem callbacks.
+**Suspensão com expiração por unix timestamp** — `suspended_until` é um timestamp UNIX calculado no momento da suspensão (`now.unix + 3 * 86400`). O Scheduler verifica a expiração a cada segundo. Sobrevive a reboots via NVS.
 
-**Sem Wi-Fi por design**
-O RTC DS3231 fornece tempo real com precisão de ±2 ppm (≈1 minuto por ano) sem qualquer dependência de rede. Não há superfície de ataque TCP/IP, não há credenciais em flash, não há falhas por falta de internet.
+**Sem Wi-Fi por design** — O DS3231 fornece tempo real com precisão de ±2 ppm (≈1 min/ano). Não há superfície de ataque TCP/IP, credenciais em flash, nem dependência de rede.
 
-**Relés em active-LOW**
-Os módulos de relé com optoacoplador mais comuns ativam com LOW. O código usa `RELAY_ON`/`RELAY_OFF` definidos em `config.h` — para módulos active-HIGH basta inverter os dois defines sem tocar no resto do código.
+**Dois ambientes PlatformIO** — `esp32dev` usa DS3231 real; `wokwi` compila com `-DWOKWI_SIM` que troca o chip para DS1307 (único RTC disponível no Wokwi), transparente para o resto do código.
+
+---
+
+### Configuração rápida (`config.h`)
+
+```cpp
+// Alterar horários padrão por modo:
+#define SCHED_INTENSO_SLOT0_H   7     // 07:00
+#define SCHED_INTENSO_SLOT1_H   18    // 18:00
+#define SCHED_MEDIO_SLOT0_H     18    // 18:00
+#define SCHED_FRACO_SLOT0_H     18    // dias alternados
+
+// Duração dos testes de zona:
+#define ZONE_TEST_DURATION_S    5
+
+// Timeout de idle antes de regressar ao ecrã principal:
+#define IDLE_TIMEOUT_MS         30000UL
+
+// Timeout de backlight padrão (alterável no menu):
+// (definido em AppState.cpp como 120000UL = 2 min)
+```
 
 ---
 
@@ -282,31 +311,18 @@ Os módulos de relé com optoacoplador mais comuns ativam com LOW. O código usa
 | Biblioteca | Uso |
 |---|---|
 | `marcoschwartz/LiquidCrystal_I2C` | Driver LCD I2C |
-| `adafruit/RTClib` | Driver DS3231 |
+| `adafruit/RTClib` | Driver DS3231 / DS1307 |
+| `adafruit/Adafruit BusIO` | Dependência do RTClib |
+| `Preferences.h` | NVS (incluída no framework Arduino ESP32) |
+| `LittleFS.h` | Sistema de ficheiros (incluído no framework Arduino ESP32) |
 
-Instaladas automaticamente pelo PlatformIO na primeira compilação.
-
----
-
-## Logs e Diagnóstico
-
-O sistema envia informações de estado via Serial (115200 baud) utilizando prefixos padronizados para facilitar a monitorização:
-
-| Categoria | Descrição |
-|---|---|
-| **[SYS]** | Inicialização e estado global do sistema. |
-| **[RTC]** | Estado do relógio em tempo real (DS3231). |
-| **[NVS]** | Persistência de dados na memória Flash. |
-| **[FS]** | Operações de ficheiros no LittleFS (Histórico). |
-| **[SCHED]** | Lógica de agendamento e suspensão. |
-| **[WATER]** | Controlo das zonas de rega e relés. |
-| **[UI]** | Interações do utilizador e navegação de menus. |
+As bibliotecas externas são instaladas automaticamente pelo PlatformIO na primeira compilação.
 
 ---
 
 ### Próximas iterações
 
-1. **Modo Personalizado** — implementar configuração de horários livres pelo utilizador
-2. **Sensores de Humidade** — bloquear rega se o solo estiver húmido
-3. **Deteção de Corrente** — monitorizar se a bomba/válvula está efetivamente a consumir energia
-4. **Exportação de Dados** — interface simples para descarregar o histórico CSV via Serial
+- **Acertar data completa** — o editor atual só ajusta hora:minuto; expandir para dia/mês/ano
+- **Modo Personalizado** — horário e zonas completamente livres, editáveis via encoder
+- **Duração de suspensão configurável** — actualmente fixo em 3 dias
+- **Editar nomes das zonas** — actualmente hardcoded em `AppState.cpp`

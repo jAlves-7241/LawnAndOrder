@@ -173,8 +173,13 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
             return (sched.dow_mask & (1 << now.dow)) != 0;
         case DayPattern::EVERY_X_DAYS: {
             uint32_t current_day = now.unix / 86400UL;
-            uint32_t ref_day     = gState.custom_ref_day;
-            // Calculate absolute difference in days
+            // First use: anchor the reference day to today and persist it
+            if (gState.custom_ref_day == 0xFFFFFFFFUL) {
+                gState.custom_ref_day = current_day;
+                storage.save();
+                Serial.printf("[SCHED] custom_ref_day definido: %lu\n", current_day);
+            }
+            uint32_t ref_day = gState.custom_ref_day;
             uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);
             return (diff % sched.interval_days) == 0;
         }

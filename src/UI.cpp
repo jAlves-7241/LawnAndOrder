@@ -29,6 +29,7 @@ UI::UI(Display& disp, Encoder& enc)
       _cur(0), _off(0), _backMenu(MenuID::MAIN),
       _durValue(5), _durContext(DurContext::CUSTOM_RUN), _durZoneIdx(0),
       _teHour(0), _teMin(0), _teField(0),
+      _teContext(TimeEditContext::RTC), _teCycleIdx(0),
       _lastActivity(0), _itemCount(0)
 {
     _pendingConfirmTag[0] = '\0';
@@ -322,6 +323,10 @@ void UI::_commitDurPick() {
     }
 
     if (_durContext == DurContext::SUSPEND) {
+        if (!gState.rtc_valid) {
+            _showInfo("! SEM RTC !", "Sem hora valida —", "nao e possivel", "suspender rega.", MenuID::PROG);
+            return;
+        }
         gState.suspended = true;
         // _durValue is days. 1 day = 86400 seconds.
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
@@ -446,15 +451,6 @@ void UI::_executeConfirmed() {
 
     } else if (strcmp(tag, "custom") == 0) {
         wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
-
-    } else if (strcmp(tag, "suspend") == 0) {
-        if (gState.rtc_valid) {
-            gState.suspended = true;
-            // 3 days = 3 * 24 * 3600 = 259200 seconds
-            gState.suspended_until = gState.now.unix + 259200UL;
-            storage.save();
-            Serial.printf("[UI] Acao: Suspender rega 3 dias (Ate: %u)\n", gState.suspended_until);
-        }
 
     } else if (strcmp(tag, "reset") == 0) {
         storage.clear();
@@ -984,13 +980,12 @@ void UI::_renderTimeEdit() {
 // Utilities
 // ─────────────────────────────────────────────────────────
 uint8_t UI::_totalZoneDuration() {
-    uint16_t total = 0;
+    uint8_t total = 0;
     for (int i = 0; i < NUM_ZONES; i++) {
-        if (gState.zones[i].enabled) {
-            total += gState.zones[i].duration_min;
-        }
+        if (gState.zones[i].enabled)
+            total += gState.zones[i].duration_min;  // max 4×20=80, fits uint8_t
     }
-    return (total > 255) ? 255 : (uint8_t)total;
+    return total;
 }
 
 // ─────────────────────────────────────────────────────────
