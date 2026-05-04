@@ -1,6 +1,6 @@
 # Sistema de Rega - ESP32
 
-Controlador autónomo de rega para jardim, com interface física por ecrã LCD e encoder rotativo. Sem aplicação, sem Wi-Fi, sem dependências de rede — funciona de forma completamente independente.
+Controlador autónomo de rega para jardim, com interface física por ecrã LCD e encoder rotativo. Sem aplicação, sem Wi-Fi, sem dependências de rede - funciona de forma completamente independente.
 
 ---
 
@@ -12,7 +12,7 @@ O ecrã principal mostra a hora atual e o horário da próxima rega. Quando uma 
 
 ---
 
-## Interface — guia de utilização
+## Interface - guia de utilização
 
 ### Ecrã de idle (ecrã principal)
 
@@ -62,7 +62,7 @@ Navega rodando o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nív
 
 | Opção | Comportamento |
 |---|---|
-| **Rega Geral** | Executa um ciclo completo seguindo o modo automático atual — zonas ativas pela duração configurada para cada uma |
+| **Rega Geral** | Executa um ciclo completo seguindo o modo automático atual - zonas ativas pela duração configurada para cada uma |
 | **Personalizado** | Seleciona as zonas a incluir e define uma duração uniforme (1–20 min); pede confirmação antes de iniciar |
 
 ---
@@ -80,11 +80,11 @@ Navega rodando o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nív
 
 | Modo | Horário | Indicado para |
 |---|---|---|
-| **Intenso** | 07:00 + 18:00, todos os dias | Verão, calor intenso |
-| **Médio** | 18:00, todos os dias | Primavera / Outono |
-| **Fraco** | 18:00, dias alternados (dias ímpares) | Inverno suave |
-| **Desativado** | — | Inverno / ausência prolongada |
-| **Personalizado** | Reservado para implementação futura | — |
+| **Intenso** | 3x/dia, todos os dias | Verão, calor intenso |
+| **Médio** | 2x/dia, todos os dias | Primavera / Outono |
+| **Fraco** | 1x/dia, todos os dias | Inverno suave |
+| **Desativado** | - | Inverno / ausência prolongada |
+| **Personalizado** | Número de ciclos diários e frequência variáveis | Qualquer |
 
 Os horários padrão são definidos em `config.h` com `SCHED_*` e podem ser alterados sem tocar no resto do código.
 
@@ -103,7 +103,7 @@ Os horários padrão são definidos em `config.h` com `SCHED_*` e podem ser alte
 
 #### Tempo de ecrã
 
-Após o período de inatividade configurado, o backlight do LCD apaga-se automaticamente. O primeiro toque no encoder volta a ligar o ecrã — esse toque é descartado para não disparar ações acidentais.
+Após o período de inatividade configurado, o backlight do LCD apaga-se automaticamente. O primeiro toque no encoder volta a ligar o ecrã - esse toque é descartado para não disparar ações acidentais.
 
 ---
 
@@ -141,12 +141,12 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Encoder SW | 25 |
 | RTC SDA | 21 (mesmo barramento I2C que o LCD) |
 | RTC SCL | 22 (mesmo barramento I2C que o LCD) |
-| Relé Zona 1 — Jardim | 26 |
-| Relé Zona 2 — Horta | 27 |
-| Relé Zona 3 — Relvado | 14 |
-| Relé Zona 4 — Sebe | 12 |
+| Relé Zona 1 - Jardim | 26 |
+| Relé Zona 2 - Horta | 27 |
+| Relé Zona 3 - Relvado | 14 |
+| Relé Zona 4 - Sebe | 12 |
 
-> **I2C partilhado:** LCD (0x27) e DS3231 (0x68) coexistem nos mesmos dois fios SDA/SCL sem conflito — cada dispositivo responde apenas ao seu endereço.
+> **I2C partilhado:** LCD (0x27) e DS3231 (0x68) coexistem nos mesmos dois fios SDA/SCL sem conflito - cada dispositivo responde apenas ao seu endereço.
 
 > **Relés active-LOW:** padrão nos módulos com optoacoplador. Se o teu módulo for active-HIGH, altera `RELAY_ON` / `RELAY_OFF` em `config.h`.
 
@@ -258,7 +258,7 @@ setup()
 ### Fluxo do loop
 
 ```
-loop() — executado continuamente
+loop() - executado continuamente
   rtclock.update()       lê DS3231 → gState.now (1×/seg)
   scheduler.update()     verifica trigger, dispara rega, expira suspensão
   ui.update()            trata encoder, redesenha LCD
@@ -269,19 +269,19 @@ loop() — executado continuamente
 
 ### Decisões de design
 
-**Shadow buffer no Display** — `lcd.clear()` causa um flash visível. O `Display` mantém uma cópia do conteúdo atual e só escreve para o hardware as linhas que mudaram, eliminando o flickering.
+**Shadow buffer no Display** - `lcd.clear()` causa um flash visível. O `Display` mantém uma cópia do conteúdo atual e só escreve para o hardware as linhas que mudaram, eliminando o flickering.
 
-**ISR no encoder** — A rotação é capturada por interrupção hardware (`IRAM_ATTR`). O `loop()` lê apenas o delta acumulado, evitando perder passos quando o bus I2C está ocupado.
+**ISR no encoder** - A rotação é capturada por interrupção hardware (`IRAM_ATTR`). O `loop()` lê apenas o delta acumulado, evitando perder passos quando o bus I2C está ocupado.
 
-**Máquina de estados da UI** — 7 estados (`IDLE`, `MENU`, `INFO`, `CONFIRM`, `DONE`, `DUR_PICK`, `TIME_EDIT`). Ações codificadas em strings compactas nos itens de menu (ex: `"confirm:...|main|general"`) — menus declarados como dados estáticos, sem callbacks.
+**Máquina de estados da UI** - 7 estados (`IDLE`, `MENU`, `INFO`, `CONFIRM`, `DONE`, `DUR_PICK`, `TIME_EDIT`). Ações codificadas em strings compactas nos itens de menu (ex: `"confirm:...|main|general"`) - menus declarados como dados estáticos, sem callbacks.
 
-**`WaterTrigger` no histórico** — Cada ciclo é marcado com `AUTO`/`MANUAL`/`CUSTOM`/`TEST`. O caractere ASCII do enum é escrito diretamente no CSV (`A`, `M`, `C`, `T`), eliminando conversões.
+**`WaterTrigger` no histórico** - Cada ciclo é marcado com `AUTO`/`MANUAL`/`CUSTOM`/`TEST`. O caractere ASCII do enum é escrito diretamente no CSV (`A`, `M`, `C`, `T`), eliminando conversões.
 
-**Suspensão com expiração por unix timestamp** — `suspended_until` é um timestamp UNIX calculado no momento da suspensão (`now.unix + 3 * 86400`). O Scheduler verifica a expiração a cada segundo. Sobrevive a reboots via NVS.
+**Suspensão com expiração por unix timestamp** - `suspended_until` é um timestamp UNIX calculado no momento da suspensão (`now.unix + 3 * 86400`). O Scheduler verifica a expiração a cada segundo. Sobrevive a reboots via NVS.
 
-**Sem Wi-Fi por design** — O DS3231 fornece tempo real com precisão de ±2 ppm (≈1 min/ano). Não há superfície de ataque TCP/IP, credenciais em flash, nem dependência de rede.
+**Sem Wi-Fi por design** - O DS3231 fornece tempo real com precisão de ±2 ppm (≈1 min/ano). Não há superfície de ataque TCP/IP, credenciais em flash, nem dependência de rede.
 
-**Dois ambientes PlatformIO** — `esp32dev` usa DS3231 real; `wokwi` compila com `-DWOKWI_SIM` que troca o chip para DS1307 (único RTC disponível no Wokwi), transparente para o resto do código.
+**Dois ambientes PlatformIO** - `esp32dev` usa DS3231 real; `wokwi` compila com `-DWOKWI_SIM` que troca o chip para DS1307 (único RTC disponível no Wokwi), transparente para o resto do código.
 
 ---
 
@@ -322,7 +322,7 @@ As bibliotecas externas são instaladas automaticamente pelo PlatformIO na prime
 
 ### Próximas iterações
 
-- **Acertar data completa** — o editor atual só ajusta hora:minuto; expandir para dia/mês/ano
-- **Modo Personalizado** — horário e zonas completamente livres, editáveis via encoder
-- **Duração de suspensão configurável** — actualmente fixo em 3 dias
-- **Editar nomes das zonas** — actualmente hardcoded em `AppState.cpp`
+- **Acertar data completa** - o editor atual só ajusta hora:minuto; expandir para dia/mês/ano
+- **Modo Personalizado** - horário e zonas completamente livres, editáveis via encoder
+- **Duração de suspensão configurável** - actualmente fixo em 3 dias
+- **Editar nomes das zonas** - actualmente hardcoded em `AppState.cpp`
