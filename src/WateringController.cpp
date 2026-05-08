@@ -11,8 +11,8 @@ WateringController wateringCtrl;
 // ─────────────────────────────────────────────────────────
 WateringController::WateringController()
     : _queueLen(0), _queuePos(0),
-      _active(false), _zoneIdx(0),
-      _zoneStartMs(0), _zoneDurationMs(0),
+      _active(false), _isWaiting(false), _zoneIdx(0),
+      _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0),
       _runTrigger(WaterTrigger::MANUAL)
 {
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
@@ -53,6 +53,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _queuePos   = 0;
     _active     = true;
+    _isWaiting  = false;
     _startNextZone();
 
     Serial.println("[WATER] startGeneral");
@@ -81,6 +82,7 @@ void WateringController::stop() {
     if (_active) {
         _deactivateAll();
         _active = false;
+        _isWaiting = false;
         Serial.println("[WATER] stopped");
     }
     _queueLen = 0;
@@ -93,6 +95,14 @@ void WateringController::stop() {
 // ─────────────────────────────────────────────────────────
 void WateringController::update() {
     if (!_active) return;
+
+    if (_isWaiting) {
+        if (millis() - _waitStartMs >= ZONE_WAIT_DELAY_MS) {
+            _isWaiting = false;
+            _startNextZone();
+        }
+        return;
+    }
 
     uint32_t elapsed = millis() - _zoneStartMs;
 
@@ -111,7 +121,9 @@ void WateringController::update() {
         _queuePos++;
 
         if (_queuePos < _queueLen) {
-            _startNextZone();
+            _isWaiting = true;
+            _waitStartMs = millis();
+            _syncState();
         } else {
             _active = false;
             _queueLen = 0;
@@ -143,6 +155,7 @@ void WateringController::_buildQueue(const bool zones[NUM_ZONES],
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _queuePos   = 0;
     _active     = true;
+    _isWaiting  = false;
     _startNextZone();
 }
 
@@ -183,7 +196,8 @@ void WateringController::_deactivateAll() {
 }
 
 void WateringController::_syncState() {
-    gState.watering.active   = _active;
-    gState.watering.zone_idx = _active ? _zoneIdx : 0;
+    gState.watering.active     = _active;
+    gState.watering.is_waiting = _isWaiting;
+    gState.watering.zone_idx   = _active ? _zoneIdx : 0;
     if (!_active) gState.watering.progress_pct = 0;
 }

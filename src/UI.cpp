@@ -62,8 +62,8 @@ void UI::update() {
     if (rot != 0) { _lastActivity = millis(); _handleRotation(rot); }
     if (click)    { _lastActivity = millis(); _handleClick(); }
 
-    // Idle timeout — TIME_EDIT is excluded so an in-progress edit isn't lost
-    if (_screen != Screen::IDLE && _screen != Screen::TIME_EDIT &&
+    // Idle timeout — applies to all screens, any unsaved edits are discarded
+    if (_screen != Screen::IDLE &&
         (millis() - _lastActivity) >= IDLE_TIMEOUT_MS) {
         _goIdle();
     }
@@ -661,6 +661,9 @@ void UI::_buildMenu(MenuID mid) {
     case MenuID::PROG:
         makeItem(it++, "Ver Horarios",     "horarios");
         makeItem(it++, "Alterar Modo",     "go:modos");
+        if (gState.mode == AppMode::PERSONALIZADO) {
+            makeItem(it++, "Personalizar", "go:ccustom");
+        }
         makeItem(it++, "Configurar Zonas", "go:cfgz");
         if (gState.suspended)
             makeItem(it++, "Retomar Rega", "cancel_susp");
@@ -839,12 +842,17 @@ void UI::_renderIdle() {
     }
 
     if (gState.watering.active) {
-        uint8_t zi = gState.watering.zone_idx;
-        if (zi >= NUM_ZONES) zi = 0;  // bounds guard
-        char zrow[LCD_COLS+1], pb[LCD_COLS+1];
-        snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
-        _d.pbar(pb, gState.watering.progress_pct);
-        _d.setRows(b0, "A regar agora...", zrow, pb);
+        if (gState.watering.is_waiting) {
+            char p0[LCD_COLS+1], p1[LCD_COLS+1];
+            _d.setRows(b0, _d.cx(p0, "Pausa entre zonas"), _d.cx(p1, "Aguarde..."), "");
+        } else {
+            uint8_t zi = gState.watering.zone_idx;
+            if (zi >= NUM_ZONES) zi = 0;  // bounds guard
+            char zrow[LCD_COLS+1], pb[LCD_COLS+1];
+            snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
+            _d.pbar(pb, gState.watering.progress_pct);
+            _d.setRows(b0, "A regar agora...", zrow, pb);
+        }
     } else {
         // Row 3: next scheduled watering or suspension status
         if (!gState.rtc_valid) {

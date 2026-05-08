@@ -164,15 +164,15 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Controlo de relés GPIO | ✅ Completo |
 | Relógio RTC DS3231 com acerto de hora via encoder | ✅ Completo |
 | Agendamento automático por hora (Scheduler) | ✅ Completo |
-| Suspensão de rega com expiração automática (3 dias) | ✅ Completo |
+| Suspensão de rega com expiração configurável | ✅ Completo |
 | Gestão de ecrã (sleep/wake, timeout configurável) | ✅ Completo |
 | Persistência de configurações em NVS flash | ✅ Completo |
 | Histórico de ciclos em CSV (LittleFS) | ✅ Completo |
-| Simulação Wokwi (env:wokwi com DS1307) | ✅ Completo |
+| Simulação Wokwi | ✅ Completo |
 | Modo Personalizado (horário livre) | ✅ Completo |
 | Acertar data completa (dia/mês/ano) via encoder | 🔲 Futuro |
 | Editar nomes das zonas | 🔲 Futuro |
-| Duração de suspensão configurável | 🔲 Futuro |
+| Duração de suspensão configurável | ✅ Completo |
 
 ---
 
@@ -195,11 +195,6 @@ Ctrl + Alt + B
 Ou via terminal:
 ```bash
 pio run -e esp32dev
-```
-
-**Compilar para Wokwi** (usa DS1307 em vez de DS3231):
-```bash
-pio run -e wokwi
 ```
 
 **Simular no Wokwi** (requer firmware compilado):
@@ -237,7 +232,7 @@ rega-esp32/
 │   ├── UI.h / .cpp                máquina de estados da interface (7 estados, 10 menus)
 │   └── main.cpp                   setup() e loop()
 ├── diagram.json                   circuito para o simulador Wokwi
-├── platformio.ini                 configuração PlatformIO (esp32dev + wokwi)
+├── platformio.ini                 configuração PlatformIO
 └── wokwi.toml                     apontador para o firmware compilado
 ```
 
@@ -281,18 +276,23 @@ loop() - executado continuamente
 
 **Sem Wi-Fi por design** - O DS3231 fornece tempo real com precisão de ±2 ppm (≈1 min/ano). Não há superfície de ataque TCP/IP, credenciais em flash, nem dependência de rede.
 
-**Dois ambientes PlatformIO** - `esp32dev` usa DS3231 real; `wokwi` compila com `-DWOKWI_SIM` que troca o chip para DS1307 (único RTC disponível no Wokwi), transparente para o resto do código.
-
 ---
 
 ### Configuração rápida (`config.h`)
 
 ```cpp
 // Alterar horários padrão por modo:
-#define SCHED_INTENSO_SLOT0_H   7     // 07:00
-#define SCHED_INTENSO_SLOT1_H   18    // 18:00
-#define SCHED_MEDIO_SLOT0_H     18    // 18:00
-#define SCHED_FRACO_SLOT0_H     18    // dias alternados
+// INTENSO: 3 ciclos (07:00, 13:00, 19:00)
+#define SCHED_INTENSO_SLOT0_H   7
+#define SCHED_INTENSO_SLOT1_H   13
+#define SCHED_INTENSO_SLOT2_H   19
+
+// MEDIO: 2 ciclos (08:00, 20:00)
+#define SCHED_MEDIO_SLOT0_H     8
+#define SCHED_MEDIO_SLOT1_H     20
+
+// FRACO: 1 ciclo diário
+#define SCHED_FRACO_SLOT0_H     8
 
 // Duração dos testes de zona:
 #define ZONE_TEST_DURATION_S    5
@@ -323,6 +323,4 @@ As bibliotecas externas são instaladas automaticamente pelo PlatformIO na prime
 ### Próximas iterações
 
 - **Acertar data completa** - o editor atual só ajusta hora:minuto; expandir para dia/mês/ano
-- **Modo Personalizado** - horário e zonas completamente livres, editáveis via encoder
-- **Duração de suspensão configurável** - actualmente fixo em 3 dias
 - **Editar nomes das zonas** - actualmente hardcoded em `AppState.cpp`
