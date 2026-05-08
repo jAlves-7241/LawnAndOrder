@@ -71,5 +71,6 @@
 #define DEBOUNCE_MS             200UL
 #define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity
 #define ZONE_TEST_DURATION_S    5         // seconds per zone in test mode
+#define ZONE_WAIT_DELAY_MS      8000UL    // ms to wait between zones closing/opening
 #define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL  // sentinel — never turn off
 #define DISPLAY_OFF_DELAY_MS    60000UL   // turn off pixels 60s after backlight

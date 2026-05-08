@@ -83,7 +83,7 @@ void initAppState() {
     gState.now = { 2026, 1, 1, 0, 0, 0, 4, 1767225600UL };  // placeholder until RTC is read
 
     // ── Watering ─────────────────────────────────────────
-    gState.watering = { false, 0, 0 };
+    gState.watering = { false, false, 0, 0 };
 
     // ── Custom run defaults ──────────────────────────────
     for (int i = 0; i < NUM_ZONES; i++) gState.custom_sel[i] = false;
