@@ -44,11 +44,19 @@ bool Encoder::getClick() {
     bool     pressed = (digitalRead(_sw) == LOW);
     uint32_t now     = millis();
 
-    if (pressed && !_btn_prev && (now - _btn_last_ms) >= DEBOUNCE_MS) {
-        _btn_prev    = true;
+    // Ignorar qualquer oscilação durante a janela de debounce
+    if (now - _btn_last_ms < DEBOUNCE_MS) {
+        return false; 
+    }
+
+    if (pressed && !_btn_prev) {
+        _btn_prev = true;
         _btn_last_ms = now;
         return true;
+    } else if (!pressed && _btn_prev) {
+        _btn_prev = false;
+        _btn_last_ms = now;
     }
-    if (!pressed) _btn_prev = false;
+
     return false;
 }
