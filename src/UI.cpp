@@ -728,7 +728,7 @@ void UI::_buildMenu(MenuID mid) {
         uint8_t n = history.readLast(HISTORY_DISPLAY, entries);
 
         if (n == 0) {
-            makeItem(it++, "Sem registos", "info:HISTORICO|Sem registos||Inicia uma rega|hist");
+            makeItem(it++, "Sem registos", "");
         } else {
             // Build one menu item per entry (most recent last → show in reverse)
             for (int8_t i = (int8_t)n - 1; i >= 0; i--) {
