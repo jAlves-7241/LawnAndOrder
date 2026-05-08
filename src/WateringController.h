@@ -34,9 +34,11 @@ private:
     uint8_t    _queuePos;
 
     bool     _active;
+    bool     _isWaiting;
     uint8_t  _zoneIdx;
     uint32_t _zoneStartMs;
     uint32_t _zoneDurationMs;
+    uint32_t _waitStartMs;
 
     // ── History tracking ──────────────────────────────────
     WaterTrigger _runTrigger;              // trigger type of current cycle

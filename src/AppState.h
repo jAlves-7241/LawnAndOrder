@@ -23,6 +23,7 @@ struct Zone {
 
 struct WateringStatus {
     bool    active;
+    bool    is_waiting;
     uint8_t zone_idx;
     uint8_t progress_pct;   // 0–100
 };
