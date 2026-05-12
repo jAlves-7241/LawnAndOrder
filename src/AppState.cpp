@@ -77,6 +77,7 @@ void initAppState() {
     gState.next_min  = SCHED_MEDIO_SLOT0_M;
 
     gState.backlight_timeout_ms = 120000UL;  // default: 2 minutes
+    gState.auto_dst = AUTO_DST_DEFAULT;
 
     // ── RTC ──────────────────────────────────────────────
     gState.rtc_valid = false;

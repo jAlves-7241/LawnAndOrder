@@ -64,7 +64,19 @@ void RTClock::update() {
     }
 #endif
 
-    _copyToState(_rtc.now());
+    DateTime utcDt = _rtc.now();
+    DateTime localDt = utcDt;
+
+    if (gState.auto_dst && _isEU_DST(utcDt)) {
+        // Apply +1 hour offset
+        localDt = DateTime(utcDt.unixtime() + 3600);
+    }
+
+    _copyToState(localDt);
+
+    // Override the Unix timestamp with the actual UTC timestamp.
+    // This makes time deltas (e.g., suspension) immune to DST transitions.
+    gState.now.unix = utcDt.unixtime();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -72,13 +84,52 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                   uint8_t  hour, uint8_t minute, uint8_t second) {
     if (!_found) return;
 
-    _rtc.adjust(DateTime(year, month, day, hour, minute, second));
+    // Preservar a suspensão mantendo a diferença de tempo absoluta
+    uint32_t oldUnixUTC = gState.now.unix;
+
+    // A hora recebida do utilizador é HORA LOCAL.
+    DateTime localDt(year, month, day, hour, minute, second);
+    DateTime utcDt = localDt;
+
+    // Converter para UTC se o DST estiver ativo e aplicável a esta hora
+    if (gState.auto_dst) {
+        // Fast heuristic for Local -> UTC DST check
+        bool isDstLocal = false;
+        if (month > 3 && month < 10) isDstLocal = true;
+        else if (month == 3 || month == 10) {
+            uint8_t ls = 31 - DateTime(year, month, 31, 0, 0, 0).dayOfTheWeek();
+            if (month == 3) {
+                if (day > ls || (day == ls && hour >= 2)) isDstLocal = true;
+            } else {
+                if (day < ls || (day == ls && hour < 2)) isDstLocal = true;
+            }
+        }
+        if (isDstLocal) {
+            utcDt = DateTime(localDt.unixtime() - 3600);
+        }
+    }
+
+    _rtc.adjust(utcDt);
     _lostPower       = false;
     gState.rtc_valid = true;
 
-    _copyToState(_rtc.now());
+    // Forçar releitura para gState
+    update();
 
-    Serial.printf("[RTC] Hora definida: %04d-%02d-%02d %02d:%02d:%02d\n",
+    // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)
+    if (gState.suspended && gState.suspended_until > 0 && oldUnixUTC > 0) {
+        int32_t delta = (int32_t)(gState.now.unix - oldUnixUTC);
+        uint32_t newUntil = (int32_t)gState.suspended_until + delta;
+        // Se a nova hora ultrapassou a meta de suspensão
+        if (newUntil <= gState.now.unix) {
+            gState.suspended = false;
+            gState.suspended_until = 0;
+        } else {
+            gState.suspended_until = newUntil;
+        }
+    }
+
+    Serial.printf("[RTC] Hora (Local) definida: %04d-%02d-%02d %02d:%02d:%02d\n",
                   year, month, day, hour, minute, second);
 }
 
@@ -98,4 +149,23 @@ void RTClock::_copyToState(const DateTime& dt) {
     gState.now.sec   = dt.second();
     gState.now.dow   = dt.dayOfTheWeek();
     gState.now.unix  = dt.unixtime();
+}
+
+// Retorna true se a hora (UTC) cai no período de horário de verão europeu
+bool RTClock::_isEU_DST(const DateTime& dt) {
+    uint8_t m = dt.month();
+    if (m > 3 && m < 10) return true;
+    if (m < 3 || m > 10) return false;
+    
+    // Calcular o último domingo do mês (março ou outubro)
+    uint8_t ls = 31 - DateTime(dt.year(), m, 31, 0, 0, 0).dayOfTheWeek();
+    
+    if (m == 3) {
+        // DST começa no último domingo de março à 01:00 UTC
+        if (dt.day() > ls || (dt.day() == ls && dt.hour() >= 1)) return true;
+    } else {
+        // DST termina no último domingo de outubro à 01:00 UTC
+        if (dt.day() < ls || (dt.day() == ls && dt.hour() < 1)) return true;
+    }
+    return false;
 }

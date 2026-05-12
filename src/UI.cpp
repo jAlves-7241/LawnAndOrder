@@ -20,6 +20,16 @@ static void makeItem(MenuItem* it, const char* label, const char* action) {
     safe_copy(it->action, action, sizeof(it->action));
 }
 
+// Retorna o número de dias de um determinado mês (inclui anos bissextos)
+static uint8_t daysInMonth(uint16_t year, uint8_t month) {
+    if (month == 2) {
+        bool isLeap = ((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0);
+        return isLeap ? 29 : 28;
+    }
+    if (month == 4 || month == 6 || month == 9 || month == 11) return 30;
+    return 31;
+}
+
 // ─────────────────────────────────────────────────────────
 // Constructor / begin
 // ─────────────────────────────────────────────────────────
@@ -28,6 +38,7 @@ UI::UI(Display& disp, Encoder& enc)
       _screen(Screen::IDLE), _mid(MenuID::MAIN),
       _cur(0), _off(0), _backMenu(MenuID::MAIN),
       _durValue(5), _durContext(DurContext::CUSTOM_RUN), _durZoneIdx(0),
+      _deDay(1), _deMonth(1), _deYear(2026), _deField(0),
       _teHour(0), _teMin(0), _teField(0),
       _teContext(TimeEditContext::RTC), _teCycleIdx(0),
       _lastActivity(0), _itemCount(0)
@@ -132,6 +143,35 @@ void UI::_handleRotation(int8_t dir) {
             break;
         }
 
+        case Screen::DATE_EDIT:
+            if (_deField == 0) {
+                // Dia: wrap consoante o mês
+                uint8_t max_days = daysInMonth(_deYear, _deMonth);
+                int d = (int)_deDay + dir;
+                if (d < 1) d = max_days;
+                else if (d > max_days) d = 1;
+                _deDay = (uint8_t)d;
+            } else if (_deField == 1) {
+                // Mês: wrap 1-12
+                int m = (int)_deMonth + dir;
+                if (m < 1) m = 12;
+                else if (m > 12) m = 1;
+                _deMonth = (uint8_t)m;
+                // Re-validar o dia se o mês encolheu
+                uint8_t max_days = daysInMonth(_deYear, _deMonth);
+                if (_deDay > max_days) _deDay = max_days;
+            } else {
+                // Ano: limite razoável (2020-2099)
+                int y = (int)_deYear + dir;
+                if (y < 2020) y = 2099;
+                else if (y > 2099) y = 2020;
+                _deYear = (uint16_t)y;
+                uint8_t max_days = daysInMonth(_deYear, _deMonth);
+                if (_deDay > max_days) _deDay = max_days;
+            }
+            _renderDateEdit();
+            break;
+
         case Screen::TIME_EDIT:
             if (_teField == 0) {
                 // Editing hour: 0–23, wraps
@@ -168,6 +208,10 @@ void UI::_handleClick() {
 
         case Screen::DUR_PICK:
             _commitDurPick();
+            break;
+
+        case Screen::DATE_EDIT:
+            _commitDateEdit();
             break;
 
         case Screen::TIME_EDIT:
@@ -359,6 +403,26 @@ void UI::_commitDurPick() {
     _showConfirm(zstr, dstr, MenuID::MANUAL, "custom");
 }
 
+void UI::_showDateEdit() {
+    _deDay   = gState.rtc_valid ? gState.now.day : 1;
+    _deMonth = gState.rtc_valid ? gState.now.month : 1;
+    _deYear  = gState.rtc_valid ? gState.now.year : 2026;
+    _deField = 0; // começar no dia
+    _backMenu = MenuID::DEF;
+    _screen  = Screen::DATE_EDIT;
+    _renderDateEdit();
+}
+
+void UI::_commitDateEdit() {
+    if (_deField < 2) {
+        _deField++;
+        _renderDateEdit();
+    } else {
+        // Transitar para edição de tempo (preservando o contexto RTC)
+        _showTimeEdit(TimeEditContext::RTC);
+    }
+}
+
 void UI::_showTimeEdit(TimeEditContext ctx, uint8_t cycleIdx) {
     _teContext  = ctx;
     _teCycleIdx = cycleIdx;
@@ -393,7 +457,8 @@ void UI::_commitTimeEdit() {
                       "encontrado.", "", MenuID::DEF);
             return;
         }
-        rtclock.setTime(_teHour, _teMin);
+        // Save using the full date from _deDay/_deMonth/_deYear and new time
+        rtclock.set(_deYear, _deMonth, _deDay, _teHour, _teMin, 0);
         char saved[LCD_COLS + 1];
         snprintf(saved, sizeof(saved), "Hora: %02d:%02d", _teHour, _teMin);
         _showDone(saved, "RTC actualizado!");
@@ -543,6 +608,22 @@ void UI::_dispatch(const char* action) {
     if (strcmp(action, "dur_pick:cycles") == 0) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         _showDurPick(cs.slot_count, DurContext::NUM_CYCLES);
+        return;
+    }
+
+    // date_edit:rtc
+    if (strcmp(action, "date_edit:rtc") == 0) {
+        _showDateEdit();
+        return;
+    }
+
+    // toggle_dst
+    if (strcmp(action, "toggle_dst") == 0) {
+        gState.auto_dst = !gState.auto_dst;
+        storage.save();
+        rtclock.update(); // read offset immediately
+        _buildMenu(MenuID::DEF);
+        _renderMenu();
         return;
     }
 
@@ -765,7 +846,8 @@ void UI::_buildMenu(MenuID mid) {
     case MenuID::DEF: {
         makeItem(it++, "Testar Zonas",    "go:testes");
         makeItem(it++, "Historico",       "go:hist");
-        makeItem(it++, "Acertar Hora",    "time_edit:rtc");
+        makeItem(it++, "Acertar Data/Hora", "date_edit:rtc");
+        makeItem(it++, gState.auto_dst ? "Auto-Verao: [ON]" : "Auto-Verao: [OFF]", "toggle_dst");
         // Backlight timeout — show current setting in label
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
@@ -952,6 +1034,28 @@ void UI::_renderDurPick() {
     _d.cx(h2, "Clique para guardar");
     _d.setRows(hbuf, vbuf, h1, h2);
 }
+
+void UI::_renderDateEdit() {
+    char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
+    _d.hdr(hbuf, "Acertar Data/Hora");
+
+    char vstr[21];
+    if (_deField == 0) snprintf(vstr, sizeof(vstr), "[%02d] / %02d / %04d", _deDay, _deMonth, _deYear);
+    else if (_deField == 1) snprintf(vstr, sizeof(vstr), " %02d /[%02d]/ %04d", _deDay, _deMonth, _deYear);
+    else snprintf(vstr, sizeof(vstr), " %02d / %02d /[%04d]", _deDay, _deMonth, _deYear);
+    _d.cx(vbuf, vstr);
+
+    if (_deField == 0) _d.cx(fbuf, "Escolher dia");
+    else if (_deField == 1) _d.cx(fbuf, "Escolher mes");
+    else _d.cx(fbuf, "Escolher ano");
+
+    if (_deField == 0) _d.cx(hintbuf, "Clique p/ mes");
+    else if (_deField == 1) _d.cx(hintbuf, "Clique p/ ano");
+    else _d.cx(hintbuf, "Clique p/ hora");
+
+    _d.setRows(hbuf, vbuf, fbuf, hintbuf);
+}
+
 void UI::_renderTimeEdit() {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
     const char* title = "Acertar Hora";
