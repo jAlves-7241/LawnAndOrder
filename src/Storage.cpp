@@ -63,6 +63,9 @@ bool Storage::load() {
     gState.backlight_timeout_ms =
         prefs.getULong(KEY_BL, gState.backlight_timeout_ms);
 
+    // ── DST ───────────────────────────────────────────────
+    gState.auto_dst = prefs.getBool("dst", gState.auto_dst);
+
     // ── Suspended ─────────────────────────────────────────
     gState.suspended_until =
         prefs.getUInt(KEY_SUNT, gState.suspended_until);
@@ -112,6 +115,11 @@ void Storage::save() {
     updateULong(KEY_BL,   gState.backlight_timeout_ms);
     updateUInt(KEY_SUNT,  gState.suspended_until);
     updateUInt(KEY_CRD,   gState.custom_ref_day);
+
+    if (prefs.getBool("dst", true) != gState.auto_dst) {
+        prefs.putBool("dst", gState.auto_dst);
+        changed = true;
+    }
 
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     updateUChar(KEY_CIF, cs.interval_days);

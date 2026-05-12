@@ -14,6 +14,7 @@ enum class Screen : uint8_t {
     CONFIRM,    // yes/no prompt
     DONE,       // execution feedback
     DUR_PICK,   // encoder duration picker (0–20 min, 1-min steps)
+    DATE_EDIT,  // encoder day/month/year editor
     TIME_EDIT,  // encoder hour/minute editor
 };
 
@@ -100,6 +101,12 @@ private:
     DurContext _durContext;
     uint8_t   _durZoneIdx;
 
+    // ── Date editor ───────────────────────────────────────
+    uint8_t  _deDay;
+    uint8_t  _deMonth;
+    uint16_t _deYear;
+    uint8_t  _deField;  // 0 = day, 1 = month, 2 = year
+
     // ── Time editor ───────────────────────────────────────
     uint8_t _teHour;   // value being edited
     uint8_t _teMin;
@@ -127,6 +134,7 @@ private:
     void _renderConfirm();
     void _renderDone();
     void _renderDurPick();
+    void _renderDateEdit();
     void _renderTimeEdit();
 
     // ── Input ─────────────────────────────────────────────
@@ -145,6 +153,8 @@ private:
     void _showDone(const char* l1, const char* l2);
     void _showDurPick(uint8_t initial, DurContext ctx, uint8_t zoneIdx = 0);
     void _commitDurPick();
+    void _showDateEdit();
+    void _commitDateEdit();
     void _showTimeEdit(TimeEditContext ctx, uint8_t cycleIdx = 0);
     void _commitTimeEdit();
 
