@@ -846,8 +846,8 @@ void UI::_buildMenu(MenuID mid) {
     case MenuID::DEF: {
         makeItem(it++, "Testar Zonas",    "go:testes");
         makeItem(it++, "Historico",       "go:hist");
-        makeItem(it++, "Acertar Data/Hora", "date_edit:rtc");
-        makeItem(it++, gState.auto_dst ? "Auto-Verao: [ON]" : "Auto-Verao: [OFF]", "toggle_dst");
+        makeItem(it++, "Data/Hora",       "date_edit:rtc");
+        makeItem(it++, gState.auto_dst ? "Fuso Horario: [Auto]" : "Fuso Horario: [Fixo]", "toggle_dst");
         // Backlight timeout — show current setting in label
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
@@ -1037,7 +1037,7 @@ void UI::_renderDurPick() {
 
 void UI::_renderDateEdit() {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
-    _d.hdr(hbuf, "Acertar Data/Hora");
+    _d.hdr(hbuf, "Data/Hora");
 
     char vstr[21];
     if (_deField == 0) snprintf(vstr, sizeof(vstr), "[%02d] / %02d / %04d", _deDay, _deMonth, _deYear);
@@ -1058,7 +1058,7 @@ void UI::_renderDateEdit() {
 
 void UI::_renderTimeEdit() {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
-    const char* title = "Acertar Hora";
+    const char* title = "Data/Hora";
 
     if (_teContext == TimeEditContext::CUSTOM_CYCLE) {
         static char cbuf[21];
