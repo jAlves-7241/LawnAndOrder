@@ -63,6 +63,9 @@ bool Storage::load() {
     gState.backlight_timeout_ms =
         prefs.getULong(KEY_BL, gState.backlight_timeout_ms);
 
+    // ── DST ───────────────────────────────────────────────
+    gState.auto_dst = prefs.getBool("dst", gState.auto_dst);
+
     // ── Suspended ─────────────────────────────────────────
     gState.suspended_until =
         prefs.getUInt(KEY_SUNT, gState.suspended_until);
@@ -75,14 +78,18 @@ bool Storage::load() {
     
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.interval_days = prefs.getUChar(KEY_CIF, cs.interval_days);
+    if (cs.interval_days == 0 || cs.interval_days > 14) cs.interval_days = 1;
     cs.slot_count    = prefs.getUChar(KEY_CSC, cs.slot_count);
+    if (cs.slot_count == 0 || cs.slot_count > MAX_SLOTS_PER_MODE) cs.slot_count = 1;
 
     for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
         char kh[5], km[5];
         snprintf(kh, sizeof(kh), "c%dh", i);
         snprintf(km, sizeof(km), "c%dm", i);
         cs.slots[i].hour   = prefs.getUChar(kh, cs.slots[i].hour);
+        if (cs.slots[i].hour > 23) cs.slots[i].hour = 0;
         cs.slots[i].minute = prefs.getUChar(km, cs.slots[i].minute);
+        if (cs.slots[i].minute > 59) cs.slots[i].minute = 0;
     }
 
     Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
@@ -112,6 +119,11 @@ void Storage::save() {
     updateULong(KEY_BL,   gState.backlight_timeout_ms);
     updateUInt(KEY_SUNT,  gState.suspended_until);
     updateUInt(KEY_CRD,   gState.custom_ref_day);
+
+    if (prefs.getBool("dst", true) != gState.auto_dst) {
+        prefs.putBool("dst", gState.auto_dst);
+        changed = true;
+    }
 
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     updateUChar(KEY_CIF, cs.interval_days);

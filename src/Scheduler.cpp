@@ -139,9 +139,11 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         
         // Convert back to SystemTime-like fields for _dayMatches
         SystemTime candidate;
-        candidate.day  = candidateDt.day();
-        candidate.dow  = candidateDt.dayOfTheWeek();
-        candidate.unix = candidateDt.unixtime();
+        candidate.year  = candidateDt.year();
+        candidate.month = candidateDt.month();
+        candidate.day   = candidateDt.day();
+        candidate.dow   = candidateDt.dayOfTheWeek();
+        candidate.unix  = candidateDt.unixtime();
 
         if (!_dayMatches(sched, candidate)) continue;
 
@@ -181,6 +183,7 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
             }
             uint32_t ref_day = gState.custom_ref_day;
             uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);
+            if (sched.interval_days == 0) return true;  // guard: treat 0 as daily
             return (diff % sched.interval_days) == 0;
         }
         default:
