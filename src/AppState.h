@@ -120,6 +120,9 @@ struct AppState {
 
     // Backlight — timeout in ms after last activity (BACKLIGHT_TIMEOUT_NEVER = always on)
     uint32_t backlight_timeout_ms;
+
+    // DST (Daylight Saving Time)
+    bool auto_dst;
 };
 
 extern AppState gState;

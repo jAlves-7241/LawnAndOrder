@@ -96,7 +96,8 @@ Os horários padrão são definidos em `config.h` com `SCHED_*` e podem ser alte
 |---|---|
 | **Testar Zonas** | Ativa cada zona por 5 segundos para verificar as electroválvulas (não registado no histórico) |
 | **Histórico** | Últimos 3 ciclos de rega com data, hora, tipo e duração por zona; lidos do ficheiro CSV em LittleFS |
-| **Acertar Hora** | Editor de hora via encoder: ajusta horas, clica, ajusta minutos, clica para guardar no RTC DS3231 |
+| **Data/Hora** | Editor dividido em 2 ecrãs: ajusta primeiro a data (dia/mês/ano) e depois a hora (horas/minutos), guardando no RTC DS3231 |
+| **Fuso Horário** | Liga/Desliga o ajuste automático para horário de verão (regras EU) com compensação de perdas na suspensão |
 | **Tempo Ecrã** | Define quando o ecrã adormece após inatividade: 30s / 1min / **2min** / 5min / Sempre |
 | **Versão Firmware** | Versão, data de build e modelo do microcontrolador |
 | **Reset de Fábrica** | Repõe configurações para os valores padrão e apaga o histórico (pede confirmação) |
@@ -107,16 +108,16 @@ Após o período de inatividade configurado, o backlight do LCD apaga-se automat
 
 ---
 
-### Acertar hora
+### Data / Hora
 
 ```
-~~~ ACERTAR HORA ~~~~
-    [14] :  32
-      ^ horas
-  click -> minutos
+~~~~~ DATA/HORA ~~~~~
+  [14] / 05 / 2026
+    ^ dia
+click -> proximo campo
 ```
 
-Roda para ajustar as horas → clica → roda para ajustar os minutos → clica para guardar. A hora é escrita no módulo RTC DS3231 e mantém-se mesmo sem energia no ESP32, desde que a bateria CR2032 do módulo esteja carregada.
+O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo a hora é escrita no módulo RTC DS3231. O chip armazena a hora de forma linear (UTC) e a interface apresenta-a com o fuso apropriado caso a opção **Fuso Horario: Auto** esteja ativa. Isto previne saltos ou perdas de dias de suspensão durante as mudanças de hora!
 
 ---
 
@@ -164,15 +165,15 @@ Roda para ajustar as horas → clica → roda para ajustar os minutos → clica 
 | Controlo de relés GPIO | ✅ Completo |
 | Relógio RTC DS3231 com acerto de hora via encoder | ✅ Completo |
 | Agendamento automático por hora (Scheduler) | ✅ Completo |
-| Suspensão de rega com expiração configurável | ✅ Completo |
+| Suspensão de rega com compensação de transição de fusos | ✅ Completo |
 | Gestão de ecrã (sleep/wake, timeout configurável) | ✅ Completo |
 | Persistência de configurações em NVS flash | ✅ Completo |
 | Histórico de ciclos em CSV (LittleFS) | ✅ Completo |
 | Simulação Wokwi | ✅ Completo |
 | Modo Personalizado (horário livre) | ✅ Completo |
-| Acertar data completa (dia/mês/ano) via encoder | 🔲 Futuro |
+| Acertar data completa (dia/mês/ano) via encoder | ✅ Completo |
+| Horário de Verão Automático | ✅ Completo |
 | Editar nomes das zonas | 🔲 Futuro |
-| Duração de suspensão configurável | ✅ Completo |
 
 ---
 
@@ -322,5 +323,4 @@ As bibliotecas externas são instaladas automaticamente pelo PlatformIO na prime
 
 ### Próximas iterações
 
-- **Acertar data completa** - o editor atual só ajusta hora:minuto; expandir para dia/mês/ano
 - **Editar nomes das zonas** - actualmente hardcoded em `AppState.cpp`

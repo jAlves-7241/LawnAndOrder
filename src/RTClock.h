@@ -49,6 +49,7 @@ private:
     uint32_t _lastReadMs;
 
     static void _copyToState(const DateTime& dt);
+    static bool _isEU_DST(const DateTime& dt);
 };
 
 extern RTClock rtclock;

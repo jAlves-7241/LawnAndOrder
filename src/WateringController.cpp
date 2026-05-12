@@ -187,6 +187,10 @@ void WateringController::_finishCycle() {
 void WateringController::_activateRelay(uint8_t zone_idx) {
     for (int i = 0; i < NUM_ZONES; i++)
         digitalWrite(_relayPins[i], RELAY_OFF);
+    if (zone_idx >= NUM_ZONES) {
+        Serial.printf("[WATER] ERRO: zone_idx=%d fora dos limites!\n", zone_idx);
+        return;
+    }
     digitalWrite(_relayPins[zone_idx], RELAY_ON);
 }
 
