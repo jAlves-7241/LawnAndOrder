@@ -307,6 +307,10 @@ void UI::_commitDurPick() {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         if (cs.slot_count > 1) {
             uint16_t total_dur = _totalZoneDuration();
+            // Incluir tempo de espera entre zonas (~8s por gap, arredondado para 1 min)
+            uint8_t enCount = 0;
+            for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
+            if (enCount > 1) total_dur += (enCount - 1);
             bool overlap = false;
             for (int i = 0; i < cs.slot_count; i++) {
                 for (int j = i + 1; j < cs.slot_count; j++) {
@@ -315,7 +319,7 @@ void UI::_commitDurPick() {
                     int16_t diff = (int16_t)s1 - (int16_t)s2;
                     if (diff < 0) diff = -diff;
                     if (diff > 720) diff = 1440 - diff;
-                    if (diff < total_dur) { overlap = true; break; }
+                    if (diff <= total_dur) { overlap = true; break; }
                 }
                 if (overlap) break;
             }
@@ -469,6 +473,10 @@ void UI::_commitTimeEdit() {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         uint16_t new_start = _teHour * 60 + _teMin;
         uint16_t total_dur = _totalZoneDuration();
+        // Incluir tempo de espera entre zonas (~8s por gap, arredondado para 1 min)
+        uint8_t enCount = 0;
+        for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
+        if (enCount > 1) total_dur += (enCount - 1);
 
         for (int i = 0; i < cs.slot_count; i++) {
             if (i == _teCycleIdx) continue;
@@ -477,7 +485,7 @@ void UI::_commitTimeEdit() {
             if (diff < 0) diff = -diff;
             if (diff > 720) diff = 1440 - diff; // shortest distance on 24h circle
 
-            if (diff < total_dur) {
+            if (diff <= total_dur) {
                 _showInfo("! SOBREPOSICAO !", "Ciclos muito",
                           "proximos.", "Ajuste tempo/zona", MenuID::CFG_CUSTOM);
                 return;
@@ -568,6 +576,7 @@ void UI::_dispatch(const char* action) {
     // cfgz:<idx> — open DUR_PICK for zone configuration
     if (strncmp(action, "cfgz:", 5) == 0) {
         uint8_t i = (uint8_t)atoi(action + 5);
+        if (i >= NUM_ZONES) return;
         Zone& z = gState.zones[i];
         if (!z.enabled) {
             z.enabled      = true;
@@ -580,6 +589,7 @@ void UI::_dispatch(const char* action) {
     // cz:<idx> — toggle custom zone selection
     if (strncmp(action, "cz:", 3) == 0) {
         uint8_t i = (uint8_t)atoi(action + 3);
+        if (i >= NUM_ZONES) return;
         gState.custom_sel[i] = !gState.custom_sel[i];
         _buildMenu(MenuID::CUSTOM_ZONAS);
         _renderMenu();
@@ -634,7 +644,8 @@ void UI::_dispatch(const char* action) {
             _showTimeEdit(TimeEditContext::RTC);
         } else if (t[0] == 'c') {
             uint8_t idx = (uint8_t)atoi(t + 1);
-            _showTimeEdit(TimeEditContext::CUSTOM_CYCLE, idx);
+            if (idx < MAX_SLOTS_PER_MODE)
+                _showTimeEdit(TimeEditContext::CUSTOM_CYCLE, idx);
         }
         return;
     }
@@ -834,7 +845,7 @@ void UI::_buildMenu(MenuID mid) {
 
                 char act[64];
                 snprintf(act, sizeof(act),
-                         "info:%02d/%02d %02d:%02d|%s|%s||hist",
+                         "info:%02d/%02d %02d:%02d|%s|%s| |hist",
                          e.day, m, e.hour, e.min, l1, l2);
                 makeItem(it++, lbuf, act);
             }

@@ -118,14 +118,14 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)
     if (gState.suspended && gState.suspended_until > 0 && oldUnixUTC > 0) {
-        int32_t delta = (int32_t)(gState.now.unix - oldUnixUTC);
-        uint32_t newUntil = (int32_t)gState.suspended_until + delta;
-        // Se a nova hora ultrapassou a meta de suspensão
-        if (newUntil <= gState.now.unix) {
+        int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
+        int64_t newUntil = (int64_t)gState.suspended_until + delta;
+        // Se a nova hora ultrapassou a meta de suspensão, ou overflow negativo
+        if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
             gState.suspended = false;
             gState.suspended_until = 0;
         } else {
-            gState.suspended_until = newUntil;
+            gState.suspended_until = (uint32_t)newUntil;
         }
     }
 

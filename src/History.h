@@ -30,10 +30,15 @@ private:
     bool     _ready;
     uint16_t _lineCount;   // cached line count — avoids re-reading file on every record()
 
+    // Cache for UI display
+    HistoryEntry _cache[HISTORY_DISPLAY];
+    uint8_t      _cacheCount;
+
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
     uint16_t    _countLines() const;
     void        _rotateAndAppend(const char* newLine);
+    void        _populateCache();
 };
 
 extern History history;
