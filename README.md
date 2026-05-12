@@ -117,7 +117,7 @@ Após o período de inatividade configurado, o backlight do LCD apaga-se automat
 click -> proximo campo
 ```
 
-O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo a hora é escrita no módulo RTC DS3231. O chip armazena a hora de forma linear (UTC) e a interface apresenta-a com o fuso apropriado caso a opção **Fuso Horário: [Auto]** esteja ativa. Isto previne saltos ou perdas de dias de suspensão durante as mudanças de hora!
+O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo a hora é escrita no módulo RTC DS3231. O chip armazena a hora de forma linear (UTC) e a interface apresenta-a com o fuso apropriado caso a opção **Fuso Horario: Auto** esteja ativa. Isto previne saltos ou perdas de dias de suspensão durante as mudanças de hora!
 
 ---
 

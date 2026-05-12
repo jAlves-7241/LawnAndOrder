@@ -847,7 +847,7 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "Testar Zonas",    "go:testes");
         makeItem(it++, "Historico",       "go:hist");
         makeItem(it++, "Data/Hora",       "date_edit:rtc");
-        makeItem(it++, gState.auto_dst ? "Fuso Horario: [Auto]" : "Fuso Horario: [Fixo]", "toggle_dst");
+        makeItem(it++, gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
         // Backlight timeout — show current setting in label
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
