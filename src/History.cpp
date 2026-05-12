@@ -14,8 +14,10 @@ bool History::begin(bool formatOnFail) {
     if (!_ready) {
         Serial.println("[HIST] Erro ao montar LittleFS");
         _lineCount = 0;
+        _cacheCount = 0;
     } else {
-        _lineCount = _countLines();   // warm the cache once at boot
+        _lineCount = _countLines();
+        _populateCache();
         Serial.printf("[HIST] Pronto — %d entradas\n", _lineCount);
     }
     return _ready;
@@ -32,8 +34,7 @@ void History::record(const HistoryEntry& entry) {
 
     if (_lineCount >= HISTORY_MAX_ENTRIES) {
         _rotateAndAppend(line);
-        // _lineCount stays at HISTORY_MAX_ENTRIES after rotation
-        _lineCount = HISTORY_MAX_ENTRIES;
+        // O _lineCount é ajustado internamente pelo _rotateAndAppend
     } else {
         File f = LittleFS.open(HISTORY_FILE, "a");
         if (!f) { Serial.println("[HIST] Erro ao abrir ficheiro"); return; }
@@ -41,47 +42,38 @@ void History::record(const HistoryEntry& entry) {
         f.close();
         _lineCount++;
     }
+
+    // Atualizar o cache em memória (shift left se estiver cheio)
+    if (_cacheCount < HISTORY_DISPLAY) {
+        _cache[_cacheCount++] = entry;
+    } else {
+        for (int i = 0; i < HISTORY_DISPLAY - 1; i++) {
+            _cache[i] = _cache[i + 1];
+        }
+        _cache[HISTORY_DISPLAY - 1] = entry;
+    }
+
     Serial.printf("[HIST] Registado: %s\n", line);
 }
 
 // ─────────────────────────────────────────────────────────
 uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
-    if (!_ready || count == 0) return 0;
-    if (count > HISTORY_DISPLAY) count = HISTORY_DISPLAY;
-
-    File f = LittleFS.open(HISTORY_FILE, "r");
-    if (!f) return 0;
-
-    char lines[HISTORY_DISPLAY][LINE_BUF];
-    uint8_t  head  = 0;
-    uint16_t total = 0;
-
-    while (f.available()) {
-        String s = f.readStringUntil('\n');
-        s.trim();                           // trim() returns void — call before length()
-        if (s.length() == 0) continue;
-        strncpy(lines[head % count], s.c_str(), LINE_BUF - 1);
-        lines[head % count][LINE_BUF - 1] = '\0';
-        head++;
-        total++;
+    if (!_ready || count == 0 || _cacheCount == 0) return 0;
+    
+    // Apenas copiamos da RAM (zero acessos ao disco!)
+    uint8_t n = (_cacheCount < count) ? _cacheCount : count;
+    for (uint8_t i = 0; i < n; i++) {
+        // Copiamos os N mais recentes
+        out[i] = _cache[_cacheCount - n + i];
     }
-    f.close();
-
-    uint8_t kept   = (total < count) ? (uint8_t)total : count;
-    uint8_t filled = 0;
-    for (uint8_t i = 0; i < kept; i++) {
-        uint8_t slot = (uint8_t)((head - kept + i) % count);
-        if (_lineToEntry(lines[slot], out[filled]))
-            filled++;
-    }
-    return filled;
+    return n;
 }
 
-// ─────────────────────────────────────────────────────────
 void History::clear() {
     if (!_ready) return;
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
+    _cacheCount = 0;
     Serial.println("[HIST] Historico apagado");
 }
 
@@ -140,43 +132,100 @@ uint16_t History::_countLines() const {
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return 0;
     uint16_t n = 0;
+    uint8_t buf[256];
     while (f.available()) {
-        String s = f.readStringUntil('\n');
-        s.trim();
-        if (s.length() > 0) n++;
+        int len = f.read(buf, sizeof(buf));
+        for (int i = 0; i < len; i++) {
+            if (buf[i] == '\n') n++;
+        }
     }
     f.close();
     return n;
 }
 
+void History::_populateCache() {
+    _cacheCount = 0;
+    if (!_ready || _lineCount == 0) return;
+
+    File f = LittleFS.open(HISTORY_FILE, "r");
+    if (!f) return;
+
+    char line[LINE_BUF];
+    while (f.available()) {
+        int len = f.readBytesUntil('\n', line, LINE_BUF - 1);
+        if (len > 0 && line[len-1] == '\r') len--;
+        line[len] = '\0';
+        if (len == 0) continue;
+
+        HistoryEntry temp;
+        if (_lineToEntry(line, temp)) {
+            if (_cacheCount < HISTORY_DISPLAY) {
+                _cache[_cacheCount++] = temp;
+            } else {
+                for (int i = 0; i < HISTORY_DISPLAY - 1; i++) {
+                    _cache[i] = _cache[i+1];
+                }
+                _cache[HISTORY_DISPLAY - 1] = temp;
+            }
+        }
+    }
+    f.close();
+}
+
 void History::_rotateAndAppend(const char* newLine) {
-    const uint16_t keep = HISTORY_MAX_ENTRIES - 1;
-    char* buf = (char*)malloc((size_t)keep * LINE_BUF);
-    if (!buf) {
+    // Para otimizar leituras/escritas e não estar sempre a rodar a cada rega,
+    // descartamos os 10% mais antigos de uma vez.
+    uint16_t discard = HISTORY_MAX_ENTRIES / 10;
+    if (discard == 0) discard = 1;
+    uint16_t keep = HISTORY_MAX_ENTRIES - discard;
+
+    File src = LittleFS.open(HISTORY_FILE, "r");
+    if (!src) {
+        // Se falhar, tentamos apenas adicionar
         File f = LittleFS.open(HISTORY_FILE, "a");
         if (f) { f.println(newLine); f.close(); }
         return;
     }
-    memset(buf, 0, (size_t)keep * LINE_BUF);
 
-    File src = LittleFS.open(HISTORY_FILE, "r");
+    File dst = LittleFS.open("/hist_tmp.csv", "w");
+    if (!dst) {
+        src.close();
+        return;
+    }
+
     uint16_t n = 0;
-    bool skipped = false;
-    while (src.available() && n < keep) {
+    uint16_t skipped = 0;
+
+    // Copiar linha a linha, evitando carregar o ficheiro todo na RAM
+    while (src.available()) {
         String s = src.readStringUntil('\n');
         s.trim();
         if (s.length() == 0) continue;
-        if (!skipped) { skipped = true; continue; }
-        strncpy(buf + n * LINE_BUF, s.c_str(), LINE_BUF - 1);
+
+        if (skipped < discard) {
+            skipped++;
+            continue;
+        }
+
+        dst.println(s);
         n++;
+        // Limite de segurança para não ultrapassar a quota planeada
+        if (n >= keep) break;
     }
     src.close();
 
-    File dst = LittleFS.open(HISTORY_FILE, "w");
-    if (dst) {
-        for (uint16_t i = 0; i < n; i++) dst.println(buf + i * LINE_BUF);
-        dst.println(newLine);
-        dst.close();
+    // Adicionar a nova entrada no final
+    dst.println(newLine);
+    dst.close();
+
+    // Substituir o original pelo novo ficheiro processado.
+    // LittleFS.rename() suporta overwrite — não é necessário remove() prévio.
+    // Evita janela de perda de dados se o rename falhar.
+    if (!LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
+        Serial.println("[HIST] Erro: rename falhou — manter original");
+        LittleFS.remove("/hist_tmp.csv");
+        return;
     }
-    free(buf);
+
+    _lineCount = n + 1; // O contador volta para trás, tendo espaço para crescer novamente
 }
