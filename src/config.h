@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION     "v0.1.0-beta"
-#define FW_BUILD_DATE  "03Mai2026"
+#define FW_VERSION     "v0.1.2-beta"
+#define FW_BUILD_DATE  "20Mai2026"
 
 // ── LCD ───────────────────────────────────────────────────
 #define LCD_ADDR   0x27
