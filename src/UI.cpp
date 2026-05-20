@@ -1232,10 +1232,10 @@ void UI::_renderTimeEdit() {
 
 void UI::_renderSetupWelcome() {
     char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
-    _d.cx(b0, "");
-    _d.cx(b1, "Bem-vindo!");
+    _d.cx(b0, "Bem-vindo!");
+    _d.cx(b1, "");
     _d.cx(b2, "Clique p/ iniciar");
-    _d.cx(b3, "config. inicial");
+    _d.cx(b3, "a config. inicial");
     _d.setRows(b0, b1, b2, b3);
 }
 
