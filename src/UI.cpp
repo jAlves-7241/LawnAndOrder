@@ -41,14 +41,62 @@ UI::UI(Display& disp, Encoder& enc)
       _deDay(1), _deMonth(1), _deYear(2026), _deField(0),
       _teHour(0), _teMin(0), _teField(0),
       _teContext(TimeEditContext::RTC), _teCycleIdx(0),
-      _lastActivity(0), _itemCount(0)
+      _lastActivity(0), _itemCount(0),
+      _setupStep(SetupStep::WELCOME), _inSetup(false)
 {
     _pendingConfirmTag[0] = '\0';
 }
 
 void UI::begin() {
     _lastActivity = millis();
-    _renderIdle();
+    if (!gState.setup_done) {
+        _startSetup();
+    } else {
+        _renderIdle();
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+void UI::_startSetup() {
+    _inSetup   = true;
+    _setupStep = SetupStep::WELCOME;
+    _screen    = Screen::SETUP_WELCOME;
+    _renderSetupWelcome();
+}
+
+void UI::_advanceSetup() {
+    switch (_setupStep) {
+        case SetupStep::WELCOME:
+            _setupStep = SetupStep::DATE_TIME;
+            _showDateEdit();
+            break;
+
+        case SetupStep::DATE_TIME:
+            _setupStep = SetupStep::MODE_SELECT;
+            _goMenu(MenuID::SETUP_MODE);
+            break;
+
+        case SetupStep::MODE_SELECT:
+            // Só chega aqui via "Saltar >" → salta modo E zonas
+            _setupStep = SetupStep::COMPLETE;
+            _screen    = Screen::SETUP_WELCOME;
+            _renderSetupComplete();
+            break;
+
+        case SetupStep::ZONE_CONFIG:
+            _setupStep = SetupStep::COMPLETE;
+            _screen    = Screen::SETUP_WELCOME;
+            _renderSetupComplete();
+            break;
+
+        case SetupStep::COMPLETE:
+            _inSetup = false;
+            gState.setup_done = true;
+            storage.save();
+            scheduler.onModeChanged();
+            _goIdle();
+            break;
+    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -74,13 +122,13 @@ void UI::update() {
     if (click)    { _lastActivity = millis(); _handleClick(); }
 
     // Idle timeout — applies to all screens, any unsaved edits are discarded
-    if (_screen != Screen::IDLE &&
+    if (_screen != Screen::IDLE && !_inSetup &&
         (millis() - _lastActivity) >= IDLE_TIMEOUT_MS) {
         _goIdle();
     }
 
     // Backlight sleep after inactivity (only from idle screen)
-    if (_screen == Screen::IDLE && gState.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER) {
+    if (_screen == Screen::IDLE && !_inSetup && gState.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER) {
         uint32_t elapsed = millis() - _lastActivity;
         
         if (_d.isBacklightOn() && elapsed >= gState.backlight_timeout_ms) {
@@ -182,11 +230,19 @@ void UI::_handleRotation(int8_t dir) {
             }
             _renderTimeEdit();
             break;
+
+        case Screen::SETUP_WELCOME:
+            // Ignorar rotação — apenas click avança
+            break;
     }
 }
 
 void UI::_handleClick() {
     switch (_screen) {
+        case Screen::SETUP_WELCOME:
+            _advanceSetup();
+            break;
+
         case Screen::IDLE:
             _goMenu(MenuID::MAIN);
             break;
@@ -327,13 +383,14 @@ void UI::_commitDurPick() {
                 gState.zones[_durZoneIdx].enabled      = old_en;
                 gState.zones[_durZoneIdx].duration_min = old_dur;
                 _showInfo("! SOBREPOSICAO !", "Duracao excessiva",
-                          "para ciclos pers.", "Reduza zonas/ciclos", MenuID::CFG_ZONAS);
+                          "para ciclos pers.", "Reduza zonas/ciclos",
+                          _inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
                 return;
             }
         }
 
         storage.save();
-        _goMenu(MenuID::CFG_ZONAS);
+        _goMenu(_inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
         return;
     }
 
@@ -463,6 +520,12 @@ void UI::_commitTimeEdit() {
         }
         // Save using the full date from _deDay/_deMonth/_deYear and new time
         rtclock.set(_deYear, _deMonth, _deDay, _teHour, _teMin, 0);
+
+        if (_inSetup) {
+            _advanceSetup();  // DATE_TIME → MODE_SELECT
+            return;           // ← previne fallthrough para _showDone
+        }
+
         char saved[LCD_COLS + 1];
         snprintf(saved, sizeof(saved), "Hora: %02d:%02d", _teHour, _teMin);
         _showDone(saved, "RTC actualizado!");
@@ -564,11 +627,41 @@ void UI::_dispatch(const char* action) {
         scheduler.onModeChanged();
         storage.save();
 
+        if (_inSetup) {
+            // Seleccionou modo → zonas são obrigatórias
+            _setupStep = SetupStep::ZONE_CONFIG;
+            _goMenu(MenuID::SETUP_ZONES);
+            return;
+        }
+
         if (gState.mode == AppMode::PERSONALIZADO) {
             _goMenu(MenuID::CFG_CUSTOM);
         } else {
             _showInfo("MODO SELECIONADO", _modeName(gState.mode),
                       "", "Guardado com sucesso", MenuID::MODOS);
+        }
+        return;
+    }
+
+    // setup_advance — avançar (usado por "Saltar >" e "Terminar >")
+    if (strcmp(action, "setup_advance") == 0) {
+        _advanceSetup();
+        return;
+    }
+
+    // setup_back — voltar ao passo anterior
+    if (strcmp(action, "setup_back") == 0) {
+        switch (_setupStep) {
+            case SetupStep::MODE_SELECT:
+                _setupStep = SetupStep::DATE_TIME;
+                _showDateEdit();
+                break;
+            case SetupStep::ZONE_CONFIG:
+                _setupStep = SetupStep::MODE_SELECT;
+                _goMenu(MenuID::SETUP_MODE);
+                break;
+            default:
+                break;
         }
         return;
     }
@@ -890,6 +983,30 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "<- Voltar", "go:def");
         break;
 
+    case MenuID::SETUP_MODE:
+        makeItem(it++, "Intenso",       "sel:0");
+        makeItem(it++, "Medio",         "sel:1");
+        makeItem(it++, "Fraco",         "sel:2");
+        makeItem(it++, "Personalizado", "sel:4");
+        makeItem(it++, "Saltar >",      "setup_advance");
+        makeItem(it++, "<- Voltar",     "setup_back");
+        break;
+
+    case MenuID::SETUP_ZONES:
+        for (int i = 0; i < NUM_ZONES; i++) {
+            Zone& z = gState.zones[i];
+            if (z.enabled)
+                snprintf(lbuf, sizeof(lbuf), "[ON]  Z%d %-6s %2dmin",
+                         i+1, z.name, z.duration_min);
+            else
+                snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
+            char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
+            makeItem(it++, lbuf, act);
+        }
+        makeItem(it++, "Terminar >",  "setup_advance");
+        makeItem(it++, "<- Voltar",   "setup_back");
+        break;
+
     case MenuID::BLSEL: {
         // Each item sets the timeout via "bl:<ms>" action.
         // Active option is marked with [*].
@@ -980,6 +1097,8 @@ void UI::_renderMenu() {
             case MenuID::DEF:          return "Definicoes";
             case MenuID::TESTES:       return "Testar Zonas";
             case MenuID::BLSEL:        return "Tempo Ecra";
+            case MenuID::SETUP_MODE:   return "Modo de Rega";
+            case MenuID::SETUP_ZONES:  return "Config. Zonas";
             default:                   return "Menu";
         }
     };
@@ -1099,6 +1218,24 @@ void UI::_renderTimeEdit() {
     _d.setRows(hbuf, vbuf, fbuf, hintbuf);
 }
 
+void UI::_renderSetupWelcome() {
+    char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
+    _d.cx(b0, "");
+    _d.cx(b1, "Bem-vindo!");
+    _d.cx(b2, "Clique p/ iniciar");
+    _d.cx(b3, "config. inicial");
+    _d.setRows(b0, b1, b2, b3);
+}
+
+void UI::_renderSetupComplete() {
+    char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
+    _d.cx(b0, "Config. concluida!");
+    _d.cx(b1, "");
+    _d.cx(b2, "Sistema pronto.");
+    _d.cx(b3, "Clique p/ iniciar");
+    _d.setRows(b0, b1, b2, b3);
+}
+
 // ─────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────
@@ -1124,6 +1261,8 @@ MenuID UI::_parseMenuID(const char* s) {
     if (!strcmp(s,"def"))    return MenuID::DEF;
     if (!strcmp(s,"testes")) return MenuID::TESTES;
     if (!strcmp(s,"blsel"))  return MenuID::BLSEL;
+    if (!strcmp(s,"smode"))  return MenuID::SETUP_MODE;
+    if (!strcmp(s,"szones")) return MenuID::SETUP_ZONES;
     return MenuID::MAIN;
 }
 

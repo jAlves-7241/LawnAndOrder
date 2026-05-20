@@ -66,6 +66,9 @@ bool Storage::load() {
     // ── DST ───────────────────────────────────────────────
     gState.auto_dst = prefs.getBool("dst", gState.auto_dst);
 
+    // ── Setup Wizard ──────────────────────────────────────
+    gState.setup_done = (bool)prefs.getUChar("sdone", 0);
+
     // ── Suspended ─────────────────────────────────────────
     gState.suspended_until =
         prefs.getUInt(KEY_SUNT, gState.suspended_until);
@@ -124,6 +127,8 @@ void Storage::save() {
         prefs.putBool("dst", gState.auto_dst);
         changed = true;
     }
+
+    updateUChar("sdone", gState.setup_done ? 1 : 0);
 
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     updateUChar(KEY_CIF, cs.interval_days);
