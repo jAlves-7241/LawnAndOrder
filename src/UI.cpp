@@ -420,7 +420,18 @@ void UI::_commitDurPick() {
             cs.slots[i].hour   = mins / 60;
             cs.slots[i].minute = mins % 60;
         }
-        // No sort needed here as auto-distribute is already sorted
+        // Sort slots chronologically (Bubble sort for small array)
+        for (int i = 0; i < cs.slot_count - 1; i++) {
+            for (int j = 0; j < cs.slot_count - i - 1; j++) {
+                uint16_t t1 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                uint16_t t2 = cs.slots[j+1].hour * 60 + cs.slots[j+1].minute;
+                if (t1 > t2) {
+                    ScheduleSlot temp = cs.slots[j];
+                    cs.slots[j] = cs.slots[j+1];
+                    cs.slots[j+1] = temp;
+                }
+            }
+        }
         storage.save();
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);
