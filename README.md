@@ -173,7 +173,8 @@ O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo
 | Modo Personalizado (horário livre) | ✅ Completo |
 | Acertar data completa (dia/mês/ano) via encoder | ✅ Completo |
 | Horário de Verão Automático | ✅ Completo |
-| Editar nomes das zonas | 🔲 Futuro |
+| Assistente de setup inicial | ✅ Completo |
+
 
 ---
 
@@ -319,8 +320,4 @@ loop() - executado continuamente
 
 As bibliotecas externas são instaladas automaticamente pelo PlatformIO na primeira compilação.
 
----
 
-### Próximas iterações
-
-- **Editar nomes das zonas** - actualmente hardcoded em `AppState.cpp`

@@ -123,6 +123,9 @@ struct AppState {
 
     // DST (Daylight Saving Time)
     bool auto_dst;
+
+    // Setup wizard — true after first-boot wizard completes
+    bool setup_done;
 };
 
 extern AppState gState;

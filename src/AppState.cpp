@@ -78,6 +78,7 @@ void initAppState() {
 
     gState.backlight_timeout_ms = 120000UL;  // default: 2 minutes
     gState.auto_dst = AUTO_DST_DEFAULT;
+    gState.setup_done = false;
 
     // ── RTC ──────────────────────────────────────────────
     gState.rtc_valid = false;

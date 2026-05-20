@@ -16,6 +16,7 @@ enum class Screen : uint8_t {
     DUR_PICK,   // encoder duration picker (0–20 min, 1-min steps)
     DATE_EDIT,  // encoder day/month/year editor
     TIME_EDIT,  // encoder hour/minute editor
+    SETUP_WELCOME, // NOVO
 };
 
 // ─────────────────────────────────────────────────────────
@@ -33,6 +34,8 @@ enum class MenuID : uint8_t {
     DEF,
     TESTES,
     BLSEL,    // backlight timeout selector
+    SETUP_MODE,   // NOVO
+    SETUP_ZONES,  // NOVO
     _COUNT
 };
 
@@ -50,6 +53,14 @@ enum class DurContext : uint8_t {
 enum class TimeEditContext : uint8_t {
     RTC,
     CUSTOM_CYCLE, // edits cs.slots[_teCycleIdx]
+};
+
+enum class SetupStep : uint8_t {
+    WELCOME,     // ecrã inicial
+    DATE_TIME,   // acertar data/hora
+    MODE_SELECT, // escolher modo de rega
+    ZONE_CONFIG, // configurar zonas
+    COMPLETE,    // ecrã final
 };
 
 // ─────────────────────────────────────────────────────────
@@ -91,6 +102,15 @@ private:
     uint8_t _cur;
     uint8_t _off;
     MenuID  _backMenu;
+
+    // ── Setup wizard ──────────────────────────────────────
+    SetupStep _setupStep;
+    bool      _inSetup;
+
+    void _startSetup();
+    void _advanceSetup();
+    void _renderSetupWelcome();
+    void _renderSetupComplete();
 
     // ── Static display buffers ────────────────────────────
     char _infoRows[4][LCD_COLS + 1];

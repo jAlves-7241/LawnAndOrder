@@ -13,6 +13,7 @@
 //   - gState.zones[i].enabled + duration_min  (for all NUM_ZONES)
 //   - gState.backlight_timeout_ms
 //   - gState.suspended
+//   - gState.setup_done
 //
 // What is NOT persisted (intentionally):
 //   - gState.now          → always comes from RTC
