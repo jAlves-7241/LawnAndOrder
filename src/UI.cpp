@@ -397,7 +397,8 @@ void UI::_commitDurPick() {
     if (_durContext == DurContext::FREQ_DAYS) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.interval_days = (_durValue > 0) ? _durValue : 1;
-        gState.custom_ref_day = gState.now.unix / 86400UL;
+        DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
+        gState.custom_ref_day = localDate.unixtime() / 86400UL;
         storage.save();
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);

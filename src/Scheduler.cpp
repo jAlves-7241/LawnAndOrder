@@ -99,16 +99,20 @@ void Scheduler::onModeChanged() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onWateringDone() {
     if (!gState.rtc_valid) return;
-    // Advance time by 1 minute past the just-fired slot so computeNext
-    // doesn't return the same slot again.
-    DateTime next(gState.now.unix + 60);
+    // Construct local DateTime from gState.now (which is local time)
+    DateTime localNow(gState.now.year, gState.now.month, gState.now.day,
+                      gState.now.hour, gState.now.min, gState.now.sec);
+    DateTime localNext = localNow + TimeSpan(0, 0, 1, 0); // add 1 minute
 
-    SystemTime advanced;
-    advanced.unix = next.unixtime();
-    advanced.hour = next.hour();
-    advanced.min  = next.minute();
-    advanced.day  = next.day();
-    advanced.dow  = next.dayOfTheWeek();
+    SystemTime advanced = {};
+    advanced.unix   = gState.now.unix + 60;
+    advanced.year   = localNext.year();
+    advanced.month  = localNext.month();
+    advanced.day    = localNext.day();
+    advanced.hour   = localNext.hour();
+    advanced.min    = localNext.minute();
+    advanced.sec    = localNext.second();
+    advanced.dow    = localNext.dayOfTheWeek();
 
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
@@ -130,18 +134,21 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         return false;
     }
 
-    // Use RTClib's DateTime for proper date arithmetic (month ends, leap years)
-    DateTime current(now.unix);
+    // Use RTClib's DateTime for proper date arithmetic in local time
+    DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
 
     // We search up to 15 days ahead to accommodate EVERY_X_DAYS (max 14)
     for (uint8_t dayOffset = 0; dayOffset <= 15; dayOffset++) {
         DateTime candidateDt = current + TimeSpan(dayOffset, 0, 0, 0);
         
         // Convert back to SystemTime-like fields for _dayMatches
-        SystemTime candidate;
+        SystemTime candidate = {};
         candidate.year  = candidateDt.year();
         candidate.month = candidateDt.month();
         candidate.day   = candidateDt.day();
+        candidate.hour  = candidateDt.hour();
+        candidate.min   = candidateDt.minute();
+        candidate.sec   = candidateDt.second();
         candidate.dow   = candidateDt.dayOfTheWeek();
         candidate.unix  = candidateDt.unixtime();
 
@@ -174,7 +181,9 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
         case DayPattern::DOW_MASK:
             return (sched.dow_mask & (1 << now.dow)) != 0;
         case DayPattern::EVERY_X_DAYS: {
-            uint32_t current_day = now.unix / 86400UL;
+            // Compute days since 1970 using the local date components (immune to timezone/DST shifts)
+            DateTime localDate(now.year, now.month, now.day, 0, 0, 0);
+            uint32_t current_day = localDate.unixtime() / 86400UL;
             // First use: anchor the reference day to today and persist it
             if (gState.custom_ref_day == 0xFFFFFFFFUL) {
                 gState.custom_ref_day = current_day;
