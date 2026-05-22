@@ -258,8 +258,8 @@ void UI::_handleClick() {
             break;
 
         case Screen::CONFIRM:
-            _executeConfirmed();
-            _showDone(_confirmRows[1], _confirmRows[2]);
+            if (!_executeConfirmed())
+                _showDone(_confirmRows[1], _confirmRows[2]);
             break;
 
         case Screen::DUR_PICK:
@@ -591,7 +591,7 @@ void UI::_commitTimeEdit() {
 // ─────────────────────────────────────────────────────────
 // _executeConfirmed — real-world side-effects on OK
 // ─────────────────────────────────────────────────────────
-void UI::_executeConfirmed() {
+bool UI::_executeConfirmed() {
     const char* tag = _pendingConfirmTag;
 
     if (strcmp(tag, "general") == 0) {
@@ -605,7 +605,10 @@ void UI::_executeConfirmed() {
         history.clear();
         initAppState();
         scheduler.onModeChanged();
+        wateringCtrl.stop();
         Serial.println("[UI] Acao: Reset de fabrica");
+        _startSetup();
+        return true;
 
     } else if (strcmp(tag, "test_all") == 0) {
         wateringCtrl.startTest(-1);
@@ -615,6 +618,7 @@ void UI::_executeConfirmed() {
         wateringCtrl.startTest(z);
     }
     // tag == "" → no side-effect needed
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────

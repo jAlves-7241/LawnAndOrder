@@ -163,7 +163,7 @@ private:
 
     // ── Dispatcher & navigation ───────────────────────────
     void _dispatch(const char* action);
-    void _executeConfirmed();
+    bool _executeConfirmed();
     void _goMenu(MenuID mid);
     void _goIdle();
     void _showInfo(const char* l0, const char* l1,
