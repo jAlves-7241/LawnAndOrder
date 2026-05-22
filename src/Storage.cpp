@@ -1,5 +1,6 @@
 #include "Storage.h"
 #include <Preferences.h>
+#include "log.h"
 
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS = "rega";
@@ -23,9 +24,9 @@ void Storage::begin() {
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
     if (!_ready) {
-        Serial.println("[NVS] Erro ao abrir namespace");
+        LOG_E("NVS", "Falha ao abrir namespace");
     } else {
-        Serial.println("[NVS] Pronto");
+        LOG_I("NVS", "Pronto");
     }
 }
 
@@ -36,8 +37,7 @@ bool Storage::load() {
     // Version check — if missing or wrong version, bail out and keep defaults
     uint8_t ver = prefs.getUChar(KEY_VER, 0xFF);
     if (ver != NVS_VERSION) {
-        Serial.printf("[NVS] Versao incompativel (%d != %d) — usar defaults\n",
-                      ver, NVS_VERSION);
+        LOG_W("NVS", "Versao incompativel (%d != %d) — usar defaults", ver, NVS_VERSION);
         return false;
     }
 
@@ -95,8 +95,7 @@ bool Storage::load() {
         if (cs.slots[i].minute > 59) cs.slots[i].minute = 0;
     }
 
-    Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
-                  (uint8_t)gState.mode, gState.suspended);
+    LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
     return true;
 }
 
@@ -152,7 +151,7 @@ void Storage::save() {
     }
 
     if (changed) {
-        Serial.println("[NVS] Dados actualizados");
+        LOG_I("NVS", "Dados actualizados");
     }
 }
 
@@ -160,5 +159,5 @@ void Storage::save() {
 void Storage::clear() {
     if (!_ready) return;
     prefs.clear();   // erases all keys in the namespace
-    Serial.println("[NVS] Memoria limpa (Reset)");
+    LOG_I("NVS", "Memoria limpa (Reset)");
 }

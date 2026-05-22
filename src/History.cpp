@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "log.h"
 
 History history;
 
@@ -12,13 +13,13 @@ static const size_t LINE_BUF = 52;
 bool History::begin(bool formatOnFail) {
     _ready = LittleFS.begin(formatOnFail);
     if (!_ready) {
-        Serial.println("[HIST] Erro ao montar LittleFS");
+        LOG_E("HIST", "Falha ao montar LittleFS");
         _lineCount = 0;
         _cacheCount = 0;
     } else {
         _lineCount = _countLines();
         _populateCache();
-        Serial.printf("[HIST] Pronto — %d entradas\n", _lineCount);
+        LOG_I("HIST", "Pronto — %d entradas", _lineCount);
     }
     return _ready;
 }
@@ -37,7 +38,7 @@ void History::record(const HistoryEntry& entry) {
         // O _lineCount é ajustado internamente pelo _rotateAndAppend
     } else {
         File f = LittleFS.open(HISTORY_FILE, "a");
-        if (!f) { Serial.println("[HIST] Erro ao abrir ficheiro"); return; }
+        if (!f) { LOG_E("HIST", "Falha ao abrir ficheiro"); return; }
         f.println(line);
         f.close();
         _lineCount++;
@@ -53,7 +54,7 @@ void History::record(const HistoryEntry& entry) {
         _cache[HISTORY_DISPLAY - 1] = entry;
     }
 
-    Serial.printf("[HIST] Registado: %s\n", line);
+    LOG_I("HIST", "Registado: %s", line);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -74,7 +75,7 @@ void History::clear() {
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
     _cacheCount = 0;
-    Serial.println("[HIST] Historico apagado");
+    LOG_I("HIST", "Historico apagado");
 }
 
 uint16_t History::entryCount() const { return _lineCount; }
@@ -222,7 +223,7 @@ void History::_rotateAndAppend(const char* newLine) {
     // LittleFS.rename() suporta overwrite — não é necessário remove() prévio.
     // Evita janela de perda de dados se o rename falhar.
     if (!LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
-        Serial.println("[HIST] Erro: rename falhou — manter original");
+        LOG_E("HIST", "rename falhou — manter original");
         LittleFS.remove("/hist_tmp.csv");
         return;
     }

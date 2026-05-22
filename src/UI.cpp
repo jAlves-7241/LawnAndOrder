@@ -6,6 +6,7 @@
 #include "History.h"
 #include <string.h>
 #include <stdio.h>
+#include "log.h"
 
 // ─────────────────────────────────────────────────────────
 // Internal helpers
@@ -90,6 +91,7 @@ void UI::_advanceSetup() {
             break;
 
         case SetupStep::COMPLETE:
+            LOG_I("UI", "Setup Wizard concluido");
             _inSetup = false;
             gState.setup_done = true;
             storage.save();
@@ -451,7 +453,7 @@ void UI::_commitDurPick() {
         char msg[21];
         snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
         _showDone("REGA SUSPENSA", msg);
-        Serial.printf("[UI] Acao: Suspender rega %d dias\n", _durValue);
+        LOG_I("UI", "Acao: Suspender rega %d dias", _durValue);
         return;
     }
 
@@ -596,9 +598,11 @@ bool UI::_executeConfirmed() {
 
     if (strcmp(tag, "general") == 0) {
         wateringCtrl.startGeneral();
+        LOG_I("UI", "Acao: Rega manual geral");
 
     } else if (strcmp(tag, "custom") == 0) {
         wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
+        LOG_I("UI", "Acao: Rega personalizada");
 
     } else if (strcmp(tag, "reset") == 0) {
         storage.clear();
@@ -606,16 +610,18 @@ bool UI::_executeConfirmed() {
         initAppState();
         scheduler.onModeChanged();
         wateringCtrl.stop();
-        Serial.println("[UI] Acao: Reset de fabrica");
+        LOG_I("UI", "Acao: Reset de fabrica");
         _startSetup();
         return true;
 
     } else if (strcmp(tag, "test_all") == 0) {
         wateringCtrl.startTest(-1);
+        LOG_I("UI", "Acao: Teste todas as zonas");
 
     } else if (strncmp(tag, "test_", 5) == 0) {
         int8_t z = (int8_t)atoi(tag + 5);
         wateringCtrl.startTest(z);
+        LOG_I("UI", "Acao: Teste zona %d", z + 1);
     }
     // tag == "" → no side-effect needed
     return false;
@@ -642,6 +648,7 @@ void UI::_dispatch(const char* action) {
         
         scheduler.onModeChanged();
         storage.save();
+        LOG_I("UI", "Modo selecionado: %s", _modeName(gState.mode));
 
         if (_inSetup) {
             // Seleccionou modo → zonas são obrigatórias
@@ -741,6 +748,7 @@ void UI::_dispatch(const char* action) {
         gState.auto_dst = !gState.auto_dst;
         storage.save();
         rtclock.update(); // read offset immediately
+        LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
         _buildMenu(MenuID::DEF);
         _renderMenu();
         return;
@@ -789,6 +797,7 @@ void UI::_dispatch(const char* action) {
     if (strncmp(action, "bl:", 3) == 0) {
         uint32_t ms = (uint32_t)strtoul(action + 3, nullptr, 10);
         gState.backlight_timeout_ms = ms;
+        LOG_I("UI", "Backlight timeout: %lu ms", (unsigned long)ms);
         storage.save();
         _d.backlightOn();
         _lastActivity = millis();

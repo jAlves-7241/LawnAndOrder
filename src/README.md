@@ -5,12 +5,13 @@ Este diretório contém a implementação do controlador de rega.
 ## Estrutura de Ficheiros
 
 - `config.h`: Definições de pinagem e constantes globais.
+- `log.h`: Sistema de logging com 4 níveis (ERRO/AVISO/INFO/DEBUG), filtragem em compile-time.
 - `AppState.h / .cpp`: Estado centralizado da aplicação (`gState`).
 - `Display.h / .cpp`: Driver LCD otimizado com *shadow buffering*.
 - `Encoder.h / .cpp`: Gestão de interrupções para o encoder rotativo.
 - `History.h / .cpp`: Registo de histórico em LittleFS (CSV).
 - `RTClock.h / .cpp`: Interface com o módulo RTC DS3231.
-- `Scheduler.h / .cpp`: Lógica de agendamento e disparo automático.
+- `Scheduler.h / .cpp`: Lógica de agendamento e rega automática.
 - `Storage.h / .cpp`: Persistência de dados em NVS Flash.
 - `WateringController.h / .cpp`: Controlo de hardware (relés) e fila de rega.
 - `UI.h / .cpp`: Interface de utilizador e máquina de estados dos menus.

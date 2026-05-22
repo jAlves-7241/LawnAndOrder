@@ -1,5 +1,6 @@
 #include "AppState.h"
 #include <string.h>
+#include "log.h"
 
 AppState gState;
 
@@ -90,4 +91,6 @@ void initAppState() {
     // ── Custom run defaults ──────────────────────────────
     for (int i = 0; i < NUM_ZONES; i++) gState.custom_sel[i] = false;
     gState.custom_dur_min = 10;
+    LOG_I("APP", "Defaults carregados — Modo: %d, Zonas: %d",
+          (uint8_t)gState.mode, NUM_ZONES);
 }

@@ -2,6 +2,7 @@
 #include "WateringController.h"
 #include "Storage.h"
 #include <RTClib.h>
+#include "log.h"
 
 Scheduler scheduler;
 
@@ -15,7 +16,7 @@ void Scheduler::begin() {
     if (!gState.rtc_valid) return;
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Proxima rega: %02d:%02d\n",
+    LOG_I("SCHED", "Proxima rega: %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
 
@@ -31,7 +32,7 @@ void Scheduler::update() {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
-            Serial.println("[SCHED] Suspensao expirou — rega reativada");
+            LOG_I("SCHED", "Suspensao expirada — rega reativada");
         } else {
             return; // Still suspended
         }
@@ -67,7 +68,7 @@ void Scheduler::update() {
         if (t.hour == sched.slots[i].hour &&
             t.min  == sched.slots[i].minute) {
             _triggered = true;
-            Serial.printf("[SCHED] Disparar rega automatica %02d:%02d\n",
+            LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
                           t.hour, t.min);
             wateringCtrl.startGeneral(WaterTrigger::AUTO);
             return;
@@ -92,7 +93,7 @@ void Scheduler::onModeChanged() {
     }
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Modo alterado: Proxima rega %02d:%02d\n",
+    LOG_I("SCHED", "Modo alterado: Proxima rega %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
 
@@ -116,7 +117,7 @@ void Scheduler::onWateringDone() {
 
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Ciclo concluido: Proxima rega %02d:%02d\n",
+    LOG_I("SCHED", "Ciclo concluido: Proxima rega %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
 
@@ -188,7 +189,7 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
             if (gState.custom_ref_day == 0xFFFFFFFFUL) {
                 gState.custom_ref_day = current_day;
                 storage.save();
-                Serial.printf("[SCHED] custom_ref_day definido: %lu\n", current_day);
+                LOG_D("SCHED", "custom_ref_day definido: %lu", current_day);
             }
             uint32_t ref_day = gState.custom_ref_day;
             uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);

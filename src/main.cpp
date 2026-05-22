@@ -10,6 +10,7 @@
 #include "Storage.h"
 #include "UI.h"
 #include "WateringController.h"
+#include "log.h"
 
 static Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
@@ -18,7 +19,7 @@ static UI      ui(display, encoder);
 // ─────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("[SYS] A iniciar sistema...");
+    LOG_I("SYS", "A iniciar sistema...");
 
     initAppState();       // load firmware defaults into RAM
 
@@ -31,14 +32,14 @@ void setup() {
     encoder.begin();
 
     if (!rtclock.begin()) {
-        Serial.println("[SYS] Erro: RTC nao disponivel");
+        LOG_E("SYS", "RTC nao disponivel");
     }
 
     wateringCtrl.begin();
     scheduler.begin();    // computes next_hour/min from live RTC + current mode
     ui.begin();
 
-    Serial.println("[SYS] Sistema pronto.");
+    LOG_I("SYS", "Sistema pronto.");
 }
 
 // ─────────────────────────────────────────────────────────
