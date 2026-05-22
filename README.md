@@ -6,7 +6,7 @@ Controlador autónomo de rega para jardim, com interface física por ecrã LCD e
 
 ## O que faz
 
-O sistema controla até **4 zonas de rega** de forma independente, com horários automáticos configuráveis e a possibilidade de disparar regas manuais a qualquer momento. Toda a interação é feita através de um único encoder rotativo: rodar para navegar, clicar para selecionar.
+O sistema controla até **4 zonas de rega** de forma independente, com horários automáticos configuráveis e a possibilidade de iniciar regas manuais a qualquer momento. Toda a interação é feita através de um único encoder rotativo: rodar para navegar, clicar para selecionar.
 
 O ecrã principal mostra a hora atual e o horário da próxima rega. Quando uma rega está em curso, o ecrã passa a mostrar a zona ativa e uma barra de progresso em tempo real.
 
@@ -71,7 +71,7 @@ Navega rodando o encoder. Clica para entrar. `<- Voltar` regressa sempre ao nív
 
 | Opção | Comportamento |
 |---|---|
-| **Ver Horários** | Mostra o modo ativo, hora de disparo e zonas incluídas |
+| **Ver Horários** | Mostra o modo ativo, hora de rega e zonas incluídas |
 | **Alterar Modo** | Escolhe entre Intenso, Médio, Fraco, Desativado ou Personalizado |
 | **Configurar Zonas** | Clica numa zona para abrir o selector de duração (0 = desativar, 1–20 min); roda para ajustar |
 | **Suspender Rega** | Pausa a rega automática por 3 dias sem alterar os horários; expira automaticamente |
@@ -174,6 +174,7 @@ O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo
 | Acertar data completa (dia/mês/ano) via encoder | ✅ Completo |
 | Horário de Verão Automático | ✅ Completo |
 | Assistente de setup inicial | ✅ Completo |
+| Sistema de logs com níveis de severidade | ✅ Completo |
 
 
 ---
@@ -223,6 +224,7 @@ Ctrl + Alt + S
 rega-esp32/
 ├── src/
 │   ├── config.h                   pinos, constantes, horários padrão, versão
+│   ├── log.h                      macros de log com níveis (ERRO/AVISO/INFO/DEBUG)
 │   ├── AppState.h / .cpp          estado global (gState), tabela de horários
 │   ├── Display.h / .cpp           wrapper LCD com shadow buffer anti-flickering
 │   ├── Encoder.h / .cpp           driver ISR do encoder rotativo
@@ -257,7 +259,7 @@ setup()
 ```
 loop() - executado continuamente
   rtclock.update()       lê DS3231 → gState.now (1×/seg)
-  scheduler.update()     verifica trigger, dispara rega, expira suspensão
+  scheduler.update()     verifica trigger, inicia rega, expira suspensão
   ui.update()            trata encoder, redesenha LCD
   wateringCtrl.update()  avança temporizador de zona, controla relés
 ```
@@ -304,6 +306,45 @@ loop() - executado continuamente
 
 // Timeout de backlight padrão (alterável no menu):
 // (definido em AppState.cpp como 120000UL = 2 min)
+
+// Nível de log (ver log.h):
+#define LOG_LEVEL  LVL_INFO   // LVL_NONE / LVL_ERROR / LVL_WARN / LVL_INFO / LVL_DEBUG
+```
+
+---
+
+### Sistema de logs
+
+O projecto usa um sistema de logging com 4 níveis de severidade, definido em `log.h`. Cada chamada é filtrada em compile-time — quando desligada, não gera código.
+
+```cpp
+LOG_E("TAG", "mensagem", args...)   // ERRO:  falhas de hardware, limites
+LOG_W("TAG", "mensagem", args...)   // AVISO: dados incompatíveis, bateria
+LOG_I("TAG", "mensagem", args...)   // info:  operações normais, acções
+LOG_D("TAG", "mensagem", args...)   // debug: transições internas
+```
+
+**Tags por módulo:**
+
+| Tag | Módulo | Ficheiro |
+|---|---|---|
+| `SYS` | Sistema (boot) | `main.cpp` |
+| `APP` | Estado da aplicação | `AppState.cpp` |
+| `NVS` | Persistência NVS | `Storage.cpp` |
+| `HIST` | Histórico LittleFS | `History.cpp` |
+| `LCD` | Display I2C | `Display.cpp` |
+| `RTC` | Relógio DS3231 | `RTClock.cpp` |
+| `SCHED` | Agendamento | `Scheduler.cpp` |
+| `REGA` | Controlo de rega | `WateringController.cpp` |
+| `UI` | Interface / acções | `UI.cpp` |
+
+Para alterar o nível de verbosidade, edita `LOG_LEVEL` em `config.h`:
+
+```cpp
+#define LOG_LEVEL  LVL_INFO    // default — erros, avisos e operações normais
+#define LOG_LEVEL  LVL_DEBUG   // desenvolvimento — inclui transições internas
+#define LOG_LEVEL  LVL_ERROR   // produção — apenas erros críticos
+#define LOG_LEVEL  LVL_NONE    // desliga todos os logs
 ```
 
 ---

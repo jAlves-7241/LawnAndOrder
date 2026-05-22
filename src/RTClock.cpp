@@ -1,4 +1,5 @@
 #include "RTClock.h"
+#include "log.h"
 
 RTClock rtclock;
 
@@ -13,7 +14,7 @@ RTClock::RTClock()
 
 bool RTClock::begin() {
     if (!_rtc.begin()) {
-        Serial.println("[RTC] Modulo nao encontrado — verificar I2C");
+        LOG_E("RTC", "Modulo nao encontrado — verificar I2C");
         _found = false;
         gState.rtc_valid = false;
         return false;
@@ -33,17 +34,17 @@ bool RTClock::begin() {
     gState.rtc_valid = !_lostPower;
 
     if (_lostPower) {
-        Serial.println("[RTC] Bateria descarregada ou 1a utilizacao — acertar hora");
+        LOG_W("RTC", "Bateria descarregada ou 1a utilizacao — acertar hora");
         _rtc.adjust(DateTime(2026, 1, 1, 0, 0, 0));
     }
 #endif
 
     _copyToState(_rtc.now());
 
-    Serial.printf("[RTC] OK — %04d-%02d-%02d %02d:%02d:%02d (%s)\n",
-                  gState.now.year,  gState.now.month,  gState.now.day,
-                  gState.now.hour,  gState.now.min,    gState.now.sec,
-                  DOW_NAMES[gState.now.dow % 7]);
+    LOG_I("RTC", "OK — %04d-%02d-%02d %02d:%02d:%02d (%s)",
+          gState.now.year,  gState.now.month,  gState.now.day,
+          gState.now.hour,  gState.now.min,    gState.now.sec,
+          DOW_NAMES[gState.now.dow % 7]);
     return true;
 }
 
@@ -59,7 +60,7 @@ void RTClock::update() {
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
             gState.rtc_valid = false;
-            Serial.println("[RTC] Erro: Falha na bateria em operacao");
+            LOG_E("RTC", "Falha na bateria em operacao");
         }
     }
 #endif
@@ -129,8 +130,8 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         }
     }
 
-    Serial.printf("[RTC] Hora (Local) definida: %04d-%02d-%02d %02d:%02d:%02d\n",
-                  year, month, day, hour, minute, second);
+    LOG_I("RTC", "Hora (Local) definida: %04d-%02d-%02d %02d:%02d:%02d",
+          year, month, day, hour, minute, second);
 }
 
 void RTClock::setTime(uint8_t hour, uint8_t minute) {

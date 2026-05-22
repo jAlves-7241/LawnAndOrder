@@ -4,6 +4,10 @@
 #define FW_VERSION     "v0.1.2-beta"
 #define FW_BUILD_DATE  "20Mai2026"
 
+// ── Logs (ver log.h para macros e documentação) ──────────
+// LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
+#define LOG_LEVEL  LVL_INFO
+
 // ── LCD ───────────────────────────────────────────────────
 #define LCD_ADDR   0x27
 #define LCD_COLS   20
