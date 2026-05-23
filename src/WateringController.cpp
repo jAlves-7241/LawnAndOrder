@@ -55,16 +55,18 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
-    _startNextZone();
-
+    
     LOG_I("REGA", "Iniciar rega geral");
+    _startNextZone();
 }
 
 void WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
-    _buildQueue(zones, dur_ms, WaterTrigger::CUSTOM);
-    LOG_I("REGA", "Iniciar rega personalizada — %d min", dur_min);
+    if (_buildQueue(zones, dur_ms, WaterTrigger::CUSTOM)) {
+        LOG_I("REGA", "Iniciar rega personalizada — %d min", dur_min);
+        _startNextZone();
+    }
 }
 
 void WateringController::startTest(int8_t zone_idx) {
@@ -75,8 +77,10 @@ void WateringController::startTest(int8_t zone_idx) {
     else
         for (int i = 0; i < NUM_ZONES; i++) zones[i] = (i == (int)zone_idx);
 
-    _buildQueue(zones, dur_ms, WaterTrigger::TEST);
-    LOG_I("REGA", "Iniciar teste zona=%d", zone_idx);
+    if (_buildQueue(zones, dur_ms, WaterTrigger::TEST)) {
+        LOG_I("REGA", "Iniciar teste zona=%d", zone_idx);
+        _startNextZone();
+    }
 }
 
 void WateringController::stop() {
@@ -144,17 +148,17 @@ void WateringController::update() {
 // Private
 // ─────────────────────────────────────────────────────────
 
-void WateringController::_buildQueue(const bool zones[NUM_ZONES],
+bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
                                      uint32_t dur_ms,
                                      WaterTrigger trigger) {
-    if (dur_ms == 0) return;
+    if (dur_ms == 0) return false;
     stop();
     _queueLen = 0;
     for (int i = 0; i < NUM_ZONES; i++) {
         if (zones[i])
             _queue[_queueLen++] = { (uint8_t)i, dur_ms };
     }
-    if (_queueLen == 0) return;
+    if (_queueLen == 0) return false;
 
     _runTrigger    = trigger;
     _cycleStart = gState.now;
@@ -162,7 +166,7 @@ void WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
-    _startNextZone();
+    return true;
 }
 
 void WateringController::_startNextZone() {
