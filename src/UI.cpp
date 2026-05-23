@@ -446,6 +446,7 @@ void UI::_commitDurPick() {
             _showInfo("! SEM RTC !", "Sem hora valida —", "nao e possivel", "suspender rega.", MenuID::PROG);
             return;
         }
+        LOG_I("UI", "Acao: Suspender rega %d dias", _durValue);
         gState.suspended = true;
         // _durValue is days. 1 day = 86400 seconds.
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
@@ -453,7 +454,6 @@ void UI::_commitDurPick() {
         char msg[21];
         snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
         _showDone("REGA SUSPENSA", msg);
-        LOG_I("UI", "Acao: Suspender rega %d dias", _durValue);
         return;
     }
 
@@ -597,31 +597,31 @@ bool UI::_executeConfirmed() {
     const char* tag = _pendingConfirmTag;
 
     if (strcmp(tag, "general") == 0) {
-        wateringCtrl.startGeneral();
         LOG_I("UI", "Acao: Rega manual geral");
+        wateringCtrl.startGeneral();
 
     } else if (strcmp(tag, "custom") == 0) {
-        wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
         LOG_I("UI", "Acao: Rega personalizada");
+        wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
 
     } else if (strcmp(tag, "reset") == 0) {
+        LOG_I("UI", "Acao: Reset de fabrica");
         storage.clear();
         history.clear();
         initAppState();
         scheduler.onModeChanged();
         wateringCtrl.stop();
-        LOG_I("UI", "Acao: Reset de fabrica");
         _startSetup();
         return true;
 
     } else if (strcmp(tag, "test_all") == 0) {
-        wateringCtrl.startTest(-1);
         LOG_I("UI", "Acao: Teste todas as zonas");
+        wateringCtrl.startTest(-1);
 
     } else if (strncmp(tag, "test_", 5) == 0) {
         int8_t z = (int8_t)atoi(tag + 5);
-        wateringCtrl.startTest(z);
         LOG_I("UI", "Acao: Teste zona %d", z + 1);
+        wateringCtrl.startTest(z);
     }
     // tag == "" → no side-effect needed
     return false;
@@ -646,9 +646,9 @@ void UI::_dispatch(const char* action) {
         if (idx < (uint8_t)AppMode::_COUNT)
             gState.mode = (AppMode)idx;
         
+        LOG_I("UI", "Modo selecionado: %s", _modeName(gState.mode));
         scheduler.onModeChanged();
         storage.save();
-        LOG_I("UI", "Modo selecionado: %s", _modeName(gState.mode));
 
         if (_inSetup) {
             // Seleccionou modo → zonas são obrigatórias
@@ -746,9 +746,9 @@ void UI::_dispatch(const char* action) {
     // toggle_dst
     if (strcmp(action, "toggle_dst") == 0) {
         gState.auto_dst = !gState.auto_dst;
+        LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
         storage.save();
         rtclock.update(); // read offset immediately
-        LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
         _buildMenu(MenuID::DEF);
         _renderMenu();
         return;
