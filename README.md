@@ -315,7 +315,7 @@ loop() - executado continuamente
 
 ### Sistema de logs
 
-O projecto usa um sistema de logging com 4 níveis de severidade, definido em `log.h`. Cada chamada é filtrada em compile-time — quando desligada, não gera código.
+O projecto usa um sistema de logging com 4 níveis de severidade, definido em `log.h`. Cada chamada é filtrada em compile-time - quando desligada, não gera código.
 
 ```cpp
 LOG_E("TAG", "mensagem", args...)   // ERRO:  falhas de hardware, limites
@@ -341,9 +341,9 @@ LOG_D("TAG", "mensagem", args...)   // debug: transições internas
 Para alterar o nível de verbosidade, edita `LOG_LEVEL` em `config.h`:
 
 ```cpp
-#define LOG_LEVEL  LVL_INFO    // default — erros, avisos e operações normais
-#define LOG_LEVEL  LVL_DEBUG   // desenvolvimento — inclui transições internas
-#define LOG_LEVEL  LVL_ERROR   // produção — apenas erros críticos
+#define LOG_LEVEL  LVL_INFO    // default - erros, avisos e operações normais
+#define LOG_LEVEL  LVL_DEBUG   // desenvolvimento - inclui transições internas
+#define LOG_LEVEL  LVL_ERROR   // produção - apenas erros críticos
 #define LOG_LEVEL  LVL_NONE    // desliga todos os logs
 ```
 

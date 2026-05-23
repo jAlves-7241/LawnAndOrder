@@ -19,7 +19,7 @@ bool History::begin(bool formatOnFail) {
     } else {
         _lineCount = _countLines();
         _populateCache();
-        LOG_I("HIST", "Pronto — %d entradas", _lineCount);
+        LOG_I("HIST", "Pronto - %d entradas", _lineCount);
     }
     return _ready;
 }
@@ -86,7 +86,7 @@ uint16_t History::entryCount() const { return _lineCount; }
 
 // CSV: "YYYY-MM-DDTHH:MM,<trigger_char>,d0,d1,d2,d3"
 void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
-    char tc = (char)e.trigger;   // 'A', 'M', 'C' — already encoded in enum value
+    char tc = (char)e.trigger;   // 'A', 'M', 'C' - already encoded in enum value
     snprintf(buf, len, "%04d-%02d-%02dT%02d:%02d,%c",
              e.year, e.month, e.day, e.hour, e.min, tc);
     for (int i = 0; i < NUM_ZONES; i++) {
@@ -116,7 +116,7 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     else
         out.trigger = WaterTrigger::MANUAL;
 
-    // Parse zone durations — after the second comma
+    // Parse zone durations - after the second comma
     const char* p = line;
     int commas = 0;
     while (*p && commas < 2) { if (*p++ == ',') commas++; }
@@ -220,10 +220,10 @@ void History::_rotateAndAppend(const char* newLine) {
     dst.close();
 
     // Substituir o original pelo novo ficheiro processado.
-    // LittleFS.rename() suporta overwrite — não é necessário remove() prévio.
+    // LittleFS.rename() suporta overwrite - não é necessário remove() prévio.
     // Evita janela de perda de dados se o rename falhar.
     if (!LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
-        LOG_E("HIST", "rename falhou — manter original");
+        LOG_E("HIST", "rename falhou - manter original");
         LittleFS.remove("/hist_tmp.csv");
         return;
     }

@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────
 // Display
 // Thin wrapper around LiquidCrystal_I2C.
-// Key design choice: NEVER call lcd.clear() after init —
+// Key design choice: NEVER call lcd.clear() after init -
 // instead rewrite only the rows that changed, avoiding flicker.
 // ─────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ private:
     bool _backlightOn;
     bool _displayOn;
 
-    // Shadow buffer — only writes row if content actually changed
+    // Shadow buffer - only writes row if content actually changed
     char _shadow[LCD_ROWS][LCD_COLS + 1];
 
     void _writeRow(uint8_t row, const char* text);

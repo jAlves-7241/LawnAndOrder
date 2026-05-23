@@ -64,7 +64,7 @@ void WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
     if (_buildQueue(zones, dur_ms, WaterTrigger::CUSTOM)) {
-        LOG_I("REGA", "Iniciar rega personalizada — %d min", dur_min);
+        LOG_I("REGA", "Iniciar rega personalizada - %d min", dur_min);
         _startNextZone();
     }
 }
@@ -132,7 +132,7 @@ void WateringController::update() {
         if (_queuePos < _queueLen) {
             _isWaiting = true;
             _waitStartMs = millis();
-            LOG_D("REGA", "Zona %d concluida — aguardar %lu s", _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
+            LOG_D("REGA", "Zona %d concluida - aguardar %lu s", _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
             _syncState();
         } else {
             _active = false;
@@ -177,10 +177,10 @@ void WateringController::_startNextZone() {
     _syncState();
 
     if (_zoneDurationMs % 60000UL == 0) {
-        LOG_I("REGA", "Zona %d (%s) activa — dur=%lu min",
+        LOG_I("REGA", "Zona %d (%s) activa - dur=%lu min",
                       _zoneIdx + 1, gState.zones[_zoneIdx].name, _zoneDurationMs / 60000UL);
     } else {
-        LOG_I("REGA", "Zona %d (%s) activa — dur=%lu s",
+        LOG_I("REGA", "Zona %d (%s) activa - dur=%lu s",
                       _zoneIdx + 1, gState.zones[_zoneIdx].name, _zoneDurationMs / 1000UL);
     }
 }

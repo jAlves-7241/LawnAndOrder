@@ -1,4 +1,4 @@
-# Sistema de Rega — ESP32 (Código Fonte)
+# Sistema de Rega - ESP32 (Código Fonte)
 
 Este diretório contém a implementação do controlador de rega.
 

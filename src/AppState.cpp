@@ -5,11 +5,11 @@
 AppState gState;
 
 // ─────────────────────────────────────────────────────────
-// Mode schedule table — indexed by (uint8_t)AppMode
+// Mode schedule table - indexed by (uint8_t)AppMode
 // Built entirely from config.h defines; change those, this follows.
 // ─────────────────────────────────────────────────────────
 ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
-    // INTENSO — three daily slots
+    // INTENSO - three daily slots
     {
         {{ SCHED_INTENSO_SLOT0_H, SCHED_INTENSO_SLOT0_M },
          { SCHED_INTENSO_SLOT1_H, SCHED_INTENSO_SLOT1_M },
@@ -19,7 +19,7 @@ ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
         DayPattern::DAILY,
         0, 1
     },
-    // MEDIO — two daily slots
+    // MEDIO - two daily slots
     {
         {{ SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M },
          { SCHED_MEDIO_SLOT1_H, SCHED_MEDIO_SLOT1_M },
@@ -28,7 +28,7 @@ ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
         DayPattern::DAILY,
         0, 1
     },
-    // FRACO — one daily slot
+    // FRACO - one daily slot
     {
         {{ SCHED_FRACO_SLOT0_H, SCHED_FRACO_SLOT0_M },
          { 0, 0 }, { 0, 0 }, { 0, 0 }},
@@ -36,14 +36,14 @@ ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
         DayPattern::DAILY,
         0, 1
     },
-    // DESATIVADO — no automatic watering
+    // DESATIVADO - no automatic watering
     {
         {{ 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }},
         0,
         DayPattern::DAILY,
         0, 1
     },
-    // PERSONALIZADO — default initial settings
+    // PERSONALIZADO - default initial settings
     {
         {{ SCHED_CUSTOM_SLOT0_H, SCHED_CUSTOM_SLOT0_M },
          { 0, 0 }, { 0, 0 }, { 0, 0 }},
@@ -71,7 +71,7 @@ void initAppState() {
     gState.mode            = AppMode::MEDIO;
     gState.suspended       = false;
     gState.suspended_until = 0;
-    gState.custom_ref_day  = 0xFFFFFFFFUL; // sentinel: "not yet set" — Scheduler will initialise on first use
+    gState.custom_ref_day  = 0xFFFFFFFFUL; // sentinel: "not yet set" - Scheduler will initialise on first use
     // next_hour/next_min are computed by Scheduler after RTC is ready.
     // Set a visible placeholder so the IDLE screen is never blank.
     gState.next_hour = SCHED_MEDIO_SLOT0_H;
@@ -91,6 +91,6 @@ void initAppState() {
     // ── Custom run defaults ──────────────────────────────
     for (int i = 0; i < NUM_ZONES; i++) gState.custom_sel[i] = false;
     gState.custom_dur_min = 10;
-    LOG_I("APP", "Defaults carregados — Modo: %d, Zonas: %d",
+    LOG_I("APP", "Defaults carregados - Modo: %d, Zonas: %d",
           (uint8_t)gState.mode, NUM_ZONES);
 }

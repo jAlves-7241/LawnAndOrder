@@ -14,7 +14,7 @@ RTClock::RTClock()
 
 bool RTClock::begin() {
     if (!_rtc.begin()) {
-        LOG_E("RTC", "Modulo nao encontrado — verificar I2C");
+        LOG_E("RTC", "Modulo nao encontrado - verificar I2C");
         _found = false;
         gState.rtc_valid = false;
         return false;
@@ -23,7 +23,7 @@ bool RTClock::begin() {
     _found = true;
 
 #ifdef WOKWI_SIM
-    // DS1307 has no lostPower() — assume time is valid in simulation.
+    // DS1307 has no lostPower() - assume time is valid in simulation.
     // The Wokwi chip starts at a fixed epoch; any non-zero time is fine.
     _lostPower = false;
     gState.rtc_valid = true;
@@ -34,14 +34,14 @@ bool RTClock::begin() {
     gState.rtc_valid = !_lostPower;
 
     if (_lostPower) {
-        LOG_W("RTC", "Bateria descarregada ou 1a utilizacao — acertar hora");
+        LOG_W("RTC", "Bateria descarregada ou 1a utilizacao - acertar hora");
         _rtc.adjust(DateTime(2026, 1, 1, 0, 0, 0));
     }
 #endif
 
     _copyToState(_rtc.now());
 
-    LOG_I("RTC", "OK — %04d-%02d-%02d %02d:%02d:%02d (%s)",
+    LOG_I("RTC", "OK - %04d-%02d-%02d %02d:%02d:%02d (%s)",
           gState.now.year,  gState.now.month,  gState.now.day,
           gState.now.hour,  gState.now.min,    gState.now.sec,
           DOW_NAMES[gState.now.dow % 7]);
@@ -56,7 +56,7 @@ void RTClock::update() {
     _lastReadMs = millis();
 
 #ifndef WOKWI_SIM
-    // Re-check oscillator health — detects mid-run battery failure.
+    // Re-check oscillator health - detects mid-run battery failure.
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
             gState.rtc_valid = false;
