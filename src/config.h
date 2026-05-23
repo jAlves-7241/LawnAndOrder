@@ -18,7 +18,7 @@
 #define PIN_DT     33
 #define PIN_SW     25
 
-// ── Relay pins (active-LOW — relay board pulls IN to GND to close) ───────────
+// ── Relay pins (active-LOW - relay board pulls IN to GND to close) ───────────
 // Adjust to your wiring. GPIO 26-27-14-12 are free on a standard DevKit.
 #define PIN_RELAY_1   26
 #define PIN_RELAY_2   27
@@ -27,7 +27,7 @@
 #define RELAY_ON      LOW    // change to HIGH if your board is active-HIGH
 #define RELAY_OFF     HIGH
 
-// ── Schedule defaults — alter these to change the built-in mode timetables ───
+// ── Schedule defaults - alter these to change the built-in mode timetables ───
 //
 // INTENSO: three daily slots
 #define SCHED_INTENSO_SLOT0_H   7
@@ -78,6 +78,6 @@
 #define DEBOUNCE_MS             200UL
 #define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity
 #define ZONE_TEST_DURATION_S    5         // seconds per zone in test mode
-#define ZONE_WAIT_DELAY_MS      8000UL    // ms to wait between zones closing/opening
-#define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL  // sentinel — never turn off
+#define ZONE_WAIT_DELAY_MS      5000UL    // ms to wait between zones closing/opening
+#define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL  // sentinel - never turn off
 #define DISPLAY_OFF_DELAY_MS    60000UL   // turn off pixels 60s after backlight

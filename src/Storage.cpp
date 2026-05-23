@@ -5,7 +5,7 @@
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS = "rega";
 
-// ── Key names — kept short to minimise NVS overhead ───────
+// ── Key names - kept short to minimise NVS overhead ───────
 static const char* KEY_VER      = "ver";
 static const char* KEY_MODE     = "mode";
 static const char* KEY_BL       = "bl";
@@ -34,10 +34,10 @@ void Storage::begin() {
 bool Storage::load() {
     if (!_ready) return false;
 
-    // Version check — if missing or wrong version, bail out and keep defaults
+    // Version check - if missing or wrong version, bail out and keep defaults
     uint8_t ver = prefs.getUChar(KEY_VER, 0xFF);
     if (ver != NVS_VERSION) {
-        LOG_W("NVS", "Versao incompativel (%d != %d) — usar defaults", ver, NVS_VERSION);
+        LOG_W("NVS", "Versao incompativel (%d != %d) - usar defaults", ver, NVS_VERSION);
         return false;
     }
 
@@ -72,7 +72,7 @@ bool Storage::load() {
     // ── Suspended ─────────────────────────────────────────
     gState.suspended_until =
         prefs.getUInt(KEY_SUNT, gState.suspended_until);
-    // Restore suspended flag — the Scheduler will auto-clear it once
+    // Restore suspended flag - the Scheduler will auto-clear it once
     // gState.now.unix >= suspended_until (checked every second in update()).
     gState.suspended = (gState.suspended_until > 0);
 

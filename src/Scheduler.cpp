@@ -32,7 +32,7 @@ void Scheduler::update() {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
-            LOG_I("SCHED", "Suspensao expirada — rega reativada");
+            LOG_I("SCHED", "Suspensao expirada - rega reativada");
         } else {
             return; // Still suspended
         }
@@ -80,7 +80,7 @@ void Scheduler::update() {
 void Scheduler::onModeChanged() {
     _triggered = false;
     if (!gState.rtc_valid) {
-        // RTC not ready — seed next_* from the first slot of the new mode
+        // RTC not ready - seed next_* from the first slot of the new mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
         if (sched.slot_count > 0) {
             gState.next_hour = sched.slots[0].hour;

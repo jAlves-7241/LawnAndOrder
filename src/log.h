@@ -5,11 +5,11 @@
 // Definir LOG_LEVEL em config.h para filtrar mensagens em compile-time.
 // Quanto mais alto o nível, mais verboso o output.
 //
-//   LVL_NONE  — desliga todos os logs
-//   LVL_ERROR — apenas erros críticos (falhas de hardware, limites ultrapassados)
-//   LVL_WARN  — avisos (dados incompatíveis, bateria fraca)
-//   LVL_INFO  — operações normais (boot, acções do utilizador, rega)
-//   LVL_DEBUG — detalhes internos (transições de estado, valores intermédios)
+//   LVL_NONE  - desliga todos os logs
+//   LVL_ERROR - apenas erros críticos (falhas de hardware, limites ultrapassados)
+//   LVL_WARN  - avisos (dados incompatíveis, bateria fraca)
+//   LVL_INFO  - operações normais (boot, acções do utilizador, rega)
+//   LVL_DEBUG - detalhes internos (transições de estado, valores intermédios)
 //
 // Uso:
 //   LOG_I("NVS", "Dados carregados (Modo: %d)", mode);
@@ -28,7 +28,7 @@
 
 // ── Macros ────────────────────────────────────────────────
 // A tag é uma string literal (ex: "NVS", "RTC", "REGA").
-// O \n é adicionado automaticamente — não incluir no fmt.
+// O \n é adicionado automaticamente - não incluir no fmt.
 
 #if LOG_LEVEL >= LVL_ERROR
   #define LOG_E(tag, fmt, ...) Serial.printf("[" tag "] ERRO: " fmt "\n", ##__VA_ARGS__)

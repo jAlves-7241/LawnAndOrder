@@ -57,7 +57,7 @@ private:
     // True while we're inside the trigger minute to prevent double-fire.
     bool _triggered;
 
-    // Last minute we checked — used to detect minute rollover.
+    // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;
 
     // Track watering state to detect completion without a callback.

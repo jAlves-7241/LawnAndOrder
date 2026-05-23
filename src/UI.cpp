@@ -117,13 +117,13 @@ void UI::update() {
         _d.backlightOn();
         _lastActivity = millis();
         _renderIdle();   // repaint immediately after wake
-        return;          // swallow input — next press will act normally
+        return;          // swallow input - next press will act normally
     }
 
     if (rot != 0) { _lastActivity = millis(); _handleRotation(rot); }
     if (click)    { _lastActivity = millis(); _handleClick(); }
 
-    // Idle timeout — applies to all screens, any unsaved edits are discarded
+    // Idle timeout - applies to all screens, any unsaved edits are discarded
     if (_screen != Screen::IDLE && !_inSetup &&
         (millis() - _lastActivity) >= IDLE_TIMEOUT_MS) {
         _goIdle();
@@ -234,7 +234,7 @@ void UI::_handleRotation(int8_t dir) {
             break;
 
         case Screen::SETUP_WELCOME:
-            // Ignorar rotação — apenas click avança
+            // Ignorar rotação - apenas click avança
             break;
     }
 }
@@ -443,7 +443,7 @@ void UI::_commitDurPick() {
 
     if (_durContext == DurContext::SUSPEND) {
         if (!gState.rtc_valid) {
-            _showInfo("! SEM RTC !", "Sem hora valida —", "nao e possivel", "suspender rega.", MenuID::PROG);
+            _showInfo("! SEM RTC !", "Sem hora valida -", "nao e possivel", "suspender rega.", MenuID::PROG);
             return;
         }
         LOG_I("UI", "Acao: Suspender rega %d dias", _durValue);
@@ -591,7 +591,7 @@ void UI::_commitTimeEdit() {
 }
 
 // ─────────────────────────────────────────────────────────
-// _executeConfirmed — real-world side-effects on OK
+// _executeConfirmed - real-world side-effects on OK
 // ─────────────────────────────────────────────────────────
 bool UI::_executeConfirmed() {
     const char* tag = _pendingConfirmTag;
@@ -640,7 +640,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // sel:<idx> — change AppMode
+    // sel:<idx> - change AppMode
     if (strncmp(action, "sel:", 4) == 0) {
         uint8_t idx = (uint8_t)atoi(action + 4);
         if (idx < (uint8_t)AppMode::_COUNT)
@@ -666,13 +666,13 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // setup_advance — avançar (usado por "Saltar >" e "Terminar >")
+    // setup_advance - avançar (usado por "Saltar >" e "Terminar >")
     if (strcmp(action, "setup_advance") == 0) {
         _advanceSetup();
         return;
     }
 
-    // setup_back — voltar ao passo anterior
+    // setup_back - voltar ao passo anterior
     if (strcmp(action, "setup_back") == 0) {
         switch (_setupStep) {
             case SetupStep::MODE_SELECT:
@@ -689,7 +689,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // cfgz:<idx> — open DUR_PICK for zone configuration
+    // cfgz:<idx> - open DUR_PICK for zone configuration
     if (strncmp(action, "cfgz:", 5) == 0) {
         uint8_t i = (uint8_t)atoi(action + 5);
         if (i >= NUM_ZONES) return;
@@ -702,7 +702,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // cz:<idx> — toggle custom zone selection
+    // cz:<idx> - toggle custom zone selection
     if (strncmp(action, "cz:", 3) == 0) {
         uint8_t i = (uint8_t)atoi(action + 3);
         if (i >= NUM_ZONES) return;
@@ -712,7 +712,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // dur_pick:custom — open DUR_PICK for a custom manual run
+    // dur_pick:custom - open DUR_PICK for a custom manual run
     if (strcmp(action, "dur_pick:custom") == 0) {
         bool any = false;
         for (int i = 0; i < NUM_ZONES; i++) any |= gState.custom_sel[i];
@@ -793,7 +793,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // bl:<ms> — set backlight timeout
+    // bl:<ms> - set backlight timeout
     if (strncmp(action, "bl:", 3) == 0) {
         uint32_t ms = (uint32_t)strtoul(action + 3, nullptr, 10);
         gState.backlight_timeout_ms = ms;
@@ -806,7 +806,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // horarios — computed from live state
+    // horarios - computed from live state
     if (strcmp(action, "horarios") == 0) {
         char zstr[LCD_COLS + 1] = "Zonas: ";
         for (int i = 0; i < NUM_ZONES; i++) {
@@ -823,13 +823,13 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // dur_pick:suspend — open picker for suspension days
+    // dur_pick:suspend - open picker for suspension days
     if (strcmp(action, "dur_pick:suspend") == 0) {
         _showDurPick(3, DurContext::SUSPEND); // default 3 days
         return;
     }
 
-    // cancel_susp — reactivate watering immediately
+    // cancel_susp - reactivate watering immediately
     if (strcmp(action, "cancel_susp") == 0) {
         gState.suspended = false;
         gState.suspended_until = 0;
@@ -954,7 +954,7 @@ void UI::_buildMenu(MenuID mid) {
                          e.day, MON[m], e.hour, e.min,
                          e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL");
 
-                // Detail info lines — two zones per line
+                // Detail info lines - two zones per line
                 char l1[LCD_COLS+1], l2[LCD_COLS+1];
                 snprintf(l1, sizeof(l1), "Z1:%dmin  Z2:%dmin",
                          e.zone_dur[0], e.zone_dur[1]);
@@ -977,7 +977,7 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "Historico",       "go:hist");
         makeItem(it++, "Data/Hora",       "date_edit:rtc");
         makeItem(it++, gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
-        // Backlight timeout — show current setting in label
+        // Backlight timeout - show current setting in label
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
             case 30000UL:              blLabel = "Ecra: 30 seg"; break;

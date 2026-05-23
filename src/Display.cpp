@@ -107,7 +107,7 @@ char* Display::cx(char* buf, const char* s) {
     return buf;
 }
 
-// "~~ TITLE ~~" — fills full LCD_COLS with tildes around centred text
+// "~~ TITLE ~~" - fills full LCD_COLS with tildes around centred text
 char* Display::hdr(char* buf, const char* s) {
     int len = strlen(s);
     if (len > LCD_COLS - 2) len = LCD_COLS - 2;
