@@ -202,6 +202,9 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
             dayOffset++;
         }
     }
+    // Fallback: show the first slot time if no exact match found in lookahead
+    out_hour = sched.slots[0].hour;
+    out_min  = sched.slots[0].minute;
     return false;
 }
 

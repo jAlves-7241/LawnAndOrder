@@ -3,6 +3,9 @@
 
 RTClock rtclock;
 
+// Declared in main.cpp — recovers a stuck I2C bus
+extern void recoverI2C();
+
 static const char* DOW_NAMES[] = {
     "Dom","Seg","Ter","Qua","Qui","Sex","Sab"
 };
@@ -52,8 +55,9 @@ bool RTClock::begin() {
 void RTClock::update() {
     if (!_found) return;
 
-    if ((millis() - _lastReadMs) < 1000UL) return;
-    _lastReadMs = millis();
+    uint32_t nowMs = millis();
+    if ((nowMs - _lastReadMs) < 1000UL) return;
+    _lastReadMs = nowMs;
 
 #ifndef WOKWI_SIM
     // Re-check oscillator health - detects mid-run battery failure.
@@ -75,7 +79,6 @@ void RTClock::update() {
         if (consecErrors >= 3) {
             LOG_E("RTC", "I2C com leituras corrompidas (%04d-%02d-%02d). A recuperar barramento...",
                   utcDt.year(), utcDt.month(), utcDt.day());
-            extern void recoverI2C();
             recoverI2C();
             consecErrors = 0;
         }

@@ -69,6 +69,17 @@ void setup() {
     }
 
     wateringCtrl.begin();
+
+    // BUG-5 fix: clear stale suspension from NVS if already expired.
+    // Between storage.load() and the first scheduler.update(), suspended
+    // could be true with a past timestamp, causing a brief "Rega Suspensa".
+    if (gState.suspended && gState.rtc_valid && gState.now.unix >= gState.suspended_until) {
+        gState.suspended = false;
+        gState.suspended_until = 0;
+        storage.save();
+        LOG_I("SYS", "Suspensao expirada durante reboot - limpa");
+    }
+
     scheduler.begin();    // computes next_hour/min from live RTC + current mode
     ui.begin();
 
