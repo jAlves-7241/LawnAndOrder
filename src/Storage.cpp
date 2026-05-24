@@ -1,10 +1,11 @@
 #include "Storage.h"
 #include <Preferences.h>
+#include "log.h"
 
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS = "rega";
 
-// ── Key names — kept short to minimise NVS overhead ───────
+// ── Key names - kept short to minimise NVS overhead ───────
 static const char* KEY_VER      = "ver";
 static const char* KEY_MODE     = "mode";
 static const char* KEY_BL       = "bl";
@@ -23,9 +24,9 @@ void Storage::begin() {
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
     if (!_ready) {
-        Serial.println("[NVS] Erro ao abrir namespace");
+        LOG_E("NVS", "Falha ao abrir namespace");
     } else {
-        Serial.println("[NVS] Pronto");
+        LOG_I("NVS", "Pronto");
     }
 }
 
@@ -33,11 +34,10 @@ void Storage::begin() {
 bool Storage::load() {
     if (!_ready) return false;
 
-    // Version check — if missing or wrong version, bail out and keep defaults
+    // Version check - if missing or wrong version, bail out and keep defaults
     uint8_t ver = prefs.getUChar(KEY_VER, 0xFF);
     if (ver != NVS_VERSION) {
-        Serial.printf("[NVS] Versao incompativel (%d != %d) — usar defaults\n",
-                      ver, NVS_VERSION);
+        LOG_W("NVS", "Versao incompativel (%d != %d) - usar defaults", ver, NVS_VERSION);
         return false;
     }
 
@@ -66,10 +66,13 @@ bool Storage::load() {
     // ── DST ───────────────────────────────────────────────
     gState.auto_dst = prefs.getBool("dst", gState.auto_dst);
 
+    // ── Setup Wizard ──────────────────────────────────────
+    gState.setup_done = (bool)prefs.getUChar("sdone", 0);
+
     // ── Suspended ─────────────────────────────────────────
     gState.suspended_until =
         prefs.getUInt(KEY_SUNT, gState.suspended_until);
-    // Restore suspended flag — the Scheduler will auto-clear it once
+    // Restore suspended flag - the Scheduler will auto-clear it once
     // gState.now.unix >= suspended_until (checked every second in update()).
     gState.suspended = (gState.suspended_until > 0);
 
@@ -92,8 +95,7 @@ bool Storage::load() {
         if (cs.slots[i].minute > 59) cs.slots[i].minute = 0;
     }
 
-    Serial.printf("[NVS] Dados carregados (Modo: %d, Susp: %d)\n",
-                  (uint8_t)gState.mode, gState.suspended);
+    LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
     return true;
 }
 
@@ -125,6 +127,8 @@ void Storage::save() {
         changed = true;
     }
 
+    updateUChar("sdone", gState.setup_done ? 1 : 0);
+
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     updateUChar(KEY_CIF, cs.interval_days);
     updateUChar(KEY_CSC, cs.slot_count);
@@ -147,7 +151,7 @@ void Storage::save() {
     }
 
     if (changed) {
-        Serial.println("[NVS] Dados actualizados");
+        LOG_I("NVS", "Dados actualizados");
     }
 }
 
@@ -155,5 +159,5 @@ void Storage::save() {
 void Storage::clear() {
     if (!_ready) return;
     prefs.clear();   // erases all keys in the namespace
-    Serial.println("[NVS] Memoria limpa (Reset)");
+    LOG_I("NVS", "Memoria limpa (Reset)");
 }

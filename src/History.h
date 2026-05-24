@@ -28,7 +28,7 @@ public:
 
 private:
     bool     _ready;
-    uint16_t _lineCount;   // cached line count — avoids re-reading file on every record()
+    uint16_t _lineCount;   // cached line count - avoids re-reading file on every record()
 
     // Cache for UI display
     HistoryEntry _cache[HISTORY_DISPLAY];

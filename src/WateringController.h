@@ -45,7 +45,7 @@ private:
     SystemTime   _cycleStart;             // gState.now snapshot at cycle start
     uint8_t      _zoneDurMin[NUM_ZONES];  // actual minutes per zone (0 = not run)
 
-    void _buildQueue(const bool zones[NUM_ZONES], uint32_t dur_ms,
+    bool _buildQueue(const bool zones[NUM_ZONES], uint32_t dur_ms,
                      WaterTrigger trigger);
     void _startNextZone();
     void _finishCycle();     // record to history and notify scheduler

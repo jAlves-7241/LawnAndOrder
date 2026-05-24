@@ -7,9 +7,9 @@
 // ─────────────────────────────────────────────────────────
 
 enum class AppMode : uint8_t {
-    INTENSO = 0,   // multiple daily slots — defaults set in config.h
-    MEDIO,         // one daily slot — default set in config.h
-    FRACO,         // one slot on alternate days — default set in config.h
+    INTENSO = 0,   // multiple daily slots - defaults set in config.h
+    MEDIO,         // one daily slot - default set in config.h
+    FRACO,         // one slot on alternate days - default set in config.h
     DESATIVADO,    // no automatic watering
     PERSONALIZADO, // user-defined schedule (cycles, interval, times)
     _COUNT
@@ -28,7 +28,7 @@ struct WateringStatus {
     uint8_t progress_pct;   // 0–100
 };
 
-// Current date/time — updated every second by RTClock::update()
+// Current date/time - updated every second by RTClock::update()
 // Named SystemTime to avoid collision with RTClib's DateTime class.
 struct SystemTime {
     uint16_t year;    // e.g. 2026
@@ -50,10 +50,10 @@ enum class WaterTrigger : uint8_t {
     AUTO   = 'A',   // fired by Scheduler
     MANUAL = 'M',   // Rega Geral triggered by user
     CUSTOM = 'C',   // Personalizado triggered by user
-    TEST   = 'T',   // test run — not written to history file
+    TEST   = 'T',   // test run - not written to history file
 };
 
-// One history record — one full watering cycle
+// One history record - one full watering cycle
 struct HistoryEntry {
     uint16_t    year;
     uint8_t     month, day, hour, min;
@@ -74,7 +74,7 @@ struct ScheduleSlot {
 // Which days of the week/month the schedule is active.
 enum class DayPattern : uint8_t {
     DAILY,      // every day
-    DOW_MASK,   // specific days of week — see dow_mask below
+    DOW_MASK,   // specific days of week - see dow_mask below
                 // bit 0 = Sun, bit 1 = Mon, … bit 6 = Sat
     EVERY_X_DAYS, // every interval_days, starting from custom_ref_day
 };
@@ -94,7 +94,7 @@ struct ModeSchedule {
 extern ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT];
 
 // ─────────────────────────────────────────────────────────
-// Global state — single source of truth for the whole app
+// Global state - single source of truth for the whole app
 // ─────────────────────────────────────────────────────────
 
 struct AppState {
@@ -118,11 +118,14 @@ struct AppState {
     uint8_t next_hour;
     uint8_t next_min;
 
-    // Backlight — timeout in ms after last activity (BACKLIGHT_TIMEOUT_NEVER = always on)
+    // Backlight - timeout in ms after last activity (BACKLIGHT_TIMEOUT_NEVER = always on)
     uint32_t backlight_timeout_ms;
 
     // DST (Daylight Saving Time)
     bool auto_dst;
+
+    // Setup wizard - true after first-boot wizard completes
+    bool setup_done;
 };
 
 extern AppState gState;
