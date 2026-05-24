@@ -28,13 +28,8 @@ int8_t Encoder::getRotation() {
     int8_t ret = 0;
     
     noInterrupts();
-    if (_delta > 0) {
-        _delta--;
-        ret = 1;
-    } else if (_delta < 0) {
-        _delta++;
-        ret = -1;
-    }
+    ret = (int8_t)_delta;
+    _delta = 0;
     interrupts();
 
     return ret;

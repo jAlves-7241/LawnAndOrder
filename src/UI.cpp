@@ -43,7 +43,8 @@ UI::UI(Display& disp, Encoder& enc)
       _teHour(0), _teMin(0), _teField(0),
       _teContext(TimeEditContext::RTC), _teCycleIdx(0),
       _lastActivity(0), _itemCount(0),
-      _setupStep(SetupStep::WELCOME), _inSetup(false)
+      _setupStep(SetupStep::WELCOME), _inSetup(false),
+      _configChanged(false)
 {
     _pendingConfirmTag[0] = '\0';
 }
@@ -105,6 +106,11 @@ void UI::_advanceSetup() {
 // update()
 // ─────────────────────────────────────────────────────────
 void UI::update() {
+    if (_screen == Screen::IDLE && _configChanged) {
+        storage.save();
+        _configChanged = false;
+    }
+
     int8_t rot   = _enc.getRotation();
     bool   click = _enc.getClick();
 
@@ -142,12 +148,30 @@ void UI::update() {
         }
     }
 
-    // Clock refresh: repaint idle once per second (only when characters are on)
+    // Clock refresh: repaint idle screen periodically
     static uint32_t lastClockMs = 0;
-    if (_screen == Screen::IDLE && _d.isDisplayOn() &&
-        (millis() - lastClockMs) >= 1000) {
-        lastClockMs = millis();
-        _renderIdle();
+    static uint8_t lastMin = 0xFF;
+    
+    if (_screen == Screen::IDLE && _d.isDisplayOn()) {
+        bool needsRedraw = false;
+        uint32_t nowMs = millis();
+        if (gState.watering.active) {
+            // When watering is active, redraw every second to update progress/durations
+            if (nowMs - lastClockMs >= 1000) {
+                needsRedraw = true;
+            }
+        } else {
+            // When idle and not watering, only redraw on minute boundary to reduce I2C traffic
+            if (gState.now.min != lastMin) {
+                needsRedraw = true;
+            }
+        }
+
+        if (needsRedraw) {
+            lastClockMs = nowMs;
+            lastMin = gState.now.min;
+            _renderIdle();
+        }
     }
 }
 
@@ -160,11 +184,14 @@ void UI::_handleRotation(int8_t dir) {
             _goMenu(MenuID::MAIN);
             break;
 
-        case Screen::MENU:
+        case Screen::MENU: {
             if (_itemCount == 0) break;  // guard: empty menu
-            _cur = (uint8_t)((_cur + dir + _itemCount) % _itemCount);
+            int newCur = (int)_cur + dir;
+            while (newCur < 0) newCur += _itemCount;
+            _cur = (uint8_t)(newCur % _itemCount);
             _renderMenu();
             break;
+        }
 
         case Screen::INFO:
         case Screen::DONE:
@@ -187,9 +214,10 @@ void UI::_handleRotation(int8_t dir) {
             }
 
             int v = (int)_durValue + dir;
-            if (v < vmin) v = vmax;
-            else if (v > vmax) v = vmin;
-            _durValue = (uint8_t)v;            _renderDurPick();
+            while (v < vmin) v += (vmax - vmin + 1);
+            while (v > vmax) v -= (vmax - vmin + 1);
+            _durValue = (uint8_t)v;
+            _renderDurPick();
             break;
         }
 
@@ -198,14 +226,14 @@ void UI::_handleRotation(int8_t dir) {
                 // Dia: wrap consoante o mês
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 int d = (int)_deDay + dir;
-                if (d < 1) d = max_days;
-                else if (d > max_days) d = 1;
+                while (d < 1) d += max_days;
+                while (d > max_days) d -= max_days;
                 _deDay = (uint8_t)d;
             } else if (_deField == 1) {
                 // Mês: wrap 1-12
                 int m = (int)_deMonth + dir;
-                if (m < 1) m = 12;
-                else if (m > 12) m = 1;
+                while (m < 1) m += 12;
+                while (m > 12) m -= 12;
                 _deMonth = (uint8_t)m;
                 // Re-validar o dia se o mês encolheu
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
@@ -213,8 +241,8 @@ void UI::_handleRotation(int8_t dir) {
             } else {
                 // Ano: limite razoável (2020-2099)
                 int y = (int)_deYear + dir;
-                if (y < 2020) y = 2099;
-                else if (y > 2099) y = 2020;
+                while (y < 2020) y += 80; // faixa de 80 anos (2020-2099)
+                while (y > 2099) y -= 80;
                 _deYear = (uint16_t)y;
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 if (_deDay > max_days) _deDay = max_days;
@@ -225,10 +253,14 @@ void UI::_handleRotation(int8_t dir) {
         case Screen::TIME_EDIT:
             if (_teField == 0) {
                 // Editing hour: 0–23, wraps
-                _teHour = (uint8_t)((_teHour + dir + 24) % 24);
+                int h = (int)_teHour + dir;
+                while (h < 0) h += 24;
+                _teHour = (uint8_t)(h % 24);
             } else {
                 // Editing minute: 0–59, wraps
-                _teMin = (uint8_t)((_teMin + dir + 60) % 60);
+                int m = (int)_teMin + dir;
+                while (m < 0) m += 60;
+                _teMin = (uint8_t)(m % 60);
             }
             _renderTimeEdit();
             break;
@@ -291,6 +323,10 @@ void UI::_goMenu(MenuID mid) {
 }
 
 void UI::_goIdle() {
+    if (_configChanged) {
+        storage.save();
+        _configChanged = false;
+    }
     _screen = Screen::IDLE;
     _renderIdle();
 }
@@ -391,7 +427,7 @@ void UI::_commitDurPick() {
             }
         }
 
-        storage.save();
+        _configChanged = true;
         _goMenu(_inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
         return;
     }
@@ -401,7 +437,7 @@ void UI::_commitDurPick() {
         cs.interval_days = (_durValue > 0) ? _durValue : 1;
         DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
         gState.custom_ref_day = localDate.unixtime() / 86400UL;
-        storage.save();
+        _configChanged = true;
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);
         return;
@@ -435,7 +471,7 @@ void UI::_commitDurPick() {
                 }
             }
         }
-        storage.save();
+        _configChanged = true;
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);
         return;
@@ -450,7 +486,7 @@ void UI::_commitDurPick() {
         gState.suspended = true;
         // _durValue is days. 1 day = 86400 seconds.
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
-        storage.save();
+        _configChanged = true;
         char msg[21];
         snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
         _showDone("REGA SUSPENSA", msg);
@@ -584,7 +620,7 @@ void UI::_commitTimeEdit() {
             }
         }
 
-        storage.save();
+        _configChanged = true;
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);
     }
@@ -648,7 +684,7 @@ void UI::_dispatch(const char* action) {
         
         LOG_I("UI", "Modo selecionado: %s", _modeName(gState.mode));
         scheduler.onModeChanged();
-        storage.save();
+        _configChanged = true;
 
         if (_inSetup) {
             // Seleccionou modo → zonas são obrigatórias
@@ -747,7 +783,7 @@ void UI::_dispatch(const char* action) {
     if (strcmp(action, "toggle_dst") == 0) {
         gState.auto_dst = !gState.auto_dst;
         LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
-        storage.save();
+        _configChanged = true;
         rtclock.update(); // read offset immediately
         _buildMenu(MenuID::DEF);
         _renderMenu();
@@ -798,7 +834,7 @@ void UI::_dispatch(const char* action) {
         uint32_t ms = (uint32_t)strtoul(action + 3, nullptr, 10);
         gState.backlight_timeout_ms = ms;
         LOG_I("UI", "Backlight timeout: %lu ms", (unsigned long)ms);
-        storage.save();
+        _configChanged = true;
         _d.backlightOn();
         _lastActivity = millis();
         _buildMenu(MenuID::BLSEL);
@@ -833,7 +869,7 @@ void UI::_dispatch(const char* action) {
     if (strcmp(action, "cancel_susp") == 0) {
         gState.suspended = false;
         gState.suspended_until = 0;
-        storage.save();
+        _configChanged = true;
         _showDone("REGA REATIVADA", "Suspensao cancelada");
         return;
     }

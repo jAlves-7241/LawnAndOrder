@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "log.h"
+#include "Storage.h"
 
 History history;
 
@@ -17,9 +18,23 @@ bool History::begin(bool formatOnFail) {
         _lineCount = 0;
         _cacheCount = 0;
     } else {
-        _lineCount = _countLines();
-        _populateCache();
-        LOG_I("HIST", "Pronto - %d entradas", _lineCount);
+        // Tenta carregar da NVS primeiro
+        if (storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount)) {
+            // Cache e total recuperados instantaneamente da NVS!
+            // Calcular _cacheCount com base nos registos válidos (ano diferente de zero)
+            _cacheCount = 0;
+            for (int i = 0; i < HISTORY_DISPLAY; i++) {
+                if (_cache[i].year > 0) _cacheCount++;
+            }
+            LOG_I("HIST", "Carregado via NVS - %d entradas", _lineCount);
+        } else {
+            // Fallback (apenas se NVS estiver vazio ou corrompido)
+            _lineCount = _countLines();
+            _populateCache();
+            // Salva na NVS para o próximo boot
+            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+            LOG_I("HIST", "Carregado via LittleFS (Fallback) - %d entradas", _lineCount);
+        }
     }
     return _ready;
 }
@@ -54,6 +69,9 @@ void History::record(const HistoryEntry& entry) {
         _cache[HISTORY_DISPLAY - 1] = entry;
     }
 
+    // Persistir cache de imediato na NVS
+    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+
     LOG_I("HIST", "Registado: %s", line);
 }
 
@@ -75,6 +93,8 @@ void History::clear() {
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
     _cacheCount = 0;
+    memset(_cache, 0, sizeof(_cache));
+    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
     LOG_I("HIST", "Historico apagado");
 }
 
@@ -92,7 +112,7 @@ void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
     for (int i = 0; i < NUM_ZONES; i++) {
         char tmp[5];
         snprintf(tmp, sizeof(tmp), ",%d", e.zone_dur[i]);
-        strncat(buf, tmp, len - strlen(buf) - 1);
+        strlcat(buf, tmp, len);
     }
 }
 
@@ -197,18 +217,29 @@ void History::_rotateAndAppend(const char* newLine) {
     uint16_t n = 0;
     uint16_t skipped = 0;
 
-    // Copiar linha a linha, evitando carregar o ficheiro todo na RAM
+    // Copiar linha a linha, evitando carregar o ficheiro todo na RAM (sem usar String)
+    char lineBuf[LINE_BUF];
     while (src.available()) {
-        String s = src.readStringUntil('\n');
-        s.trim();
-        if (s.length() == 0) continue;
+        int bytesRead = src.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
+        lineBuf[bytesRead] = '\0';
+
+        // Trim right carriage return, spaces, and newlines
+        while (bytesRead > 0 && (lineBuf[bytesRead - 1] == '\r' || lineBuf[bytesRead - 1] == ' ' || lineBuf[bytesRead - 1] == '\n')) {
+            lineBuf[--bytesRead] = '\0';
+        }
+
+        // Trim left spaces
+        char* p = lineBuf;
+        while (*p == ' ') p++;
+
+        if (strlen(p) == 0) continue;
 
         if (skipped < discard) {
             skipped++;
             continue;
         }
 
-        dst.println(s);
+        dst.println(p);
         n++;
         // Limite de segurança para não ultrapassar a quota planeada
         if (n >= keep) break;

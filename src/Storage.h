@@ -51,6 +51,10 @@ public:
     // Erase the entire NVS namespace (factory reset).
     void clear();
 
+    // Persist history cache to NVS
+    bool loadHistoryCache(void* dest, size_t size, uint16_t& lineCount);
+    void saveHistoryCache(const void* src, size_t size, uint16_t lineCount);
+
 private:
     bool _ready;  // true after begin() succeeds
 };
