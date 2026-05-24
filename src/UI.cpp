@@ -85,6 +85,11 @@ void UI::_advanceSetup() {
             _renderSetupComplete();
             break;
 
+        case SetupStep::CUSTOM_CONFIG:
+            _setupStep = SetupStep::ZONE_CONFIG;
+            _goMenu(MenuID::SETUP_ZONES);
+            break;
+
         case SetupStep::ZONE_CONFIG:
             _setupStep = SetupStep::COMPLETE;
             _screen    = Screen::SETUP_WELCOME;
@@ -439,7 +444,7 @@ void UI::_commitDurPick() {
         gState.custom_ref_day = localDate.unixtime() / 86400UL;
         _configChanged = true;
         scheduler.onModeChanged();
-        _goMenu(MenuID::CFG_CUSTOM);
+        _goMenu(_inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
         return;
     }
 
@@ -448,7 +453,7 @@ void UI::_commitDurPick() {
         uint16_t total_dur = _totalZoneDuration();
         if ((uint32_t)_durValue * total_dur > 1440) {
             _showInfo("! ERRO !", "Duracao total",
-                      "excede 24h.", "", MenuID::CFG_CUSTOM);
+                      "excede 24h.", "", _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
             return;
         }
         // Obter a hora do primeiro ciclo como âncora para manter a preferência do utilizador
@@ -478,7 +483,7 @@ void UI::_commitDurPick() {
         }
         _configChanged = true;
         scheduler.onModeChanged();
-        _goMenu(MenuID::CFG_CUSTOM);
+        _goMenu(_inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
         return;
     }
 
@@ -551,7 +556,7 @@ void UI::_showTimeEdit(TimeEditContext ctx, uint8_t cycleIdx) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         _teHour   = cs.slots[cycleIdx].hour;
         _teMin    = cs.slots[cycleIdx].minute;
-        _backMenu = MenuID::CFG_CUSTOM;
+        _backMenu = _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM;
     }
 
     _teField = 0;  // start on hour
@@ -605,7 +610,7 @@ void UI::_commitTimeEdit() {
 
             if (diff <= total_dur) {
                 _showInfo("! SOBREPOSICAO !", "Ciclos muito",
-                          "proximos.", "Ajuste tempo/zona", MenuID::CFG_CUSTOM);
+                          "proximos.", "Ajuste tempo/zona", _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
                 return;
             }
         }
@@ -627,7 +632,7 @@ void UI::_commitTimeEdit() {
 
         _configChanged = true;
         scheduler.onModeChanged();
-        _goMenu(MenuID::CFG_CUSTOM);
+        _goMenu(_inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
     }
 }
 
@@ -692,9 +697,13 @@ void UI::_dispatch(const char* action) {
         _configChanged = true;
 
         if (_inSetup) {
-            // Seleccionou modo → zonas são obrigatórias
-            _setupStep = SetupStep::ZONE_CONFIG;
-            _goMenu(MenuID::SETUP_ZONES);
+            if (gState.mode == AppMode::PERSONALIZADO) {
+                _setupStep = SetupStep::CUSTOM_CONFIG;
+                _goMenu(MenuID::SETUP_CUSTOM);
+            } else {
+                _setupStep = SetupStep::ZONE_CONFIG;
+                _goMenu(MenuID::SETUP_ZONES);
+            }
             return;
         }
 
@@ -720,9 +729,18 @@ void UI::_dispatch(const char* action) {
                 _setupStep = SetupStep::DATE_TIME;
                 _showDateEdit();
                 break;
-            case SetupStep::ZONE_CONFIG:
+            case SetupStep::CUSTOM_CONFIG:
                 _setupStep = SetupStep::MODE_SELECT;
                 _goMenu(MenuID::SETUP_MODE);
+                break;
+            case SetupStep::ZONE_CONFIG:
+                if (gState.mode == AppMode::PERSONALIZADO) {
+                    _setupStep = SetupStep::CUSTOM_CONFIG;
+                    _goMenu(MenuID::SETUP_CUSTOM);
+                } else {
+                    _setupStep = SetupStep::MODE_SELECT;
+                    _goMenu(MenuID::SETUP_MODE);
+                }
                 break;
             default:
                 break;
@@ -936,6 +954,23 @@ void UI::_buildMenu(MenuID mid) {
             makeItem(it++, lbuf, act);
         }
         makeItem(it++, "<- Terminar", "go:prog");
+        break;
+    }
+
+    case MenuID::SETUP_CUSTOM: {
+        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+        snprintf(lbuf, sizeof(lbuf), "Freq: %d dias", cs.interval_days);
+        makeItem(it++, lbuf, "dur_pick:freq");
+        snprintf(lbuf, sizeof(lbuf), "Ciclos: %d", cs.slot_count);
+        makeItem(it++, lbuf, "dur_pick:cycles");
+        for (int i = 0; i < cs.slot_count; i++) {
+            snprintf(lbuf, sizeof(lbuf), "Ciclo %d: %02d:%02d", i + 1, cs.slots[i].hour, cs.slots[i].minute);
+            char act[16];
+            snprintf(act, sizeof(act), "time_edit:c%d", i);
+            makeItem(it++, lbuf, act);
+        }
+        makeItem(it++, "Avancar >", "setup_advance");
+        makeItem(it++, "<- Voltar", "setup_back");
         break;
     }
 
@@ -1165,6 +1200,7 @@ void UI::_renderMenu() {
             case MenuID::BLSEL:        return "Tempo Ecra";
             case MenuID::SETUP_MODE:   return "Modo de Rega";
             case MenuID::SETUP_ZONES:  return "Config. Zonas";
+            case MenuID::SETUP_CUSTOM: return "Modo Pers.";
             default:                   return "Menu";
         }
     };

@@ -36,6 +36,7 @@ enum class MenuID : uint8_t {
     BLSEL,    // backlight timeout selector
     SETUP_MODE,   // NOVO
     SETUP_ZONES,  // NOVO
+    SETUP_CUSTOM, // NOVO
     _COUNT
 };
 
@@ -56,11 +57,12 @@ enum class TimeEditContext : uint8_t {
 };
 
 enum class SetupStep : uint8_t {
-    WELCOME,     // ecrã inicial
-    DATE_TIME,   // acertar data/hora
-    MODE_SELECT, // escolher modo de rega
-    ZONE_CONFIG, // configurar zonas
-    COMPLETE,    // ecrã final
+    WELCOME,       // ecrã inicial
+    DATE_TIME,     // acertar data/hora
+    MODE_SELECT,   // escolher modo de rega
+    CUSTOM_CONFIG, // personalizar modo (se aplicavel)
+    ZONE_CONFIG,   // configurar zonas
+    COMPLETE,      // ecrã final
 };
 
 // ─────────────────────────────────────────────────────────
