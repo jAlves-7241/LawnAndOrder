@@ -32,6 +32,7 @@ enum class MenuID : uint8_t {
     CFG_CUSTOM,
     HISTORICO,
     DEF,
+    DEF_AVANCADO,
     TESTES,
     BLSEL,    // backlight timeout selector
     SETUP_MODE,   // NOVO
