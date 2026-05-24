@@ -172,25 +172,71 @@ void History::_populateCache() {
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return;
 
+    char chunk[256];
     char line[LINE_BUF];
-    while (f.available()) {
-        int len = f.readBytesUntil('\n', line, LINE_BUF - 1);
-        if (len > 0 && line[len-1] == '\r') len--;
-        line[len] = '\0';
-        if (len == 0) continue;
+    size_t linePos = 0;
 
-        HistoryEntry temp;
-        if (_lineToEntry(line, temp)) {
-            if (_cacheCount < HISTORY_DISPLAY) {
-                _cache[_cacheCount++] = temp;
-            } else {
-                for (int i = 0; i < HISTORY_DISPLAY - 1; i++) {
-                    _cache[i] = _cache[i+1];
+    while (f.available()) {
+        int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
+        if (bytesRead <= 0) break;
+
+        for (int i = 0; i < bytesRead; i++) {
+            char c = chunk[i];
+            if (c == '\n') {
+                line[linePos] = '\0';
+
+                // Trim right carriage return, spaces, and newlines
+                while (linePos > 0 && (line[linePos - 1] == '\r' || line[linePos - 1] == ' ' || line[linePos - 1] == '\n')) {
+                    line[--linePos] = '\0';
                 }
-                _cache[HISTORY_DISPLAY - 1] = temp;
+
+                char* p = line;
+                while (*p == ' ') p++;
+
+                if (strlen(p) > 0) {
+                    HistoryEntry temp;
+                    if (_lineToEntry(p, temp)) {
+                        if (_cacheCount < HISTORY_DISPLAY) {
+                            _cache[_cacheCount++] = temp;
+                        } else {
+                            for (int k = 0; k < HISTORY_DISPLAY - 1; k++) {
+                                _cache[k] = _cache[k+1];
+                            }
+                            _cache[HISTORY_DISPLAY - 1] = temp;
+                        }
+                    }
+                }
+                linePos = 0;
+            } else if (c != '\r' && linePos < sizeof(line) - 1) {
+                line[linePos++] = c;
             }
         }
     }
+
+    // Process final line if file does not end with '\n'
+    if (linePos > 0) {
+        line[linePos] = '\0';
+        while (linePos > 0 && (line[linePos - 1] == '\r' || line[linePos - 1] == ' ' || line[linePos - 1] == '\n')) {
+            line[--linePos] = '\0';
+        }
+        char* p = line;
+        while (*p == ' ') p++;
+
+        if (strlen(p) > 0) {
+            HistoryEntry temp;
+            if (_lineToEntry(p, temp)) {
+                if (_cacheCount < HISTORY_DISPLAY) {
+                    _cache[_cacheCount++] = temp;
+                } else {
+                    for (int k = 0; k < HISTORY_DISPLAY - 1; k++) {
+                        _cache[k] = _cache[k+1];
+                    }
+                    _cache[HISTORY_DISPLAY - 1] = temp;
+                }
+            }
+        }
+    }
+
     f.close();
 }
 
@@ -218,34 +264,68 @@ void History::_rotateAndAppend(const char* newLine) {
     uint16_t n = 0;
     uint16_t skipped = 0;
 
-    // Copiar linha a linha, evitando carregar o ficheiro todo na RAM (sem usar String)
+    char chunk[256];
     char lineBuf[LINE_BUF];
-    while (src.available()) {
-        esp_task_wdt_reset(); // Alimentar o Watchdog para prevenir resets se a escrita em flash for lenta
-        int bytesRead = src.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
-        lineBuf[bytesRead] = '\0';
+    size_t linePos = 0;
+    bool stopCopying = false;
 
-        // Trim right carriage return, spaces, and newlines
-        while (bytesRead > 0 && (lineBuf[bytesRead - 1] == '\r' || lineBuf[bytesRead - 1] == ' ' || lineBuf[bytesRead - 1] == '\n')) {
-            lineBuf[--bytesRead] = '\0';
+    while (src.available() && !stopCopying) {
+        esp_task_wdt_reset(); // Alimentar o Watchdog para prevenir resets
+        int bytesRead = src.read((uint8_t*)chunk, sizeof(chunk));
+        if (bytesRead <= 0) break;
+
+        for (int i = 0; i < bytesRead; i++) {
+            char c = chunk[i];
+            if (c == '\n') {
+                lineBuf[linePos] = '\0';
+
+                // Trim right carriage return, spaces, and newlines
+                while (linePos > 0 && (lineBuf[linePos - 1] == '\r' || lineBuf[linePos - 1] == ' ' || lineBuf[linePos - 1] == '\n')) {
+                    lineBuf[--linePos] = '\0';
+                }
+
+                // Trim left spaces
+                char* p = lineBuf;
+                while (*p == ' ') p++;
+
+                if (strlen(p) > 0) {
+                    if (skipped < discard) {
+                        skipped++;
+                    } else {
+                        dst.println(p);
+                        n++;
+                        if (n >= keep) {
+                            stopCopying = true;
+                            break;
+                        }
+                    }
+                }
+                linePos = 0;
+            } else if (c != '\r' && linePos < sizeof(lineBuf) - 1) {
+                lineBuf[linePos++] = c;
+            }
         }
+    }
 
-        // Trim left spaces
+    // Edge-case crítico: Processar a última linha caso o ficheiro não termine com '\n'
+    if (linePos > 0 && !stopCopying) {
+        lineBuf[linePos] = '\0';
+        while (linePos > 0 && (lineBuf[linePos - 1] == '\r' || lineBuf[linePos - 1] == ' ' || lineBuf[linePos - 1] == '\n')) {
+            lineBuf[--linePos] = '\0';
+        }
         char* p = lineBuf;
         while (*p == ' ') p++;
 
-        if (strlen(p) == 0) continue;
-
-        if (skipped < discard) {
-            skipped++;
-            continue;
+        if (strlen(p) > 0) {
+            if (skipped < discard) {
+                skipped++;
+            } else {
+                dst.println(p);
+                n++;
+            }
         }
-
-        dst.println(p);
-        n++;
-        // Limite de segurança para não ultrapassar a quota planeada
-        if (n >= keep) break;
     }
+
     src.close();
 
     // Adicionar a nova entrada no final
