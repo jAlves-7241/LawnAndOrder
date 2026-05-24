@@ -1,5 +1,6 @@
 #include "History.h"
 #include <LittleFS.h>
+#include <esp_task_wdt.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -220,6 +221,7 @@ void History::_rotateAndAppend(const char* newLine) {
     // Copiar linha a linha, evitando carregar o ficheiro todo na RAM (sem usar String)
     char lineBuf[LINE_BUF];
     while (src.available()) {
+        esp_task_wdt_reset(); // Alimentar o Watchdog para prevenir resets se a escrita em flash for lenta
         int bytesRead = src.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
         lineBuf[bytesRead] = '\0';
 
