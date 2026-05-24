@@ -43,7 +43,8 @@ UI::UI(Display& disp, Encoder& enc)
       _teHour(0), _teMin(0), _teField(0),
       _teContext(TimeEditContext::RTC), _teCycleIdx(0),
       _lastActivity(0), _itemCount(0),
-      _setupStep(SetupStep::WELCOME), _inSetup(false)
+      _setupStep(SetupStep::WELCOME), _inSetup(false),
+      _configChanged(false)
 {
     _pendingConfirmTag[0] = '\0';
 }
@@ -84,6 +85,11 @@ void UI::_advanceSetup() {
             _renderSetupComplete();
             break;
 
+        case SetupStep::CUSTOM_CONFIG:
+            _setupStep = SetupStep::ZONE_CONFIG;
+            _goMenu(MenuID::SETUP_ZONES);
+            break;
+
         case SetupStep::ZONE_CONFIG:
             _setupStep = SetupStep::COMPLETE;
             _screen    = Screen::SETUP_WELCOME;
@@ -105,6 +111,11 @@ void UI::_advanceSetup() {
 // update()
 // ─────────────────────────────────────────────────────────
 void UI::update() {
+    if (_screen == Screen::IDLE && _configChanged) {
+        storage.save();
+        _configChanged = false;
+    }
+
     int8_t rot   = _enc.getRotation();
     bool   click = _enc.getClick();
 
@@ -142,12 +153,30 @@ void UI::update() {
         }
     }
 
-    // Clock refresh: repaint idle once per second (only when characters are on)
+    // Clock refresh: repaint idle screen periodically
     static uint32_t lastClockMs = 0;
-    if (_screen == Screen::IDLE && _d.isDisplayOn() &&
-        (millis() - lastClockMs) >= 1000) {
-        lastClockMs = millis();
-        _renderIdle();
+    static uint8_t lastMin = 0xFF;
+    
+    if (_screen == Screen::IDLE && _d.isDisplayOn()) {
+        bool needsRedraw = false;
+        uint32_t nowMs = millis();
+        if (gState.watering.active) {
+            // When watering is active, redraw every second to update progress/durations
+            if (nowMs - lastClockMs >= 1000) {
+                needsRedraw = true;
+            }
+        } else {
+            // When idle and not watering, only redraw on minute boundary to reduce I2C traffic
+            if (gState.now.min != lastMin) {
+                needsRedraw = true;
+            }
+        }
+
+        if (needsRedraw) {
+            lastClockMs = nowMs;
+            lastMin = gState.now.min;
+            _renderIdle();
+        }
     }
 }
 
@@ -160,11 +189,14 @@ void UI::_handleRotation(int8_t dir) {
             _goMenu(MenuID::MAIN);
             break;
 
-        case Screen::MENU:
+        case Screen::MENU: {
             if (_itemCount == 0) break;  // guard: empty menu
-            _cur = (uint8_t)((_cur + dir + _itemCount) % _itemCount);
+            int newCur = (int)_cur + dir;
+            while (newCur < 0) newCur += _itemCount;
+            _cur = (uint8_t)(newCur % _itemCount);
             _renderMenu();
             break;
+        }
 
         case Screen::INFO:
         case Screen::DONE:
@@ -187,9 +219,10 @@ void UI::_handleRotation(int8_t dir) {
             }
 
             int v = (int)_durValue + dir;
-            if (v < vmin) v = vmax;
-            else if (v > vmax) v = vmin;
-            _durValue = (uint8_t)v;            _renderDurPick();
+            while (v < vmin) v += (vmax - vmin + 1);
+            while (v > vmax) v -= (vmax - vmin + 1);
+            _durValue = (uint8_t)v;
+            _renderDurPick();
             break;
         }
 
@@ -198,23 +231,23 @@ void UI::_handleRotation(int8_t dir) {
                 // Dia: wrap consoante o mês
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 int d = (int)_deDay + dir;
-                if (d < 1) d = max_days;
-                else if (d > max_days) d = 1;
+                while (d < 1) d += max_days;
+                while (d > max_days) d -= max_days;
                 _deDay = (uint8_t)d;
             } else if (_deField == 1) {
                 // Mês: wrap 1-12
                 int m = (int)_deMonth + dir;
-                if (m < 1) m = 12;
-                else if (m > 12) m = 1;
+                while (m < 1) m += 12;
+                while (m > 12) m -= 12;
                 _deMonth = (uint8_t)m;
                 // Re-validar o dia se o mês encolheu
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 if (_deDay > max_days) _deDay = max_days;
             } else {
-                // Ano: limite razoável (2020-2099)
+                // Ano: limite parametrizado
                 int y = (int)_deYear + dir;
-                if (y < 2020) y = 2099;
-                else if (y > 2099) y = 2020;
+                while (y < DATE_YEAR_MIN) y += DATE_YEAR_SPAN;
+                while (y > DATE_YEAR_MAX) y -= DATE_YEAR_SPAN;
                 _deYear = (uint16_t)y;
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 if (_deDay > max_days) _deDay = max_days;
@@ -225,10 +258,14 @@ void UI::_handleRotation(int8_t dir) {
         case Screen::TIME_EDIT:
             if (_teField == 0) {
                 // Editing hour: 0–23, wraps
-                _teHour = (uint8_t)((_teHour + dir + 24) % 24);
+                int h = (int)_teHour + dir;
+                while (h < 0) h += 24;
+                _teHour = (uint8_t)(h % 24);
             } else {
                 // Editing minute: 0–59, wraps
-                _teMin = (uint8_t)((_teMin + dir + 60) % 60);
+                int m = (int)_teMin + dir;
+                while (m < 0) m += 60;
+                _teMin = (uint8_t)(m % 60);
             }
             _renderTimeEdit();
             break;
@@ -291,6 +328,10 @@ void UI::_goMenu(MenuID mid) {
 }
 
 void UI::_goIdle() {
+    if (_configChanged) {
+        storage.save();
+        _configChanged = false;
+    }
     _screen = Screen::IDLE;
     _renderIdle();
 }
@@ -391,7 +432,7 @@ void UI::_commitDurPick() {
             }
         }
 
-        storage.save();
+        _configChanged = true;
         _goMenu(_inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
         return;
     }
@@ -401,9 +442,9 @@ void UI::_commitDurPick() {
         cs.interval_days = (_durValue > 0) ? _durValue : 1;
         DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
         gState.custom_ref_day = localDate.unixtime() / 86400UL;
-        storage.save();
+        _configChanged = true;
         scheduler.onModeChanged();
-        _goMenu(MenuID::CFG_CUSTOM);
+        _goMenu(_inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
         return;
     }
 
@@ -412,14 +453,19 @@ void UI::_commitDurPick() {
         uint16_t total_dur = _totalZoneDuration();
         if ((uint32_t)_durValue * total_dur > 1440) {
             _showInfo("! ERRO !", "Duracao total",
-                      "excede 24h.", "", MenuID::CFG_CUSTOM);
+                      "excede 24h.", "", _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
             return;
         }
+        // Obter a hora do primeiro ciclo como âncora para manter a preferência do utilizador
+        uint8_t anchor_hour = cs.slots[0].hour;
+        uint8_t anchor_min = cs.slots[0].minute;
+
         cs.slot_count = (_durValue > 0) ? _durValue : 1;
-        // Auto-distribute cycles across the day, starting at 06:00
+        
+        // Distribuição circular perfeita (equidistante no círculo de 24 horas)
         uint16_t interval = 1440 / cs.slot_count;
         for (int i = 0; i < cs.slot_count; i++) {
-            uint16_t mins = (360 + i * interval) % 1440;
+            uint16_t mins = (anchor_hour * 60 + anchor_min + i * interval) % 1440;
             cs.slots[i].hour   = mins / 60;
             cs.slots[i].minute = mins % 60;
         }
@@ -435,9 +481,9 @@ void UI::_commitDurPick() {
                 }
             }
         }
-        storage.save();
+        _configChanged = true;
         scheduler.onModeChanged();
-        _goMenu(MenuID::CFG_CUSTOM);
+        _goMenu(_inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
         return;
     }
 
@@ -450,7 +496,7 @@ void UI::_commitDurPick() {
         gState.suspended = true;
         // _durValue is days. 1 day = 86400 seconds.
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
-        storage.save();
+        _configChanged = true;
         char msg[21];
         snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
         _showDone("REGA SUSPENSA", msg);
@@ -510,7 +556,7 @@ void UI::_showTimeEdit(TimeEditContext ctx, uint8_t cycleIdx) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         _teHour   = cs.slots[cycleIdx].hour;
         _teMin    = cs.slots[cycleIdx].minute;
-        _backMenu = MenuID::CFG_CUSTOM;
+        _backMenu = _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM;
     }
 
     _teField = 0;  // start on hour
@@ -564,7 +610,7 @@ void UI::_commitTimeEdit() {
 
             if (diff <= total_dur) {
                 _showInfo("! SOBREPOSICAO !", "Ciclos muito",
-                          "proximos.", "Ajuste tempo/zona", MenuID::CFG_CUSTOM);
+                          "proximos.", "Ajuste tempo/zona", _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
                 return;
             }
         }
@@ -584,9 +630,9 @@ void UI::_commitTimeEdit() {
             }
         }
 
-        storage.save();
+        _configChanged = true;
         scheduler.onModeChanged();
-        _goMenu(MenuID::CFG_CUSTOM);
+        _goMenu(_inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
     }
 }
 
@@ -648,12 +694,16 @@ void UI::_dispatch(const char* action) {
         
         LOG_I("UI", "Modo selecionado: %s", _modeName(gState.mode));
         scheduler.onModeChanged();
-        storage.save();
+        _configChanged = true;
 
         if (_inSetup) {
-            // Seleccionou modo → zonas são obrigatórias
-            _setupStep = SetupStep::ZONE_CONFIG;
-            _goMenu(MenuID::SETUP_ZONES);
+            if (gState.mode == AppMode::PERSONALIZADO) {
+                _setupStep = SetupStep::CUSTOM_CONFIG;
+                _goMenu(MenuID::SETUP_CUSTOM);
+            } else {
+                _setupStep = SetupStep::ZONE_CONFIG;
+                _goMenu(MenuID::SETUP_ZONES);
+            }
             return;
         }
 
@@ -679,9 +729,18 @@ void UI::_dispatch(const char* action) {
                 _setupStep = SetupStep::DATE_TIME;
                 _showDateEdit();
                 break;
-            case SetupStep::ZONE_CONFIG:
+            case SetupStep::CUSTOM_CONFIG:
                 _setupStep = SetupStep::MODE_SELECT;
                 _goMenu(MenuID::SETUP_MODE);
+                break;
+            case SetupStep::ZONE_CONFIG:
+                if (gState.mode == AppMode::PERSONALIZADO) {
+                    _setupStep = SetupStep::CUSTOM_CONFIG;
+                    _goMenu(MenuID::SETUP_CUSTOM);
+                } else {
+                    _setupStep = SetupStep::MODE_SELECT;
+                    _goMenu(MenuID::SETUP_MODE);
+                }
                 break;
             default:
                 break;
@@ -747,9 +806,9 @@ void UI::_dispatch(const char* action) {
     if (strcmp(action, "toggle_dst") == 0) {
         gState.auto_dst = !gState.auto_dst;
         LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
-        storage.save();
+        _configChanged = true;
         rtclock.update(); // read offset immediately
-        _buildMenu(MenuID::DEF);
+        _buildMenu(MenuID::DEF_AVANCADO);
         _renderMenu();
         return;
     }
@@ -798,7 +857,7 @@ void UI::_dispatch(const char* action) {
         uint32_t ms = (uint32_t)strtoul(action + 3, nullptr, 10);
         gState.backlight_timeout_ms = ms;
         LOG_I("UI", "Backlight timeout: %lu ms", (unsigned long)ms);
-        storage.save();
+        _configChanged = true;
         _d.backlightOn();
         _lastActivity = millis();
         _buildMenu(MenuID::BLSEL);
@@ -825,7 +884,7 @@ void UI::_dispatch(const char* action) {
 
     // dur_pick:suspend - open picker for suspension days
     if (strcmp(action, "dur_pick:suspend") == 0) {
-        _showDurPick(3, DurContext::SUSPEND); // default 3 days
+        _showDurPick(SUSPEND_DEFAULT_DAYS, DurContext::SUSPEND);
         return;
     }
 
@@ -833,7 +892,7 @@ void UI::_dispatch(const char* action) {
     if (strcmp(action, "cancel_susp") == 0) {
         gState.suspended = false;
         gState.suspended_until = 0;
-        storage.save();
+        _configChanged = true;
         _showDone("REGA REATIVADA", "Suspensao cancelada");
         return;
     }
@@ -895,6 +954,23 @@ void UI::_buildMenu(MenuID mid) {
             makeItem(it++, lbuf, act);
         }
         makeItem(it++, "<- Terminar", "go:prog");
+        break;
+    }
+
+    case MenuID::SETUP_CUSTOM: {
+        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+        snprintf(lbuf, sizeof(lbuf), "Freq: %d dias", cs.interval_days);
+        makeItem(it++, lbuf, "dur_pick:freq");
+        snprintf(lbuf, sizeof(lbuf), "Ciclos: %d", cs.slot_count);
+        makeItem(it++, lbuf, "dur_pick:cycles");
+        for (int i = 0; i < cs.slot_count; i++) {
+            snprintf(lbuf, sizeof(lbuf), "Ciclo %d: %02d:%02d", i + 1, cs.slots[i].hour, cs.slots[i].minute);
+            char act[16];
+            snprintf(act, sizeof(act), "time_edit:c%d", i);
+            makeItem(it++, lbuf, act);
+        }
+        makeItem(it++, "Avancar >", "setup_advance");
+        makeItem(it++, "<- Voltar", "setup_back");
         break;
     }
 
@@ -976,6 +1052,12 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "Testar Zonas",    "go:testes");
         makeItem(it++, "Historico",       "go:hist");
         makeItem(it++, "Data/Hora",       "date_edit:rtc");
+        makeItem(it++, "Def. Avancadas",  "go:def_avancado");
+        makeItem(it++, "<- Voltar",       "go:main");
+        break;
+    }
+
+    case MenuID::DEF_AVANCADO: {
         makeItem(it++, gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
         // Backlight timeout - show current setting in label
         const char* blLabel;
@@ -988,9 +1070,9 @@ void UI::_buildMenu(MenuID mid) {
             default:                   blLabel = "Ecra: 2 min";  break;
         }
         makeItem(it++, blLabel,           "go:blsel");
-        makeItem(it++, "Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def");
-        makeItem(it++, "Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def|reset");
-        makeItem(it++, "<- Voltar",       "go:main");
+        makeItem(it++, "Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
+        makeItem(it++, "Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
+        makeItem(it++, "<- Voltar",       "go:def");
         break;
     }
 
@@ -1048,7 +1130,7 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, lbuf, "bl:300000");
         snprintf(lbuf, sizeof(lbuf), "%s  Sempre",     blmc(BACKLIGHT_TIMEOUT_NEVER));
         makeItem(it++, lbuf, "bl:4294967295");
-        makeItem(it++, "<- Voltar", "go:def");
+        makeItem(it++, "<- Voltar", "go:def_avancado");
         break;
     }
 
@@ -1120,10 +1202,12 @@ void UI::_renderMenu() {
             case MenuID::CFG_CUSTOM:   return "Personalizar";
             case MenuID::HISTORICO:    return "Historico";
             case MenuID::DEF:          return "Definicoes";
+            case MenuID::DEF_AVANCADO: return "Def. Avancadas";
             case MenuID::TESTES:       return "Testar Zonas";
             case MenuID::BLSEL:        return "Tempo Ecra";
             case MenuID::SETUP_MODE:   return "Modo de Rega";
             case MenuID::SETUP_ZONES:  return "Config. Zonas";
+            case MenuID::SETUP_CUSTOM: return "Modo Pers.";
             default:                   return "Menu";
         }
     };
@@ -1284,10 +1368,12 @@ MenuID UI::_parseMenuID(const char* s) {
     if (!strcmp(s,"ccustom")) return MenuID::CFG_CUSTOM;
     if (!strcmp(s,"hist"))   return MenuID::HISTORICO;
     if (!strcmp(s,"def"))    return MenuID::DEF;
+    if (!strcmp(s,"def_avancado")) return MenuID::DEF_AVANCADO;
     if (!strcmp(s,"testes")) return MenuID::TESTES;
     if (!strcmp(s,"blsel"))  return MenuID::BLSEL;
     if (!strcmp(s,"smode"))  return MenuID::SETUP_MODE;
     if (!strcmp(s,"szones")) return MenuID::SETUP_ZONES;
+    if (!strcmp(s,"scustom")) return MenuID::SETUP_CUSTOM;
     return MenuID::MAIN;
 }
 

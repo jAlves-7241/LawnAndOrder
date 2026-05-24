@@ -32,10 +32,12 @@ enum class MenuID : uint8_t {
     CFG_CUSTOM,
     HISTORICO,
     DEF,
+    DEF_AVANCADO,
     TESTES,
     BLSEL,    // backlight timeout selector
     SETUP_MODE,   // NOVO
     SETUP_ZONES,  // NOVO
+    SETUP_CUSTOM, // NOVO
     _COUNT
 };
 
@@ -56,11 +58,12 @@ enum class TimeEditContext : uint8_t {
 };
 
 enum class SetupStep : uint8_t {
-    WELCOME,     // ecrã inicial
-    DATE_TIME,   // acertar data/hora
-    MODE_SELECT, // escolher modo de rega
-    ZONE_CONFIG, // configurar zonas
-    COMPLETE,    // ecrã final
+    WELCOME,       // ecrã inicial
+    DATE_TIME,     // acertar data/hora
+    MODE_SELECT,   // escolher modo de rega
+    CUSTOM_CONFIG, // personalizar modo (se aplicavel)
+    ZONE_CONFIG,   // configurar zonas
+    COMPLETE,      // ecrã final
 };
 
 // ─────────────────────────────────────────────────────────
@@ -139,6 +142,7 @@ private:
 
     // ── Idle timeout ──────────────────────────────────────
     uint32_t _lastActivity;
+    bool     _configChanged;
 
     // ── Menu table ────────────────────────────────────────
     static const uint8_t MAX_ITEMS = 12;

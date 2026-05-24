@@ -161,3 +161,18 @@ void Storage::clear() {
     prefs.clear();   // erases all keys in the namespace
     LOG_I("NVS", "Memoria limpa (Reset)");
 }
+
+// ─────────────────────────────────────────────────────────
+bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount) {
+    if (!_ready) return false;
+    lineCount = prefs.getUInt("hcnt", 0);
+    size_t readBytes = prefs.getBytes("hcache", dest, size);
+    return (readBytes == size);
+}
+
+void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount) {
+    if (!_ready) return;
+    prefs.putUInt("hcnt", lineCount);
+    prefs.putBytes("hcache", src, size);
+}
+
