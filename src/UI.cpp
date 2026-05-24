@@ -453,13 +453,26 @@ void UI::_commitDurPick() {
         }
         uint8_t old_count = cs.slot_count;
         cs.slot_count = (_durValue > 0) ? _durValue : 1;
-        // Auto-distribute ONLY newly added cycles across the day, starting at 06:00
+        // Inicializar apenas novos slots com salto de 4h em relação ao anterior, evitando colisões
         if (cs.slot_count > old_count) {
-            uint16_t interval = 1440 / cs.slot_count;
             for (int i = old_count; i < cs.slot_count; i++) {
-                uint16_t mins = (360 + i * interval) % 1440;
-                cs.slots[i].hour   = mins / 60;
-                cs.slots[i].minute = mins % 60;
+                uint8_t h = (cs.slots[i - 1].hour + 4) % 24;
+                uint8_t m = cs.slots[i - 1].minute;
+                
+                // Resolver colisões com slots já configurados
+                bool collision = true;
+                while (collision) {
+                    collision = false;
+                    for (int j = 0; j < i; j++) {
+                        if (cs.slots[j].hour == h && cs.slots[j].minute == m) {
+                            collision = true;
+                            h = (h + 1) % 24; // Adiciona 1h se colidir
+                            break;
+                        }
+                    }
+                }
+                cs.slots[i].hour = h;
+                cs.slots[i].minute = m;
             }
         }
         // Sort slots chronologically (Bubble sort for small array)
