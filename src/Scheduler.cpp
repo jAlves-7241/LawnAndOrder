@@ -24,6 +24,11 @@ void Scheduler::begin() {
 void Scheduler::update() {
     if (!gState.rtc_valid)  return;
 
+    // Apenas processar se o segundo do relógio tiver mudado (redução de carga sobre o CPU)
+    static uint8_t lastSec = 0xFF;
+    if (gState.now.sec == lastSec) return;
+    lastSec = gState.now.sec;
+
     const SystemTime& t = gState.now;
 
     // Auto-wake from suspension

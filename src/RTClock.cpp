@@ -66,6 +66,25 @@ void RTClock::update() {
 #endif
 
     DateTime utcDt = _rtc.now();
+
+#ifndef WOKWI_SIM
+    // Detetar barramento I2C preso ou corrompido (ano fora dos limites de 2020-2099)
+    static uint8_t consecErrors = 0;
+    if (utcDt.year() < 2020 || utcDt.year() > 2099) {
+        consecErrors++;
+        if (consecErrors >= 3) {
+            LOG_E("RTC", "I2C com leituras corrompidas (%04d-%02d-%02d). A recuperar barramento...",
+                  utcDt.year(), utcDt.month(), utcDt.day());
+            extern void recoverI2C();
+            recoverI2C();
+            consecErrors = 0;
+        }
+        return; // Aborta o update para proteger o gState contra dados corrompidos
+    } else {
+        consecErrors = 0;
+    }
+#endif
+
     DateTime localDt = utcDt;
 
     if (gState.auto_dst && _isEU_DST(utcDt)) {
