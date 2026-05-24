@@ -1365,6 +1365,7 @@ MenuID UI::_parseMenuID(const char* s) {
     if (!strcmp(s,"blsel"))  return MenuID::BLSEL;
     if (!strcmp(s,"smode"))  return MenuID::SETUP_MODE;
     if (!strcmp(s,"szones")) return MenuID::SETUP_ZONES;
+    if (!strcmp(s,"scustom")) return MenuID::SETUP_CUSTOM;
     return MenuID::MAIN;
 }
 
