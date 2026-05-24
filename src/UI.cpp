@@ -451,29 +451,18 @@ void UI::_commitDurPick() {
                       "excede 24h.", "", MenuID::CFG_CUSTOM);
             return;
         }
-        uint8_t old_count = cs.slot_count;
+        // Obter a hora do primeiro ciclo como âncora para manter a preferência do utilizador
+        uint8_t anchor_hour = cs.slots[0].hour;
+        uint8_t anchor_min = cs.slots[0].minute;
+
         cs.slot_count = (_durValue > 0) ? _durValue : 1;
-        // Inicializar apenas novos slots com salto de 4h em relação ao anterior, evitando colisões
-        if (cs.slot_count > old_count) {
-            for (int i = old_count; i < cs.slot_count; i++) {
-                uint8_t h = (cs.slots[i - 1].hour + 4) % 24;
-                uint8_t m = cs.slots[i - 1].minute;
-                
-                // Resolver colisões com slots já configurados
-                bool collision = true;
-                while (collision) {
-                    collision = false;
-                    for (int j = 0; j < i; j++) {
-                        if (cs.slots[j].hour == h && cs.slots[j].minute == m) {
-                            collision = true;
-                            h = (h + 1) % 24; // Adiciona 1h se colidir
-                            break;
-                        }
-                    }
-                }
-                cs.slots[i].hour = h;
-                cs.slots[i].minute = m;
-            }
+        
+        // Distribuição circular perfeita (equidistante no círculo de 24 horas)
+        uint16_t interval = 1440 / cs.slot_count;
+        for (int i = 0; i < cs.slot_count; i++) {
+            uint16_t mins = (anchor_hour * 60 + anchor_min + i * interval) % 1440;
+            cs.slots[i].hour   = mins / 60;
+            cs.slots[i].minute = mins % 60;
         }
         // Sort slots chronologically (Bubble sort for small array)
         for (int i = 0; i < cs.slot_count - 1; i++) {
