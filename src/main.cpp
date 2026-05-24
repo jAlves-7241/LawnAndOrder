@@ -13,9 +13,28 @@
 #include "WateringController.h"
 #include "log.h"
 
-static Display display;
+Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 static UI      ui(display, encoder);
+
+#include <Wire.h>
+
+void recoverI2C() {
+    LOG_W("SYS", "A iniciar recuperacao do barramento I2C preso...");
+    Wire.end();
+    
+    // Forçar linhas a HIGH manualmente (SDA=21, SCL=22)
+    pinMode(21, OUTPUT);
+    pinMode(22, OUTPUT);
+    digitalWrite(21, HIGH);
+    digitalWrite(22, HIGH);
+    delay(10);
+    
+    Wire.begin();
+    rtclock.begin();
+    display.begin();
+    LOG_I("SYS", "Recuperacao I2C concluida.");
+}
 
 // ─────────────────────────────────────────────────────────
 void setup() {
