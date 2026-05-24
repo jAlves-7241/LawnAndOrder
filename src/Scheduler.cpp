@@ -153,9 +153,14 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         uint32_t ref_day = gState.custom_ref_day;
         
         if (ref_day != 0xFFFFFFFFUL) {
-            uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);
-            uint32_t rem = diff % sched.interval_days;
-            dayOffset = (rem > 0) ? (sched.interval_days - rem) : 0;
+            if (current_day >= ref_day) {
+                uint32_t diff = current_day - ref_day;
+                uint32_t rem = diff % sched.interval_days;
+                dayOffset = (rem > 0) ? (sched.interval_days - rem) : 0;
+            } else {
+                uint32_t diff = ref_day - current_day;
+                dayOffset = diff % sched.interval_days;
+            }
             limit = dayOffset + sched.interval_days;
         }
     }
