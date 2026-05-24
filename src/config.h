@@ -81,3 +81,11 @@
 #define ZONE_WAIT_DELAY_MS      5000UL    // ms to wait between zones closing/opening
 #define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL  // sentinel - never turn off
 #define DISPLAY_OFF_DELAY_MS    60000UL   // turn off pixels 60s after backlight
+
+// ── Otimizações e Segurança ───────────────────────────────
+#define WDT_TIMEOUT_S           5         // Watchdog timeout em segundos
+#define SUSPEND_DEFAULT_DAYS    3         // Dias padrão para suspensão de rega
+#define DATE_YEAR_MIN           2020      // Ano mínimo para o editor de data
+#define DATE_YEAR_MAX           2099      // Ano máximo para o editor de data
+#define DATE_YEAR_SPAN          80        // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)
+

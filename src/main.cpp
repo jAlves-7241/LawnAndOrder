@@ -22,8 +22,8 @@ void setup() {
     Serial.begin(115200);
     LOG_I("SYS", "A iniciar sistema...");
 
-    // Inicializar o Watchdog com timeout de 5 segundos e reset automático
-    esp_task_wdt_init(5, true);
+    // Inicializar o Watchdog com timeout parametrizado e reset automático
+    esp_task_wdt_init(WDT_TIMEOUT_S, true);
     esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
 
     initAppState();       // load firmware defaults into RAM
