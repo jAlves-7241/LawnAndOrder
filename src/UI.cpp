@@ -451,13 +451,16 @@ void UI::_commitDurPick() {
                       "excede 24h.", "", MenuID::CFG_CUSTOM);
             return;
         }
+        uint8_t old_count = cs.slot_count;
         cs.slot_count = (_durValue > 0) ? _durValue : 1;
-        // Auto-distribute cycles across the day, starting at 06:00
-        uint16_t interval = 1440 / cs.slot_count;
-        for (int i = 0; i < cs.slot_count; i++) {
-            uint16_t mins = (360 + i * interval) % 1440;
-            cs.slots[i].hour   = mins / 60;
-            cs.slots[i].minute = mins % 60;
+        // Auto-distribute ONLY newly added cycles across the day, starting at 06:00
+        if (cs.slot_count > old_count) {
+            uint16_t interval = 1440 / cs.slot_count;
+            for (int i = old_count; i < cs.slot_count; i++) {
+                uint16_t mins = (360 + i * interval) % 1440;
+                cs.slots[i].hour   = mins / 60;
+                cs.slots[i].minute = mins % 60;
+            }
         }
         // Sort slots chronologically (Bubble sort for small array)
         for (int i = 0; i < cs.slot_count - 1; i++) {

@@ -41,8 +41,17 @@ void setup() {
     Serial.begin(115200);
     LOG_I("SYS", "A iniciar sistema...");
 
-    // Inicializar o Watchdog com timeout parametrizado e reset automático
+    // Inicializar o Watchdog com timeout parametrizado e reset automático (compatível com ESP-IDF v4 e v5)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = WDT_TIMEOUT_S * 1000,
+        .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+        .trigger_panic = true
+    };
+    esp_task_wdt_init(&wdt_config);
+#else
     esp_task_wdt_init(WDT_TIMEOUT_S, true);
+#endif
     esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
 
     initAppState();       // load firmware defaults into RAM
