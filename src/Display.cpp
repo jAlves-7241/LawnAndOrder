@@ -75,11 +75,26 @@ void Display::_writeRow(uint8_t row, const char* text) {
 
     if (memcmp(_shadow[row], padded, LCD_COLS) == 0) return;  // no change
 
-    memcpy(_shadow[row], padded, LCD_COLS);
-    _lcd.setCursor(0, row);
-    // LiquidCrystal_I2C::print returns size_t, but doesn't always reflect I2C success.
-    // We just ensure the call is made.
-    _lcd.print(padded);
+    // Detetar limites do delta
+    int diffStart = 0;
+    while (diffStart < LCD_COLS && _shadow[row][diffStart] == padded[diffStart]) {
+        diffStart++;
+    }
+
+    int diffEnd = LCD_COLS - 1;
+    while (diffEnd >= diffStart && _shadow[row][diffEnd] == padded[diffEnd]) {
+        diffEnd--;
+    }
+
+    uint8_t writeLen = diffEnd - diffStart + 1;
+    memcpy(_shadow[row] + diffStart, padded + diffStart, writeLen);
+
+    // Mover o cursor e escrever apenas a fatia modificada!
+    _lcd.setCursor(diffStart, row);
+    char chunk[LCD_COLS + 1];
+    memcpy(chunk, padded + diffStart, writeLen);
+    chunk[writeLen] = '\0';
+    _lcd.print(chunk);
 }
 
 // ── Static formatting helpers ──────────────────────────────
