@@ -1,6 +1,7 @@
 #include "Display.h"
 #include <string.h>
 #include <stdio.h>
+#include "log.h"
 
 Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false), _displayOn(false) {
     memset(_shadow, ' ', sizeof(_shadow));
@@ -18,6 +19,7 @@ void Display::begin() {
         memset(_shadow[r], ' ', LCD_COLS);
         _shadow[r][LCD_COLS] = '\0';
     }
+    LOG_I("LCD", "Pronto");
 }
 
 void Display::backlightOn() {
@@ -105,7 +107,7 @@ char* Display::cx(char* buf, const char* s) {
     return buf;
 }
 
-// "~~ TITLE ~~" — fills full LCD_COLS with tildes around centred text
+// "~~ TITLE ~~" - fills full LCD_COLS with tildes around centred text
 char* Display::hdr(char* buf, const char* s) {
     int len = strlen(s);
     if (len > LCD_COLS - 2) len = LCD_COLS - 2;

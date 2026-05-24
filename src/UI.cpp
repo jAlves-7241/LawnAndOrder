@@ -6,6 +6,7 @@
 #include "History.h"
 #include <string.h>
 #include <stdio.h>
+#include "log.h"
 
 // ─────────────────────────────────────────────────────────
 // Internal helpers
@@ -41,14 +42,63 @@ UI::UI(Display& disp, Encoder& enc)
       _deDay(1), _deMonth(1), _deYear(2026), _deField(0),
       _teHour(0), _teMin(0), _teField(0),
       _teContext(TimeEditContext::RTC), _teCycleIdx(0),
-      _lastActivity(0), _itemCount(0)
+      _lastActivity(0), _itemCount(0),
+      _setupStep(SetupStep::WELCOME), _inSetup(false)
 {
     _pendingConfirmTag[0] = '\0';
 }
 
 void UI::begin() {
     _lastActivity = millis();
-    _renderIdle();
+    if (!gState.setup_done) {
+        _startSetup();
+    } else {
+        _renderIdle();
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+void UI::_startSetup() {
+    _inSetup   = true;
+    _setupStep = SetupStep::WELCOME;
+    _screen    = Screen::SETUP_WELCOME;
+    _renderSetupWelcome();
+}
+
+void UI::_advanceSetup() {
+    switch (_setupStep) {
+        case SetupStep::WELCOME:
+            _setupStep = SetupStep::DATE_TIME;
+            _showDateEdit();
+            break;
+
+        case SetupStep::DATE_TIME:
+            _setupStep = SetupStep::MODE_SELECT;
+            _goMenu(MenuID::SETUP_MODE);
+            break;
+
+        case SetupStep::MODE_SELECT:
+            // Só chega aqui via "Saltar >" → salta modo E zonas
+            _setupStep = SetupStep::COMPLETE;
+            _screen    = Screen::SETUP_WELCOME;
+            _renderSetupComplete();
+            break;
+
+        case SetupStep::ZONE_CONFIG:
+            _setupStep = SetupStep::COMPLETE;
+            _screen    = Screen::SETUP_WELCOME;
+            _renderSetupComplete();
+            break;
+
+        case SetupStep::COMPLETE:
+            LOG_I("UI", "Setup Wizard concluido");
+            _inSetup = false;
+            gState.setup_done = true;
+            storage.save();
+            scheduler.onModeChanged();
+            _goIdle();
+            break;
+    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -67,20 +117,20 @@ void UI::update() {
         _d.backlightOn();
         _lastActivity = millis();
         _renderIdle();   // repaint immediately after wake
-        return;          // swallow input — next press will act normally
+        return;          // swallow input - next press will act normally
     }
 
     if (rot != 0) { _lastActivity = millis(); _handleRotation(rot); }
     if (click)    { _lastActivity = millis(); _handleClick(); }
 
-    // Idle timeout — applies to all screens, any unsaved edits are discarded
-    if (_screen != Screen::IDLE &&
+    // Idle timeout - applies to all screens, any unsaved edits are discarded
+    if (_screen != Screen::IDLE && !_inSetup &&
         (millis() - _lastActivity) >= IDLE_TIMEOUT_MS) {
         _goIdle();
     }
 
     // Backlight sleep after inactivity (only from idle screen)
-    if (_screen == Screen::IDLE && gState.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER) {
+    if (_screen == Screen::IDLE && !_inSetup && gState.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER) {
         uint32_t elapsed = millis() - _lastActivity;
         
         if (_d.isBacklightOn() && elapsed >= gState.backlight_timeout_ms) {
@@ -182,11 +232,19 @@ void UI::_handleRotation(int8_t dir) {
             }
             _renderTimeEdit();
             break;
+
+        case Screen::SETUP_WELCOME:
+            // Ignorar rotação - apenas click avança
+            break;
     }
 }
 
 void UI::_handleClick() {
     switch (_screen) {
+        case Screen::SETUP_WELCOME:
+            _advanceSetup();
+            break;
+
         case Screen::IDLE:
             _goMenu(MenuID::MAIN);
             break;
@@ -202,8 +260,8 @@ void UI::_handleClick() {
             break;
 
         case Screen::CONFIRM:
-            _executeConfirmed();
-            _showDone(_confirmRows[1], _confirmRows[2]);
+            if (!_executeConfirmed())
+                _showDone(_confirmRows[1], _confirmRows[2]);
             break;
 
         case Screen::DUR_PICK:
@@ -327,20 +385,22 @@ void UI::_commitDurPick() {
                 gState.zones[_durZoneIdx].enabled      = old_en;
                 gState.zones[_durZoneIdx].duration_min = old_dur;
                 _showInfo("! SOBREPOSICAO !", "Duracao excessiva",
-                          "para ciclos pers.", "Reduza zonas/ciclos", MenuID::CFG_ZONAS);
+                          "para ciclos pers.", "Reduza zonas/ciclos",
+                          _inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
                 return;
             }
         }
 
         storage.save();
-        _goMenu(MenuID::CFG_ZONAS);
+        _goMenu(_inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
         return;
     }
 
     if (_durContext == DurContext::FREQ_DAYS) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.interval_days = (_durValue > 0) ? _durValue : 1;
-        gState.custom_ref_day = gState.now.unix / 86400UL;
+        DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
+        gState.custom_ref_day = localDate.unixtime() / 86400UL;
         storage.save();
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);
@@ -363,7 +423,18 @@ void UI::_commitDurPick() {
             cs.slots[i].hour   = mins / 60;
             cs.slots[i].minute = mins % 60;
         }
-        // No sort needed here as auto-distribute is already sorted
+        // Sort slots chronologically (Bubble sort for small array)
+        for (int i = 0; i < cs.slot_count - 1; i++) {
+            for (int j = 0; j < cs.slot_count - i - 1; j++) {
+                uint16_t t1 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                uint16_t t2 = cs.slots[j+1].hour * 60 + cs.slots[j+1].minute;
+                if (t1 > t2) {
+                    ScheduleSlot temp = cs.slots[j];
+                    cs.slots[j] = cs.slots[j+1];
+                    cs.slots[j+1] = temp;
+                }
+            }
+        }
         storage.save();
         scheduler.onModeChanged();
         _goMenu(MenuID::CFG_CUSTOM);
@@ -372,9 +443,10 @@ void UI::_commitDurPick() {
 
     if (_durContext == DurContext::SUSPEND) {
         if (!gState.rtc_valid) {
-            _showInfo("! SEM RTC !", "Sem hora valida —", "nao e possivel", "suspender rega.", MenuID::PROG);
+            _showInfo("! SEM RTC !", "Sem hora valida -", "nao e possivel", "suspender rega.", MenuID::PROG);
             return;
         }
+        LOG_I("UI", "Acao: Suspender rega %d dias", _durValue);
         gState.suspended = true;
         // _durValue is days. 1 day = 86400 seconds.
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
@@ -382,7 +454,6 @@ void UI::_commitDurPick() {
         char msg[21];
         snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
         _showDone("REGA SUSPENSA", msg);
-        Serial.printf("[UI] Acao: Suspender rega %d dias\n", _durValue);
         return;
     }
 
@@ -463,6 +534,12 @@ void UI::_commitTimeEdit() {
         }
         // Save using the full date from _deDay/_deMonth/_deYear and new time
         rtclock.set(_deYear, _deMonth, _deDay, _teHour, _teMin, 0);
+
+        if (_inSetup) {
+            _advanceSetup();  // DATE_TIME → MODE_SELECT
+            return;           // ← previne fallthrough para _showDone
+        }
+
         char saved[LCD_COLS + 1];
         snprintf(saved, sizeof(saved), "Hora: %02d:%02d", _teHour, _teMin);
         _showDone(saved, "RTC actualizado!");
@@ -514,32 +591,40 @@ void UI::_commitTimeEdit() {
 }
 
 // ─────────────────────────────────────────────────────────
-// _executeConfirmed — real-world side-effects on OK
+// _executeConfirmed - real-world side-effects on OK
 // ─────────────────────────────────────────────────────────
-void UI::_executeConfirmed() {
+bool UI::_executeConfirmed() {
     const char* tag = _pendingConfirmTag;
 
     if (strcmp(tag, "general") == 0) {
+        LOG_I("UI", "Acao: Rega manual geral");
         wateringCtrl.startGeneral();
 
     } else if (strcmp(tag, "custom") == 0) {
+        LOG_I("UI", "Acao: Rega personalizada");
         wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
 
     } else if (strcmp(tag, "reset") == 0) {
+        LOG_I("UI", "Acao: Reset de fabrica");
         storage.clear();
         history.clear();
         initAppState();
         scheduler.onModeChanged();
-        Serial.println("[UI] Acao: Reset de fabrica");
+        wateringCtrl.stop();
+        _startSetup();
+        return true;
 
     } else if (strcmp(tag, "test_all") == 0) {
+        LOG_I("UI", "Acao: Teste todas as zonas");
         wateringCtrl.startTest(-1);
 
     } else if (strncmp(tag, "test_", 5) == 0) {
         int8_t z = (int8_t)atoi(tag + 5);
+        LOG_I("UI", "Acao: Teste zona %d", z + 1);
         wateringCtrl.startTest(z);
     }
     // tag == "" → no side-effect needed
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -555,14 +640,22 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // sel:<idx> — change AppMode
+    // sel:<idx> - change AppMode
     if (strncmp(action, "sel:", 4) == 0) {
         uint8_t idx = (uint8_t)atoi(action + 4);
         if (idx < (uint8_t)AppMode::_COUNT)
             gState.mode = (AppMode)idx;
         
+        LOG_I("UI", "Modo selecionado: %s", _modeName(gState.mode));
         scheduler.onModeChanged();
         storage.save();
+
+        if (_inSetup) {
+            // Seleccionou modo → zonas são obrigatórias
+            _setupStep = SetupStep::ZONE_CONFIG;
+            _goMenu(MenuID::SETUP_ZONES);
+            return;
+        }
 
         if (gState.mode == AppMode::PERSONALIZADO) {
             _goMenu(MenuID::CFG_CUSTOM);
@@ -573,7 +666,30 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // cfgz:<idx> — open DUR_PICK for zone configuration
+    // setup_advance - avançar (usado por "Saltar >" e "Terminar >")
+    if (strcmp(action, "setup_advance") == 0) {
+        _advanceSetup();
+        return;
+    }
+
+    // setup_back - voltar ao passo anterior
+    if (strcmp(action, "setup_back") == 0) {
+        switch (_setupStep) {
+            case SetupStep::MODE_SELECT:
+                _setupStep = SetupStep::DATE_TIME;
+                _showDateEdit();
+                break;
+            case SetupStep::ZONE_CONFIG:
+                _setupStep = SetupStep::MODE_SELECT;
+                _goMenu(MenuID::SETUP_MODE);
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
+    // cfgz:<idx> - open DUR_PICK for zone configuration
     if (strncmp(action, "cfgz:", 5) == 0) {
         uint8_t i = (uint8_t)atoi(action + 5);
         if (i >= NUM_ZONES) return;
@@ -586,7 +702,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // cz:<idx> — toggle custom zone selection
+    // cz:<idx> - toggle custom zone selection
     if (strncmp(action, "cz:", 3) == 0) {
         uint8_t i = (uint8_t)atoi(action + 3);
         if (i >= NUM_ZONES) return;
@@ -596,7 +712,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // dur_pick:custom — open DUR_PICK for a custom manual run
+    // dur_pick:custom - open DUR_PICK for a custom manual run
     if (strcmp(action, "dur_pick:custom") == 0) {
         bool any = false;
         for (int i = 0; i < NUM_ZONES; i++) any |= gState.custom_sel[i];
@@ -630,6 +746,7 @@ void UI::_dispatch(const char* action) {
     // toggle_dst
     if (strcmp(action, "toggle_dst") == 0) {
         gState.auto_dst = !gState.auto_dst;
+        LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
         storage.save();
         rtclock.update(); // read offset immediately
         _buildMenu(MenuID::DEF);
@@ -676,10 +793,11 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // bl:<ms> — set backlight timeout
+    // bl:<ms> - set backlight timeout
     if (strncmp(action, "bl:", 3) == 0) {
         uint32_t ms = (uint32_t)strtoul(action + 3, nullptr, 10);
         gState.backlight_timeout_ms = ms;
+        LOG_I("UI", "Backlight timeout: %lu ms", (unsigned long)ms);
         storage.save();
         _d.backlightOn();
         _lastActivity = millis();
@@ -688,7 +806,7 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // horarios — computed from live state
+    // horarios - computed from live state
     if (strcmp(action, "horarios") == 0) {
         char zstr[LCD_COLS + 1] = "Zonas: ";
         for (int i = 0; i < NUM_ZONES; i++) {
@@ -705,13 +823,13 @@ void UI::_dispatch(const char* action) {
         return;
     }
 
-    // dur_pick:suspend — open picker for suspension days
+    // dur_pick:suspend - open picker for suspension days
     if (strcmp(action, "dur_pick:suspend") == 0) {
         _showDurPick(3, DurContext::SUSPEND); // default 3 days
         return;
     }
 
-    // cancel_susp — reactivate watering immediately
+    // cancel_susp - reactivate watering immediately
     if (strcmp(action, "cancel_susp") == 0) {
         gState.suspended = false;
         gState.suspended_until = 0;
@@ -836,7 +954,7 @@ void UI::_buildMenu(MenuID mid) {
                          e.day, MON[m], e.hour, e.min,
                          e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL");
 
-                // Detail info lines — two zones per line
+                // Detail info lines - two zones per line
                 char l1[LCD_COLS+1], l2[LCD_COLS+1];
                 snprintf(l1, sizeof(l1), "Z1:%dmin  Z2:%dmin",
                          e.zone_dur[0], e.zone_dur[1]);
@@ -859,7 +977,7 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "Historico",       "go:hist");
         makeItem(it++, "Data/Hora",       "date_edit:rtc");
         makeItem(it++, gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
-        // Backlight timeout — show current setting in label
+        // Backlight timeout - show current setting in label
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
             case 30000UL:              blLabel = "Ecra: 30 seg"; break;
@@ -888,6 +1006,30 @@ void UI::_buildMenu(MenuID mid) {
             makeItem(it++, lbuf, act);
         }
         makeItem(it++, "<- Voltar", "go:def");
+        break;
+
+    case MenuID::SETUP_MODE:
+        makeItem(it++, "Intenso",       "sel:0");
+        makeItem(it++, "Medio",         "sel:1");
+        makeItem(it++, "Fraco",         "sel:2");
+        makeItem(it++, "Personalizado", "sel:4");
+        makeItem(it++, "Saltar >",      "setup_advance");
+        makeItem(it++, "<- Voltar",     "setup_back");
+        break;
+
+    case MenuID::SETUP_ZONES:
+        for (int i = 0; i < NUM_ZONES; i++) {
+            Zone& z = gState.zones[i];
+            if (z.enabled)
+                snprintf(lbuf, sizeof(lbuf), "[ON]  Z%d %-6s %2dmin",
+                         i+1, z.name, z.duration_min);
+            else
+                snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
+            char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
+            makeItem(it++, lbuf, act);
+        }
+        makeItem(it++, "Terminar >",  "setup_advance");
+        makeItem(it++, "<- Voltar",   "setup_back");
         break;
 
     case MenuID::BLSEL: {
@@ -980,6 +1122,8 @@ void UI::_renderMenu() {
             case MenuID::DEF:          return "Definicoes";
             case MenuID::TESTES:       return "Testar Zonas";
             case MenuID::BLSEL:        return "Tempo Ecra";
+            case MenuID::SETUP_MODE:   return "Modo de Rega";
+            case MenuID::SETUP_ZONES:  return "Config. Zonas";
             default:                   return "Menu";
         }
     };
@@ -1099,6 +1243,24 @@ void UI::_renderTimeEdit() {
     _d.setRows(hbuf, vbuf, fbuf, hintbuf);
 }
 
+void UI::_renderSetupWelcome() {
+    char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
+    _d.cx(b0, "Bem-vindo!");
+    _d.cx(b1, "");
+    _d.cx(b2, "Clique p/ iniciar");
+    _d.cx(b3, "a config. inicial");
+    _d.setRows(b0, b1, b2, b3);
+}
+
+void UI::_renderSetupComplete() {
+    char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
+    _d.cx(b0, "Config. concluida!");
+    _d.cx(b1, "");
+    _d.cx(b2, "Sistema pronto.");
+    _d.cx(b3, "Clique p/ iniciar");
+    _d.setRows(b0, b1, b2, b3);
+}
+
 // ─────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────
@@ -1124,6 +1286,8 @@ MenuID UI::_parseMenuID(const char* s) {
     if (!strcmp(s,"def"))    return MenuID::DEF;
     if (!strcmp(s,"testes")) return MenuID::TESTES;
     if (!strcmp(s,"blsel"))  return MenuID::BLSEL;
+    if (!strcmp(s,"smode"))  return MenuID::SETUP_MODE;
+    if (!strcmp(s,"szones")) return MenuID::SETUP_ZONES;
     return MenuID::MAIN;
 }
 

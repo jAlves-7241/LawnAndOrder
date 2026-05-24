@@ -7,7 +7,7 @@
 // RTClock
 //
 // Wraps either RTC_DS3231 (real hardware) or RTC_DS1307
-// (Wokwi simulation — no DS3231 part available).
+// (Wokwi simulation - no DS3231 part available).
 // Select at compile time via -DWOKWI_SIM in platformio.ini.
 //
 // Usage:

@@ -2,6 +2,7 @@
 #include "WateringController.h"
 #include "Storage.h"
 #include <RTClib.h>
+#include "log.h"
 
 Scheduler scheduler;
 
@@ -15,7 +16,7 @@ void Scheduler::begin() {
     if (!gState.rtc_valid) return;
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Proxima rega: %02d:%02d\n",
+    LOG_I("SCHED", "Proxima rega: %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
 
@@ -31,7 +32,7 @@ void Scheduler::update() {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
-            Serial.println("[SCHED] Suspensao expirou — rega reativada");
+            LOG_I("SCHED", "Suspensao expirada - rega reativada");
         } else {
             return; // Still suspended
         }
@@ -67,7 +68,7 @@ void Scheduler::update() {
         if (t.hour == sched.slots[i].hour &&
             t.min  == sched.slots[i].minute) {
             _triggered = true;
-            Serial.printf("[SCHED] Disparar rega automatica %02d:%02d\n",
+            LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
                           t.hour, t.min);
             wateringCtrl.startGeneral(WaterTrigger::AUTO);
             return;
@@ -79,7 +80,7 @@ void Scheduler::update() {
 void Scheduler::onModeChanged() {
     _triggered = false;
     if (!gState.rtc_valid) {
-        // RTC not ready — seed next_* from the first slot of the new mode
+        // RTC not ready - seed next_* from the first slot of the new mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
         if (sched.slot_count > 0) {
             gState.next_hour = sched.slots[0].hour;
@@ -92,27 +93,31 @@ void Scheduler::onModeChanged() {
     }
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Modo alterado: Proxima rega %02d:%02d\n",
+    LOG_I("SCHED", "Modo alterado: Proxima rega %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::onWateringDone() {
     if (!gState.rtc_valid) return;
-    // Advance time by 1 minute past the just-fired slot so computeNext
-    // doesn't return the same slot again.
-    DateTime next(gState.now.unix + 60);
+    // Construct local DateTime from gState.now (which is local time)
+    DateTime localNow(gState.now.year, gState.now.month, gState.now.day,
+                      gState.now.hour, gState.now.min, gState.now.sec);
+    DateTime localNext = localNow + TimeSpan(0, 0, 1, 0); // add 1 minute
 
-    SystemTime advanced;
-    advanced.unix = next.unixtime();
-    advanced.hour = next.hour();
-    advanced.min  = next.minute();
-    advanced.day  = next.day();
-    advanced.dow  = next.dayOfTheWeek();
+    SystemTime advanced = {};
+    advanced.unix   = gState.now.unix + 60;
+    advanced.year   = localNext.year();
+    advanced.month  = localNext.month();
+    advanced.day    = localNext.day();
+    advanced.hour   = localNext.hour();
+    advanced.min    = localNext.minute();
+    advanced.sec    = localNext.second();
+    advanced.dow    = localNext.dayOfTheWeek();
 
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
-    Serial.printf("[SCHED] Ciclo concluido: Proxima rega %02d:%02d\n",
+    LOG_I("SCHED", "Ciclo concluido: Proxima rega %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
 
@@ -130,18 +135,21 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         return false;
     }
 
-    // Use RTClib's DateTime for proper date arithmetic (month ends, leap years)
-    DateTime current(now.unix);
+    // Use RTClib's DateTime for proper date arithmetic in local time
+    DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
 
     // We search up to 15 days ahead to accommodate EVERY_X_DAYS (max 14)
     for (uint8_t dayOffset = 0; dayOffset <= 15; dayOffset++) {
         DateTime candidateDt = current + TimeSpan(dayOffset, 0, 0, 0);
         
         // Convert back to SystemTime-like fields for _dayMatches
-        SystemTime candidate;
+        SystemTime candidate = {};
         candidate.year  = candidateDt.year();
         candidate.month = candidateDt.month();
         candidate.day   = candidateDt.day();
+        candidate.hour  = candidateDt.hour();
+        candidate.min   = candidateDt.minute();
+        candidate.sec   = candidateDt.second();
         candidate.dow   = candidateDt.dayOfTheWeek();
         candidate.unix  = candidateDt.unixtime();
 
@@ -174,12 +182,14 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
         case DayPattern::DOW_MASK:
             return (sched.dow_mask & (1 << now.dow)) != 0;
         case DayPattern::EVERY_X_DAYS: {
-            uint32_t current_day = now.unix / 86400UL;
+            // Compute days since 1970 using the local date components (immune to timezone/DST shifts)
+            DateTime localDate(now.year, now.month, now.day, 0, 0, 0);
+            uint32_t current_day = localDate.unixtime() / 86400UL;
             // First use: anchor the reference day to today and persist it
             if (gState.custom_ref_day == 0xFFFFFFFFUL) {
                 gState.custom_ref_day = current_day;
                 storage.save();
-                Serial.printf("[SCHED] custom_ref_day definido: %lu\n", current_day);
+                LOG_D("SCHED", "custom_ref_day definido: %lu", current_day);
             }
             uint32_t ref_day = gState.custom_ref_day;
             uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);

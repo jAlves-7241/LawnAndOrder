@@ -25,7 +25,7 @@ private:
     bool     _btn_prev;
     uint32_t _btn_last_ms;
 
-    // Static ISR trampoline — only one Encoder instance is supported.
+    // Static ISR trampoline - only one Encoder instance is supported.
     static void   IRAM_ATTR _isr();
     static Encoder* _inst;
 };

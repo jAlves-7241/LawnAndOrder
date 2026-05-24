@@ -1,6 +1,7 @@
 #include "WateringController.h"
 #include "Scheduler.h"
 #include <string.h>
+#include "log.h"
 
 const uint8_t WateringController::_relayPins[NUM_ZONES] = {
     PIN_RELAY_1, PIN_RELAY_2, PIN_RELAY_3, PIN_RELAY_4
@@ -54,16 +55,18 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
+    
+    LOG_I("REGA", "Iniciar rega geral");
     _startNextZone();
-
-    Serial.println("[WATER] startGeneral");
 }
 
 void WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
-    _buildQueue(zones, dur_ms, WaterTrigger::CUSTOM);
-    Serial.printf("[WATER] startCustom %d min\n", dur_min);
+    if (_buildQueue(zones, dur_ms, WaterTrigger::CUSTOM)) {
+        LOG_I("REGA", "Iniciar rega personalizada - %d min", dur_min);
+        _startNextZone();
+    }
 }
 
 void WateringController::startTest(int8_t zone_idx) {
@@ -74,16 +77,21 @@ void WateringController::startTest(int8_t zone_idx) {
     else
         for (int i = 0; i < NUM_ZONES; i++) zones[i] = (i == (int)zone_idx);
 
-    _buildQueue(zones, dur_ms, WaterTrigger::TEST);
-    Serial.printf("[WATER] startTest zone=%d\n", zone_idx);
+    if (_buildQueue(zones, dur_ms, WaterTrigger::TEST)) {
+        LOG_I("REGA", "Iniciar teste zona=%d", zone_idx);
+        _startNextZone();
+    }
 }
 
 void WateringController::stop() {
     if (_active) {
         _deactivateAll();
+        if (!_isWaiting) {
+            LOG_I("REGA", "Zona %d (%s) desactivada (interrompida)", _zoneIdx + 1, gState.zones[_zoneIdx].name);
+        }
         _active = false;
         _isWaiting = false;
-        Serial.println("[WATER] stopped");
+        LOG_I("REGA", "Rega interrompida");
     }
     _queueLen = 0;
     _queuePos = 0;
@@ -118,18 +126,20 @@ void WateringController::update() {
             _zoneDurMin[_zoneIdx] = ran_min;
 
         _deactivateAll();
+        LOG_I("REGA", "Zona %d (%s) desactivada", _zoneIdx + 1, gState.zones[_zoneIdx].name);
         _queuePos++;
 
         if (_queuePos < _queueLen) {
             _isWaiting = true;
             _waitStartMs = millis();
+            LOG_D("REGA", "Zona %d concluida - aguardar %lu s", _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
             _syncState();
         } else {
             _active = false;
             _queueLen = 0;
             _syncState();
             _finishCycle();
-            Serial.println("[WATER] OK: Ciclo concluido");
+            LOG_I("REGA", "Ciclo concluido");
         }
     }
 }
@@ -138,17 +148,17 @@ void WateringController::update() {
 // Private
 // ─────────────────────────────────────────────────────────
 
-void WateringController::_buildQueue(const bool zones[NUM_ZONES],
+bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
                                      uint32_t dur_ms,
                                      WaterTrigger trigger) {
-    if (dur_ms == 0) return;
+    if (dur_ms == 0) return false;
     stop();
     _queueLen = 0;
     for (int i = 0; i < NUM_ZONES; i++) {
         if (zones[i])
             _queue[_queueLen++] = { (uint8_t)i, dur_ms };
     }
-    if (_queueLen == 0) return;
+    if (_queueLen == 0) return false;
 
     _runTrigger    = trigger;
     _cycleStart = gState.now;
@@ -156,7 +166,7 @@ void WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
-    _startNextZone();
+    return true;
 }
 
 void WateringController::_startNextZone() {
@@ -166,8 +176,13 @@ void WateringController::_startNextZone() {
     _activateRelay(_zoneIdx);
     _syncState();
 
-    Serial.printf("[WATER] zone %d (%s) start, dur=%lums\n",
-                  _zoneIdx + 1, gState.zones[_zoneIdx].name, _zoneDurationMs);
+    if (_zoneDurationMs % 60000UL == 0) {
+        LOG_I("REGA", "Zona %d (%s) activa - dur=%lu min",
+                      _zoneIdx + 1, gState.zones[_zoneIdx].name, _zoneDurationMs / 60000UL);
+    } else {
+        LOG_I("REGA", "Zona %d (%s) activa - dur=%lu s",
+                      _zoneIdx + 1, gState.zones[_zoneIdx].name, _zoneDurationMs / 1000UL);
+    }
 }
 
 void WateringController::_finishCycle() {
@@ -188,7 +203,7 @@ void WateringController::_activateRelay(uint8_t zone_idx) {
     for (int i = 0; i < NUM_ZONES; i++)
         digitalWrite(_relayPins[i], RELAY_OFF);
     if (zone_idx >= NUM_ZONES) {
-        Serial.printf("[WATER] ERRO: zone_idx=%d fora dos limites!\n", zone_idx);
+        LOG_E("REGA", "zona %d fora dos limites!", zone_idx);
         return;
     }
     digitalWrite(_relayPins[zone_idx], RELAY_ON);
