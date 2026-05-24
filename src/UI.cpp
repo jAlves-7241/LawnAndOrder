@@ -808,7 +808,7 @@ void UI::_dispatch(const char* action) {
         LOG_I("UI", "DST alterado: %s", gState.auto_dst ? "Auto" : "Fixo");
         _configChanged = true;
         rtclock.update(); // read offset immediately
-        _buildMenu(MenuID::DEF);
+        _buildMenu(MenuID::DEF_AVANCADO);
         _renderMenu();
         return;
     }
@@ -1052,6 +1052,12 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, "Testar Zonas",    "go:testes");
         makeItem(it++, "Historico",       "go:hist");
         makeItem(it++, "Data/Hora",       "date_edit:rtc");
+        makeItem(it++, "Def. Avancadas",  "go:def_avancado");
+        makeItem(it++, "<- Voltar",       "go:main");
+        break;
+    }
+
+    case MenuID::DEF_AVANCADO: {
         makeItem(it++, gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
         // Backlight timeout - show current setting in label
         const char* blLabel;
@@ -1064,9 +1070,9 @@ void UI::_buildMenu(MenuID mid) {
             default:                   blLabel = "Ecra: 2 min";  break;
         }
         makeItem(it++, blLabel,           "go:blsel");
-        makeItem(it++, "Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def");
-        makeItem(it++, "Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def|reset");
-        makeItem(it++, "<- Voltar",       "go:main");
+        makeItem(it++, "Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
+        makeItem(it++, "Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
+        makeItem(it++, "<- Voltar",       "go:def");
         break;
     }
 
@@ -1124,7 +1130,7 @@ void UI::_buildMenu(MenuID mid) {
         makeItem(it++, lbuf, "bl:300000");
         snprintf(lbuf, sizeof(lbuf), "%s  Sempre",     blmc(BACKLIGHT_TIMEOUT_NEVER));
         makeItem(it++, lbuf, "bl:4294967295");
-        makeItem(it++, "<- Voltar", "go:def");
+        makeItem(it++, "<- Voltar", "go:def_avancado");
         break;
     }
 
@@ -1196,6 +1202,7 @@ void UI::_renderMenu() {
             case MenuID::CFG_CUSTOM:   return "Personalizar";
             case MenuID::HISTORICO:    return "Historico";
             case MenuID::DEF:          return "Definicoes";
+            case MenuID::DEF_AVANCADO: return "Def. Avancadas";
             case MenuID::TESTES:       return "Testar Zonas";
             case MenuID::BLSEL:        return "Tempo Ecra";
             case MenuID::SETUP_MODE:   return "Modo de Rega";
@@ -1361,6 +1368,7 @@ MenuID UI::_parseMenuID(const char* s) {
     if (!strcmp(s,"ccustom")) return MenuID::CFG_CUSTOM;
     if (!strcmp(s,"hist"))   return MenuID::HISTORICO;
     if (!strcmp(s,"def"))    return MenuID::DEF;
+    if (!strcmp(s,"def_avancado")) return MenuID::DEF_AVANCADO;
     if (!strcmp(s,"testes")) return MenuID::TESTES;
     if (!strcmp(s,"blsel"))  return MenuID::BLSEL;
     if (!strcmp(s,"smode"))  return MenuID::SETUP_MODE;
