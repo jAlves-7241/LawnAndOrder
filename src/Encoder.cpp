@@ -25,19 +25,16 @@ void IRAM_ATTR Encoder::_isr() {
 }
 
 int8_t Encoder::getRotation() {
-    int8_t ret = 0;
-    
     noInterrupts();
-    if (_delta > 0) {
-        _delta--;
-        ret = 1;
-    } else if (_delta < 0) {
-        _delta++;
-        ret = -1;
-    }
+    int16_t raw = _delta;
+    _delta = 0;
     interrupts();
 
-    return ret;
+    // Clamp to int8_t range to prevent two's-complement direction reversal,
+    // while preserving magnitude for fast-scroll acceleration.
+    if (raw > 127)  return 127;
+    if (raw < -127) return -127;
+    return (int8_t)raw;
 }
 
 bool Encoder::getClick() {

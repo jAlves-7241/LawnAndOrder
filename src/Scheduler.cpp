@@ -24,6 +24,11 @@ void Scheduler::begin() {
 void Scheduler::update() {
     if (!gState.rtc_valid)  return;
 
+    // Apenas processar se o segundo do relógio tiver mudado (redução de carga sobre o CPU)
+    static uint8_t lastSec = 0xFF;
+    if (gState.now.sec == lastSec) return;
+    lastSec = gState.now.sec;
+
     const SystemTime& t = gState.now;
 
     // Auto-wake from suspension
@@ -138,8 +143,29 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     // Use RTClib's DateTime for proper date arithmetic in local time
     DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
 
-    // We search up to 15 days ahead to accommodate EVERY_X_DAYS (max 14)
-    for (uint8_t dayOffset = 0; dayOffset <= 15; dayOffset++) {
+    uint8_t dayOffset = 0;
+    uint8_t limit = 15;
+
+    // Fast-jump O(1) math for DayPattern::EVERY_X_DAYS
+    if (sched.day_pattern == DayPattern::EVERY_X_DAYS && sched.interval_days > 0) {
+        DateTime localDate(now.year, now.month, now.day, 0, 0, 0);
+        uint32_t current_day = localDate.unixtime() / 86400UL;
+        uint32_t ref_day = gState.custom_ref_day;
+        
+        if (ref_day != 0xFFFFFFFFUL) {
+            if (current_day >= ref_day) {
+                uint32_t diff = current_day - ref_day;
+                uint32_t rem = diff % sched.interval_days;
+                dayOffset = (rem > 0) ? (sched.interval_days - rem) : 0;
+            } else {
+                uint32_t diff = ref_day - current_day;
+                dayOffset = diff % sched.interval_days;
+            }
+            limit = dayOffset + sched.interval_days;
+        }
+    }
+
+    while (dayOffset <= limit) {
         DateTime candidateDt = current + TimeSpan(dayOffset, 0, 0, 0);
         
         // Convert back to SystemTime-like fields for _dayMatches
@@ -153,22 +179,32 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         candidate.dow   = candidateDt.dayOfTheWeek();
         candidate.unix  = candidateDt.unixtime();
 
-        if (!_dayMatches(sched, candidate)) continue;
-
-        // Scan slots in order
-        for (uint8_t i = 0; i < sched.slot_count; i++) {
-            const ScheduleSlot& sl = sched.slots[i];
-            
-            // For today (dayOffset==0) skip slots already past
-            if (dayOffset == 0) {
-                if (sl.hour < now.hour) continue;
-                if (sl.hour == now.hour && sl.minute <= now.min) continue;
+        if (_dayMatches(sched, candidate)) {
+            // Scan slots in order
+            for (uint8_t i = 0; i < sched.slot_count; i++) {
+                const ScheduleSlot& sl = sched.slots[i];
+                
+                // For today (dayOffset==0) skip slots already past
+                if (dayOffset == 0) {
+                    if (sl.hour < now.hour) continue;
+                    if (sl.hour == now.hour && sl.minute <= now.min) continue;
+                }
+                out_hour = sl.hour;
+                out_min  = sl.minute;
+                return true;
             }
-            out_hour = sl.hour;
-            out_min  = sl.minute;
-            return true;
+        }
+
+        // Advance to next candidate day
+        if (sched.day_pattern == DayPattern::EVERY_X_DAYS && sched.interval_days > 0) {
+            dayOffset += sched.interval_days;
+        } else {
+            dayOffset++;
         }
     }
+    // Fallback: show the first slot time if no exact match found in lookahead
+    out_hour = sched.slots[0].hour;
+    out_min  = sched.slots[0].minute;
     return false;
 }
 
@@ -186,10 +222,10 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
             DateTime localDate(now.year, now.month, now.day, 0, 0, 0);
             uint32_t current_day = localDate.unixtime() / 86400UL;
             // First use: anchor the reference day to today and persist it
-            if (gState.custom_ref_day == 0xFFFFFFFFUL) {
+            if (gState.custom_ref_day == 0xFFFFFFFFUL || current_day < gState.custom_ref_day) {
                 gState.custom_ref_day = current_day;
                 storage.save();
-                LOG_D("SCHED", "custom_ref_day definido: %lu", current_day);
+                LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", current_day);
             }
             uint32_t ref_day = gState.custom_ref_day;
             uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);
