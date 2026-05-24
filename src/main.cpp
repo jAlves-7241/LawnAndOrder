@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 
 #include "config.h"
 #include "AppState.h"
@@ -20,6 +21,10 @@ static UI      ui(display, encoder);
 void setup() {
     Serial.begin(115200);
     LOG_I("SYS", "A iniciar sistema...");
+
+    // Inicializar o Watchdog com timeout de 5 segundos e reset automático
+    esp_task_wdt_init(5, true);
+    esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
 
     initAppState();       // load firmware defaults into RAM
 
@@ -44,6 +49,7 @@ void setup() {
 
 // ─────────────────────────────────────────────────────────
 void loop() {
+    esp_task_wdt_reset();   // Alimentar o Watchdog em cada ciclo do loop
     rtclock.update();       // reads DS3231 into gState.now once/sec
     scheduler.update();     // checks trigger, advances next_*, fires watering
     ui.update();            // handles encoder, redraws LCD

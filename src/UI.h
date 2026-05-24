@@ -139,6 +139,7 @@ private:
 
     // ── Idle timeout ──────────────────────────────────────
     uint32_t _lastActivity;
+    bool     _configChanged;
 
     // ── Menu table ────────────────────────────────────────
     static const uint8_t MAX_ITEMS = 12;

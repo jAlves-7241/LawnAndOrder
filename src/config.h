@@ -75,7 +75,7 @@
 #define NUM_ZONES               4
 #define MAX_SLOTS_PER_MODE      4         // Personalizado can have up to 4 cycles
 #define MENU_VISIBLE            3         // rows visible in a list at once
-#define DEBOUNCE_MS             200UL
+#define DEBOUNCE_MS             50UL
 #define IDLE_TIMEOUT_MS         30000UL   // return to idle after 30 s of inactivity
 #define ZONE_TEST_DURATION_S    5         // seconds per zone in test mode
 #define ZONE_WAIT_DELAY_MS      5000UL    // ms to wait between zones closing/opening
