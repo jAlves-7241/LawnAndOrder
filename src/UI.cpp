@@ -239,10 +239,10 @@ void UI::_handleRotation(int8_t dir) {
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 if (_deDay > max_days) _deDay = max_days;
             } else {
-                // Ano: limite razoável (2020-2099)
+                // Ano: limite parametrizado
                 int y = (int)_deYear + dir;
-                while (y < 2020) y += 80; // faixa de 80 anos (2020-2099)
-                while (y > 2099) y -= 80;
+                while (y < DATE_YEAR_MIN) y += DATE_YEAR_SPAN;
+                while (y > DATE_YEAR_MAX) y -= DATE_YEAR_SPAN;
                 _deYear = (uint16_t)y;
                 uint8_t max_days = daysInMonth(_deYear, _deMonth);
                 if (_deDay > max_days) _deDay = max_days;
@@ -861,7 +861,7 @@ void UI::_dispatch(const char* action) {
 
     // dur_pick:suspend - open picker for suspension days
     if (strcmp(action, "dur_pick:suspend") == 0) {
-        _showDurPick(3, DurContext::SUSPEND); // default 3 days
+        _showDurPick(SUSPEND_DEFAULT_DAYS, DurContext::SUSPEND);
         return;
     }
 

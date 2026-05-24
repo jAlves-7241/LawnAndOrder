@@ -280,6 +280,14 @@ loop() - executado continuamente
 
 **Sem Wi-Fi por design** - O DS3231 fornece tempo real com precisão de ±2 ppm (≈1 min/ano). Não há superfície de ataque TCP/IP, credenciais em flash, nem dependência de rede.
 
+**Watchdog de Hardware (WDT)** - Integrado o Task Watchdog do ESP32 (`esp_task_wdt`) com timeout configurável no loop principal. Se a thread de controlo principal bloquear por qualquer motivo por mais de `WDT_TIMEOUT_S` segundos, o chip sofre um reboot físico de segurança e desativa imediatamente os relés.
+
+**Cache Binário na NVS (Boot instantâneo)** - Em vez de ler e efetuar o parse sequencial de até 1500 linhas do arquivo CSV no LittleFS a cada boot (o que demoraria centenas de milissegundos), o array de cache do histórico e a contagem de linhas são guardados em formato binário compacto na NVS do ESP32. O arranque do sistema lê esta cache em **0ms**, protegendo também o LittleFS contra acessos excessivos de leitura.
+
+**NVS Batching (Diferimento de Flash)** - Para preservar a integridade da memória flash NVS contra o desgaste das rotações de alta frequência do encoder, as escritas em flash (`storage.save()`) são agrupadas em batch e efetuadas apenas na transição do ecrã de menu de regresso ao ecrã principal `IDLE`.
+
+**Scheduler O(1) com Salto Modular** - Para o modo `EVERY_X_DAYS`, eliminámos a pesquisa sequencial temporal linear diária. O Scheduler calcula a correspondência do dia utilizando aritmética modular em tempo constante $O(1)$, com salvaguardas contra o recuo abrupto no relógio do RTC (ex: falha de bateria).
+
 ---
 
 ### Configuração rápida (`config.h`)
@@ -304,8 +312,15 @@ loop() - executado continuamente
 // Timeout de idle antes de regressar ao ecrã principal:
 #define IDLE_TIMEOUT_MS         30000UL
 
-// Timeout de backlight padrão (alterável no menu):
-// (definido em AppState.cpp como 120000UL = 2 min)
+// Timeout de watchdog de segurança (em segundos):
+#define WDT_TIMEOUT_S           5
+
+// Dias padrão para suspensão de rega:
+#define SUSPEND_DEFAULT_DAYS    3
+
+// Limites de anos no acerto de data:
+#define DATE_YEAR_MIN           2020
+#define DATE_YEAR_MAX           2099
 
 // Nível de log (ver log.h):
 #define LOG_LEVEL  LVL_INFO   // LVL_NONE / LVL_ERROR / LVL_WARN / LVL_INFO / LVL_DEBUG
