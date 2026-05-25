@@ -314,15 +314,20 @@ void History::update() {
                     while (*p == ' ') p++;
                     
                     if (strlen(p) > 0) {
-                        if (_rotSkipped < _rotDiscard) {
-                            _rotSkipped++;
-                        } else {
-                            _rotDst.println(p);
-                            _rotCopied++;
-                            if (_rotCopied >= _rotKeep) {
-                                _rotState = RotState::FINISHING;
-                                return; // yield
+                        HistoryEntry temp;
+                        if (_lineToEntry(p, temp)) {
+                            if (_rotSkipped < _rotDiscard) {
+                                _rotSkipped++;
+                            } else {
+                                _rotDst.println(p);
+                                _rotCopied++;
+                                if (_rotCopied >= _rotKeep) {
+                                    _rotState = RotState::FINISHING;
+                                    return; // yield
+                                }
                             }
+                        } else {
+                            LOG_W("HIST", "Linha corrompida expurgada do disco.");
                         }
                     }
                     _rotLinePos = 0;
@@ -340,11 +345,16 @@ void History::update() {
                 char* p = _rotLineBuf;
                 while (*p == ' ') p++;
                 if (strlen(p) > 0) {
-                    if (_rotSkipped < _rotDiscard) {
-                        _rotSkipped++;
+                    HistoryEntry temp;
+                    if (_lineToEntry(p, temp)) {
+                        if (_rotSkipped < _rotDiscard) {
+                            _rotSkipped++;
+                        } else {
+                            _rotDst.println(p);
+                            _rotCopied++;
+                        }
                     } else {
-                        _rotDst.println(p);
-                        _rotCopied++;
+                        LOG_W("HIST", "Linha corrompida expurgada do disco.");
                     }
                 }
                 _rotLinePos = 0;

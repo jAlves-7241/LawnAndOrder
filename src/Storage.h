@@ -35,6 +35,19 @@
 
 #define NVS_VERSION 4   // increment when key schema changes
 
+struct RecoveryState {
+    bool active;
+    uint32_t start_unix_time;
+    uint8_t queuePos;
+    uint8_t queueLen;
+    struct QueueEntry {
+        uint8_t  zone_idx;
+        uint32_t duration_ms;
+    } queue[NUM_ZONES];
+    WaterTrigger trigger;
+};
+
+
 class Storage {
 public:
     // Open NVS namespace. Call once in setup(), before load().
@@ -54,6 +67,10 @@ public:
     // Persist history cache to NVS
     bool loadHistoryCache(void* dest, size_t size, uint16_t& lineCount);
     void saveHistoryCache(const void* src, size_t size, uint16_t lineCount);
+
+    // Persist recovery state to NVS
+    bool loadRecoveryState(RecoveryState& rs);
+    void saveRecoveryState(const RecoveryState& rs);
 
 private:
     bool _ready;  // true after begin() succeeds

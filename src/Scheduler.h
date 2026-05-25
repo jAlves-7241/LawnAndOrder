@@ -44,6 +44,13 @@ public:
     // Advances next_* past the just-fired slot.
     void onWateringDone();
 
+    // Returns true if an interrupted cycle shouldn't be resumed because
+    // too much time has passed, or it overlaps with the next cycle.
+    bool isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint32_t remaining_duration_sec);
+
+    // Helper to get the exact unix timestamp of the next scheduled cycle
+    uint32_t getNextCycleUnix(SystemTime now);
+
     // Public utility: compute the next fire time for a given mode and
     // current time. Writes result into out_hour / out_min.
     // Returns false if the mode has no schedule (DESATIVADO / PERSONALIZADO).
