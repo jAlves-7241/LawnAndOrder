@@ -94,4 +94,5 @@ void loop() {
     scheduler.update();     // checks trigger, advances next_*, fires watering
     ui.update();            // handles encoder, redraws LCD
     wateringCtrl.update();  // advances zone timer, drives relays
+    history.update();       // processes background file rotations
 }
