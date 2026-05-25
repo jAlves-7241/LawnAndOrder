@@ -142,4 +142,15 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount)
     prefs.putBytes("hcache", src, size);
 }
 
+// ─────────────────────────────────────────────────────────
+bool Storage::loadRecoveryState(RecoveryState& rs) {
+    if (!_ready) return false;
+    size_t readBytes = prefs.getBytes("recv", &rs, sizeof(rs));
+    return (readBytes == sizeof(rs));
+}
+
+void Storage::saveRecoveryState(const RecoveryState& rs) {
+    if (!_ready) return;
+    prefs.putBytes("recv", &rs, sizeof(rs));
+}
 
