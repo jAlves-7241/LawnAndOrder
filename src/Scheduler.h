@@ -46,7 +46,7 @@ public:
 
     // Returns true if an interrupted cycle shouldn't be resumed because
     // too much time has passed, or it overlaps with the next cycle.
-    bool isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint32_t remaining_duration_sec);
+    bool isCycleExpired(uint32_t start_unix, const SystemTime& current_time, uint32_t remaining_duration_sec);
 
     // Helper to get the exact unix timestamp of the next scheduled cycle
     uint32_t getNextCycleUnix(SystemTime now);
@@ -59,16 +59,13 @@ public:
 
 private:
     // Returns true if the schedule is active on the given calendar day (since 1970).
-    bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970);
+    bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
 
     // True while we're inside the trigger minute to prevent double-fire.
     bool _triggered;
 
     // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;
-
-    // Track watering state to detect completion without a callback.
-    bool _wasWatering;
 };
 
 extern Scheduler scheduler;

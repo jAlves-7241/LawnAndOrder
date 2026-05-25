@@ -216,6 +216,7 @@ void UI::dispatchAction(const char* action) {
         uint8_t m = atoi(action+4);
         gState.mode = (AppMode)m;
         _configChanged = true;
+        scheduler.onModeChanged();
         
         if (_inSetup) {
             if (gState.mode == AppMode::PERSONALIZADO) {
