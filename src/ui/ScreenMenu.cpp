@@ -16,6 +16,16 @@ void ScreenMenu::onEnter(UI& ui) {
 void ScreenMenu::handleRotation(UI& ui, int8_t dir) {
     if (_itemCount == 0) return;
     
+#if MENU_WRAP_AROUND
+    if (dir > 0) {
+        _cur = (_cur + 1) % _itemCount;
+        render(ui);
+    } else if (dir < 0) {
+        if (_cur == 0) _cur = _itemCount - 1;
+        else _cur--;
+        render(ui);
+    }
+#else
     if (dir > 0 && _cur < _itemCount - 1) {
         _cur++;
         render(ui);
@@ -23,6 +33,7 @@ void ScreenMenu::handleRotation(UI& ui, int8_t dir) {
         _cur--;
         render(ui);
     }
+#endif
 }
 
 void ScreenMenu::handleClick(UI& ui) {
