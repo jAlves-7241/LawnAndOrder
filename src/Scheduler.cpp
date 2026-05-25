@@ -14,8 +14,10 @@ Scheduler::Scheduler()
 // ─────────────────────────────────────────────────────────
 void Scheduler::begin() {
     if (!gState.rtc_valid) return;
+    uint32_t old_ref = gState.custom_ref_day;
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
+    if (gState.custom_ref_day != old_ref) storage.save();
     LOG_I("SCHED", "Proxima rega: %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
@@ -58,8 +60,10 @@ void Scheduler::update() {
         _triggered = false;
         _lastMin   = t.min;
         // Recompute so next_* is always fresh (catches mode changes too)
+        uint32_t old_ref = gState.custom_ref_day;
         computeNext(gState.mode, t,
                     gState.next_hour, gState.next_min);
+        if (gState.custom_ref_day != old_ref) storage.save();
     }
 
     // Check every slot of the active mode
@@ -100,8 +104,10 @@ void Scheduler::onModeChanged() {
         }
         return;
     }
+    uint32_t old_ref = gState.custom_ref_day;
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
+    if (gState.custom_ref_day != old_ref) storage.save();
     LOG_I("SCHED", "Modo alterado: Proxima rega %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
@@ -124,8 +130,10 @@ void Scheduler::onWateringDone() {
     advanced.sec    = localNext.second();
     advanced.dow    = localNext.dayOfTheWeek();
 
+    uint32_t old_ref = gState.custom_ref_day;
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
+    if (gState.custom_ref_day != old_ref) storage.save();
     LOG_I("SCHED", "Ciclo concluido: Proxima rega %02d:%02d",
                   gState.next_hour, gState.next_min);
 }
@@ -133,33 +141,16 @@ void Scheduler::onWateringDone() {
 // ─────────────────────────────────────────────────────────
 uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
     uint8_t nextH = 0, nextM = 0;
-    if (!computeNext(gState.mode, now, nextH, nextM)) {
+    uint32_t nextDay1970 = 0;
+    if (!computeNext(gState.mode, now, nextH, nextM, &nextDay1970)) {
         return 0xFFFFFFFF; // No next cycle
     }
     
-    DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
-    
-    // We don't know the exact day from computeNext's direct output easily
-    // but computeNext checks from today onwards.
-    // Let's do a naive search from today up to 15 days
-    uint32_t start_day_1970 = current.unixtime() / 86400UL;
-    for (int offset = 0; offset <= 15; offset++) {
-        uint32_t candidate_day = start_day_1970 + offset;
-        const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
-        if (_dayMatches(sched, candidate_day)) {
-             // For today, check if the time is strictly in the future
-             if (offset == 0 && (nextH < now.hour || (nextH == now.hour && nextM <= now.min))) {
-                 continue; // Found time is past today's time, so it must be for a future day
-             }
-             DateTime next(DateTime(candidate_day * 86400UL).year(),
-                           DateTime(candidate_day * 86400UL).month(),
-                           DateTime(candidate_day * 86400UL).day(),
-                           nextH, nextM, 0);
-             return next.unixtime();
-        }
-    }
-    
-    return 0xFFFFFFFF;
+    DateTime next(DateTime(nextDay1970 * 86400UL).year(),
+                  DateTime(nextDay1970 * 86400UL).month(),
+                  DateTime(nextDay1970 * 86400UL).day(),
+                  nextH, nextM, 0);
+    return next.unixtime();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -209,7 +200,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint3
 // Returns false if mode has no schedule.
 // ─────────────────────────────────────────────────────────
 bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
-                             uint8_t& out_hour, uint8_t& out_min) {
+                             uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970) {
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)mode];
 
     if (sched.slot_count == 0) {
@@ -257,6 +248,7 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                 }
                 out_hour = sl.hour;
                 out_min  = sl.minute;
+                if (out_day_1970) *out_day_1970 = candidate_day_1970;
                 return true;
             }
         }
@@ -271,6 +263,7 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     // Fallback: show the first slot time if no exact match found in lookahead
     out_hour = sched.slots[0].hour;
     out_min  = sched.slots[0].minute;
+    if (out_day_1970) *out_day_1970 = start_day_1970 + dayOffset;
     return false;
 }
 
@@ -290,7 +283,6 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
             // First use: anchor the reference day to today and persist it
             if (gState.custom_ref_day == 0xFFFFFFFFUL || candidate_day_1970 < gState.custom_ref_day) {
                 gState.custom_ref_day = candidate_day_1970;
-                storage.save();
                 LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
             }
             uint32_t ref_day = gState.custom_ref_day;
