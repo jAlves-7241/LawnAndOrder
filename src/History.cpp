@@ -19,6 +19,7 @@ bool History::begin(bool formatOnFail) {
         _lineCount = 0;
         _cacheCount = 0;
     } else {
+        LittleFS.remove("/hist_tmp.csv"); // Clean up orphaned temp file from a crash
         // Tenta carregar da NVS primeiro
         if (storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount)) {
             // Cache e total recuperados instantaneamente da NVS!
@@ -46,12 +47,19 @@ void History::record(const HistoryEntry& entry) {
     if (entry.trigger == WaterTrigger::TEST)  return;
     if (!gState.rtc_valid)                    return;
 
+    if (_rotState != RotState::IDLE) {
+        LOG_W("HIST", "Rotacao pendente, forçar conclusao sincrona...");
+        while (_rotState != RotState::IDLE) {
+            esp_task_wdt_reset();
+            update();
+        }
+    }
+
     char line[LINE_BUF];
     _entryToLine(entry, line, sizeof(line));
 
     if (_lineCount >= HISTORY_MAX_ENTRIES) {
         _rotateAndAppend(line);
-        // O _lineCount é ajustado internamente pelo _rotateAndAppend
     } else {
         File f = LittleFS.open(HISTORY_FILE, "a");
         if (!f) { LOG_E("HIST", "Falha ao abrir ficheiro"); return; }
@@ -91,6 +99,14 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
 
 void History::clear() {
     if (!_ready) return;
+    
+    if (_rotState != RotState::IDLE) {
+        if (_rotSrc) _rotSrc.close();
+        if (_rotDst) _rotDst.close();
+        LittleFS.remove("/hist_tmp.csv");
+        _rotState = RotState::IDLE;
+    }
+    
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
     _cacheCount = 0;
@@ -142,9 +158,13 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     int commas = 0;
     while (*p && commas < 2) { if (*p++ == ',') commas++; }
     for (int i = 0; i < NUM_ZONES; i++) {
-        out.zone_dur[i] = (uint8_t)atoi(p);
-        while (*p && *p != ',') p++;
-        if (*p == ',') p++;
+        if (*p) {
+            out.zone_dur[i] = (uint8_t)atoi(p);
+            while (*p && *p != ',') p++;
+            if (*p == ',') p++;
+        } else {
+            out.zone_dur[i] = 0;
+        }
     }
     return true;
 }
@@ -172,94 +192,191 @@ void History::_populateCache() {
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return;
 
+    char chunk[256];
     char line[LINE_BUF];
-    while (f.available()) {
-        int len = f.readBytesUntil('\n', line, LINE_BUF - 1);
-        if (len > 0 && line[len-1] == '\r') len--;
-        line[len] = '\0';
-        if (len == 0) continue;
+    size_t linePos = 0;
 
-        HistoryEntry temp;
-        if (_lineToEntry(line, temp)) {
-            if (_cacheCount < HISTORY_DISPLAY) {
-                _cache[_cacheCount++] = temp;
-            } else {
-                for (int i = 0; i < HISTORY_DISPLAY - 1; i++) {
-                    _cache[i] = _cache[i+1];
+    while (f.available()) {
+        int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
+        if (bytesRead <= 0) break;
+
+        for (int i = 0; i < bytesRead; i++) {
+            char c = chunk[i];
+            if (c == '\n') {
+                line[linePos] = '\0';
+
+                // Trim right carriage return, spaces, and newlines
+                while (linePos > 0 && (line[linePos - 1] == '\r' || line[linePos - 1] == ' ' || line[linePos - 1] == '\n')) {
+                    line[--linePos] = '\0';
                 }
-                _cache[HISTORY_DISPLAY - 1] = temp;
+
+                char* p = line;
+                while (*p == ' ') p++;
+
+                if (strlen(p) > 0) {
+                    HistoryEntry temp;
+                    if (_lineToEntry(p, temp)) {
+                        if (_cacheCount < HISTORY_DISPLAY) {
+                            _cache[_cacheCount++] = temp;
+                        } else {
+                            for (int k = 0; k < HISTORY_DISPLAY - 1; k++) {
+                                _cache[k] = _cache[k+1];
+                            }
+                            _cache[HISTORY_DISPLAY - 1] = temp;
+                        }
+                    }
+                }
+                linePos = 0;
+            } else if (c != '\r' && linePos < sizeof(line) - 1) {
+                line[linePos++] = c;
             }
         }
     }
+
+    // Process final line if file does not end with '\n'
+    if (linePos > 0) {
+        line[linePos] = '\0';
+        while (linePos > 0 && (line[linePos - 1] == '\r' || line[linePos - 1] == ' ' || line[linePos - 1] == '\n')) {
+            line[--linePos] = '\0';
+        }
+        char* p = line;
+        while (*p == ' ') p++;
+
+        if (strlen(p) > 0) {
+            HistoryEntry temp;
+            if (_lineToEntry(p, temp)) {
+                if (_cacheCount < HISTORY_DISPLAY) {
+                    _cache[_cacheCount++] = temp;
+                } else {
+                    for (int k = 0; k < HISTORY_DISPLAY - 1; k++) {
+                        _cache[k] = _cache[k+1];
+                    }
+                    _cache[HISTORY_DISPLAY - 1] = temp;
+                }
+            }
+        }
+    }
+
     f.close();
 }
 
 void History::_rotateAndAppend(const char* newLine) {
-    // Para otimizar leituras/escritas e não estar sempre a rodar a cada rega,
-    // descartamos os 10% mais antigos de uma vez.
-    uint16_t discard = HISTORY_MAX_ENTRIES / 10;
-    if (discard == 0) discard = 1;
-    uint16_t keep = HISTORY_MAX_ENTRIES - discard;
+    if (_rotState != RotState::IDLE) {
+        LOG_W("HIST", "Rotacao forçada sincrona!");
+        while (_rotState != RotState::IDLE) {
+            esp_task_wdt_reset();
+            update();
+        }
+    }
 
-    File src = LittleFS.open(HISTORY_FILE, "r");
-    if (!src) {
+    _rotDiscard = HISTORY_MAX_ENTRIES / 10;
+    if (_rotDiscard == 0) _rotDiscard = 1;
+    _rotKeep = HISTORY_MAX_ENTRIES - _rotDiscard;
+
+    _rotSrc = LittleFS.open(HISTORY_FILE, "r");
+    if (!_rotSrc) {
         // Se falhar, tentamos apenas adicionar
         File f = LittleFS.open(HISTORY_FILE, "a");
         if (f) { f.println(newLine); f.close(); }
         return;
     }
 
-    File dst = LittleFS.open("/hist_tmp.csv", "w");
-    if (!dst) {
-        src.close();
+    _rotDst = LittleFS.open("/hist_tmp.csv", "w");
+    if (!_rotDst) {
+        _rotSrc.close();
         return;
     }
 
-    uint16_t n = 0;
-    uint16_t skipped = 0;
+    strlcpy(_rotPendingLine, newLine, sizeof(_rotPendingLine));
+    _rotSkipped = 0;
+    _rotCopied = 0;
+    _rotLinePos = 0;
+    _rotState = RotState::COPYING;
+}
 
-    // Copiar linha a linha, evitando carregar o ficheiro todo na RAM (sem usar String)
-    char lineBuf[LINE_BUF];
-    while (src.available()) {
-        esp_task_wdt_reset(); // Alimentar o Watchdog para prevenir resets se a escrita em flash for lenta
-        int bytesRead = src.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
-        lineBuf[bytesRead] = '\0';
+void History::update() {
+    if (_rotState == RotState::IDLE) return;
 
-        // Trim right carriage return, spaces, and newlines
-        while (bytesRead > 0 && (lineBuf[bytesRead - 1] == '\r' || lineBuf[bytesRead - 1] == ' ' || lineBuf[bytesRead - 1] == '\n')) {
-            lineBuf[--bytesRead] = '\0';
+    if (_rotState == RotState::COPYING) {
+        char chunk[256];
+        int bytesRead = _rotSrc.read((uint8_t*)chunk, sizeof(chunk));
+        
+        if (bytesRead > 0) {
+            for (int i = 0; i < bytesRead; i++) {
+                char c = chunk[i];
+                if (c == '\n') {
+                    _rotLineBuf[_rotLinePos] = '\0';
+                    // Trim right carriage return, spaces, and newlines
+                    while (_rotLinePos > 0 && (_rotLineBuf[_rotLinePos - 1] == '\r' || _rotLineBuf[_rotLinePos - 1] == ' ' || _rotLineBuf[_rotLinePos - 1] == '\n')) {
+                        _rotLineBuf[--_rotLinePos] = '\0';
+                    }
+                    char* p = _rotLineBuf;
+                    while (*p == ' ') p++;
+                    
+                    if (strlen(p) > 0) {
+                        HistoryEntry temp;
+                        if (_lineToEntry(p, temp)) {
+                            if (_rotSkipped < _rotDiscard) {
+                                _rotSkipped++;
+                            } else {
+                                _rotDst.println(p);
+                                _rotCopied++;
+                                if (_rotCopied >= _rotKeep) {
+                                    _rotState = RotState::FINISHING;
+                                    return; // yield
+                                }
+                            }
+                        } else {
+                            LOG_W("HIST", "Linha corrompida expurgada do disco.");
+                        }
+                    }
+                    _rotLinePos = 0;
+                } else if (c != '\r' && _rotLinePos < sizeof(_rotLineBuf) - 1) {
+                    _rotLineBuf[_rotLinePos++] = c;
+                }
+            }
+        } else {
+            // EOF
+            if (_rotLinePos > 0) {
+                _rotLineBuf[_rotLinePos] = '\0';
+                while (_rotLinePos > 0 && (_rotLineBuf[_rotLinePos - 1] == '\r' || _rotLineBuf[_rotLinePos - 1] == ' ' || _rotLineBuf[_rotLinePos - 1] == '\n')) {
+                    _rotLineBuf[--_rotLinePos] = '\0';
+                }
+                char* p = _rotLineBuf;
+                while (*p == ' ') p++;
+                if (strlen(p) > 0) {
+                    HistoryEntry temp;
+                    if (_lineToEntry(p, temp)) {
+                        if (_rotSkipped < _rotDiscard) {
+                            _rotSkipped++;
+                        } else {
+                            _rotDst.println(p);
+                            _rotCopied++;
+                        }
+                    } else {
+                        LOG_W("HIST", "Linha corrompida expurgada do disco.");
+                    }
+                }
+                _rotLinePos = 0;
+            }
+            _rotState = RotState::FINISHING;
         }
+        return; // yield back to loop
+    }
 
-        // Trim left spaces
-        char* p = lineBuf;
-        while (*p == ' ') p++;
+    if (_rotState == RotState::FINISHING) {
+        _rotSrc.close();
+        _rotDst.println(_rotPendingLine);
+        _rotDst.close();
 
-        if (strlen(p) == 0) continue;
-
-        if (skipped < discard) {
-            skipped++;
-            continue;
+        if (LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
+            _lineCount = _rotCopied + 1;
+            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount); // Update NVS immediately
+            LOG_I("HIST", "Rotacao concluida. Novas entradas: %d", _lineCount);
+        } else {
+            LOG_E("HIST", "rename falhou - manter original");
+            LittleFS.remove("/hist_tmp.csv");
         }
-
-        dst.println(p);
-        n++;
-        // Limite de segurança para não ultrapassar a quota planeada
-        if (n >= keep) break;
+        _rotState = RotState::IDLE;
     }
-    src.close();
-
-    // Adicionar a nova entrada no final
-    dst.println(newLine);
-    dst.close();
-
-    // Substituir o original pelo novo ficheiro processado.
-    // LittleFS.rename() suporta overwrite - não é necessário remove() prévio.
-    // Evita janela de perda de dados se o rename falhar.
-    if (!LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
-        LOG_E("HIST", "rename falhou - manter original");
-        LittleFS.remove("/hist_tmp.csv");
-        return;
-    }
-
-    _lineCount = n + 1; // O contador volta para trás, tendo espaço para crescer novamente
 }

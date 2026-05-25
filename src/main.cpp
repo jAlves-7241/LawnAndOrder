@@ -36,8 +36,13 @@ void recoverI2C() {
     LOG_I("SYS", "Recuperacao I2C concluida.");
 }
 
-// ─────────────────────────────────────────────────────────
 void setup() {
+    // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else
+    pinMode(PIN_RELAY_1, OUTPUT); digitalWrite(PIN_RELAY_1, RELAY_OFF);
+    pinMode(PIN_RELAY_2, OUTPUT); digitalWrite(PIN_RELAY_2, RELAY_OFF);
+    pinMode(PIN_RELAY_3, OUTPUT); digitalWrite(PIN_RELAY_3, RELAY_OFF);
+    pinMode(PIN_RELAY_4, OUTPUT); digitalWrite(PIN_RELAY_4, RELAY_OFF);
+
     Serial.begin(115200);
     LOG_I("SYS", "A iniciar sistema...");
 
@@ -64,6 +69,7 @@ void setup() {
     display.begin();
     encoder.begin();
 
+    rtclock.setErrorCallback(recoverI2C);
     if (!rtclock.begin()) {
         LOG_E("SYS", "RTC nao disponivel");
     }
@@ -93,4 +99,5 @@ void loop() {
     scheduler.update();     // checks trigger, advances next_*, fires watering
     ui.update();            // handles encoder, redraws LCD
     wateringCtrl.update();  // advances zone timer, drives relays
+    history.update();       // processes background file rotations
 }

@@ -67,7 +67,11 @@ void Scheduler::update() {
 
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     if (sched.slot_count == 0) return;
-    if (!_dayMatches(sched, t)) return;
+
+    DateTime localDate(t.year, t.month, t.day, 0, 0, 0);
+    uint32_t current_day_1970 = localDate.unixtime() / 86400UL;
+
+    if (!_dayMatches(sched, current_day_1970)) return;
 
     for (uint8_t i = 0; i < sched.slot_count; i++) {
         if (t.hour == sched.slots[i].hour &&
@@ -127,6 +131,80 @@ void Scheduler::onWateringDone() {
 }
 
 // ─────────────────────────────────────────────────────────
+uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
+    uint8_t nextH = 0, nextM = 0;
+    if (!computeNext(gState.mode, now, nextH, nextM)) {
+        return 0xFFFFFFFF; // No next cycle
+    }
+    
+    DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
+    
+    // We don't know the exact day from computeNext's direct output easily
+    // but computeNext checks from today onwards.
+    // Let's do a naive search from today up to 15 days
+    uint32_t start_day_1970 = current.unixtime() / 86400UL;
+    for (int offset = 0; offset <= 15; offset++) {
+        uint32_t candidate_day = start_day_1970 + offset;
+        const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
+        if (_dayMatches(sched, candidate_day)) {
+             // For today, check if the time is strictly in the future
+             if (offset == 0 && (nextH < now.hour || (nextH == now.hour && nextM <= now.min))) {
+                 continue; // Found time is past today's time, so it must be for a future day
+             }
+             DateTime next(DateTime(candidate_day * 86400UL).year(),
+                           DateTime(candidate_day * 86400UL).month(),
+                           DateTime(candidate_day * 86400UL).day(),
+                           nextH, nextM, 0);
+             return next.unixtime();
+        }
+    }
+    
+    return 0xFFFFFFFF;
+}
+
+// ─────────────────────────────────────────────────────────
+bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint32_t remaining_duration_sec) {
+    // 1. Hard Limits
+    const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
+    uint32_t max_allowed_duration = (sched.slot_count <= 1) ? 43200UL : 28800UL; // 12h or 8h
+    if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
+        LOG_W("SCHED", "Recuperacao descartada: Hard limit excedido.");
+        return true;
+    }
+
+    // 2. Overlap / Missed Cycle
+    uint32_t next_cycle_unix = getNextCycleUnix(gState.now);
+    
+    // Check if there was a scheduled slot between start and now
+    // Create a mock SystemTime at start_unix to find the very next slot
+    DateTime startDT(start_unix);
+    SystemTime startST = {};
+    startST.year = startDT.year();
+    startST.month = startDT.month();
+    startST.day = startDT.day();
+    startST.hour = startDT.hour();
+    startST.min = startDT.minute();
+    startST.sec = startDT.second();
+    
+    uint32_t next_from_start = getNextCycleUnix(startST);
+    if (next_from_start != 0xFFFFFFFF && next_from_start <= current_unix) {
+         LOG_W("SCHED", "Recuperacao descartada: Atropelado por ciclo fantasma.");
+         return true;
+    }
+    
+    // 3. Safety Gap
+    if (next_cycle_unix != 0xFFFFFFFF) {
+        uint32_t estimated_end = current_unix + remaining_duration_sec;
+        if ((estimated_end + 7200UL) > next_cycle_unix) {
+            LOG_W("SCHED", "Recuperacao descartada: Gap de segurança 2h desrespeitado.");
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────
 // Static: compute the next fire time for a given mode + current time.
 // Returns false if mode has no schedule.
 // ─────────────────────────────────────────────────────────
@@ -142,23 +220,22 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
 
     // Use RTClib's DateTime for proper date arithmetic in local time
     DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
+    uint32_t start_day_1970 = current.unixtime() / 86400UL;
 
     uint8_t dayOffset = 0;
     uint8_t limit = 15;
 
     // Fast-jump O(1) math for DayPattern::EVERY_X_DAYS
     if (sched.day_pattern == DayPattern::EVERY_X_DAYS && sched.interval_days > 0) {
-        DateTime localDate(now.year, now.month, now.day, 0, 0, 0);
-        uint32_t current_day = localDate.unixtime() / 86400UL;
         uint32_t ref_day = gState.custom_ref_day;
         
         if (ref_day != 0xFFFFFFFFUL) {
-            if (current_day >= ref_day) {
-                uint32_t diff = current_day - ref_day;
+            if (start_day_1970 >= ref_day) {
+                uint32_t diff = start_day_1970 - ref_day;
                 uint32_t rem = diff % sched.interval_days;
                 dayOffset = (rem > 0) ? (sched.interval_days - rem) : 0;
             } else {
-                uint32_t diff = ref_day - current_day;
+                uint32_t diff = ref_day - start_day_1970;
                 dayOffset = diff % sched.interval_days;
             }
             limit = dayOffset + sched.interval_days;
@@ -166,20 +243,9 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     }
 
     while (dayOffset <= limit) {
-        DateTime candidateDt = current + TimeSpan(dayOffset, 0, 0, 0);
-        
-        // Convert back to SystemTime-like fields for _dayMatches
-        SystemTime candidate = {};
-        candidate.year  = candidateDt.year();
-        candidate.month = candidateDt.month();
-        candidate.day   = candidateDt.day();
-        candidate.hour  = candidateDt.hour();
-        candidate.min   = candidateDt.minute();
-        candidate.sec   = candidateDt.second();
-        candidate.dow   = candidateDt.dayOfTheWeek();
-        candidate.unix  = candidateDt.unixtime();
+        uint32_t candidate_day_1970 = start_day_1970 + dayOffset;
 
-        if (_dayMatches(sched, candidate)) {
+        if (_dayMatches(sched, candidate_day_1970)) {
             // Scan slots in order
             for (uint8_t i = 0; i < sched.slot_count; i++) {
                 const ScheduleSlot& sl = sched.slots[i];
@@ -211,24 +277,24 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
 // ─────────────────────────────────────────────────────────
 // Static: returns true if the schedule fires on the given day
 // ─────────────────────────────────────────────────────────
-bool Scheduler::_dayMatches(const ModeSchedule& sched, const SystemTime& now) {
+bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970) {
     switch (sched.day_pattern) {
         case DayPattern::DAILY:
             return true;
-        case DayPattern::DOW_MASK:
-            return (sched.dow_mask & (1 << now.dow)) != 0;
+        case DayPattern::DOW_MASK: {
+            // 1970-01-01 was Thursday (day 4). Map to 0=Sun, 1=Mon, ..., 6=Sat
+            uint8_t dow = (candidate_day_1970 + 4) % 7;
+            return (sched.dow_mask & (1 << dow)) != 0;
+        }
         case DayPattern::EVERY_X_DAYS: {
-            // Compute days since 1970 using the local date components (immune to timezone/DST shifts)
-            DateTime localDate(now.year, now.month, now.day, 0, 0, 0);
-            uint32_t current_day = localDate.unixtime() / 86400UL;
             // First use: anchor the reference day to today and persist it
-            if (gState.custom_ref_day == 0xFFFFFFFFUL || current_day < gState.custom_ref_day) {
-                gState.custom_ref_day = current_day;
+            if (gState.custom_ref_day == 0xFFFFFFFFUL || candidate_day_1970 < gState.custom_ref_day) {
+                gState.custom_ref_day = candidate_day_1970;
                 storage.save();
-                LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", current_day);
+                LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
             }
             uint32_t ref_day = gState.custom_ref_day;
-            uint32_t diff = (current_day >= ref_day) ? (current_day - ref_day) : (ref_day - current_day);
+            uint32_t diff = (candidate_day_1970 >= ref_day) ? (candidate_day_1970 - ref_day) : (ref_day - candidate_day_1970);
             if (sched.interval_days == 0) return true;  // guard: treat 0 as daily
             return (diff % sched.interval_days) == 0;
         }

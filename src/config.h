@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v0.2.0"
-#define FW_BUILD_DATE "24Mai2026"
+#define FW_VERSION "v0.4.1"
+#define FW_BUILD_DATE "25Mai2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
@@ -72,6 +72,9 @@
 #define HISTORY_DISPLAY 3        // entries shown in the UI menu
 
 // ── Application ───────────────────────────────────────────
+// Se 1, os menus dão a volta quando chegam ao fim. Se 0, param nos limites.
+#define MENU_WRAP_AROUND 0
+
 #define NUM_ZONES 4
 #define MAX_SLOTS_PER_MODE 4 // Personalizado can have up to 4 cycles
 #define MENU_VISIBLE 3       // rows visible in a list at once

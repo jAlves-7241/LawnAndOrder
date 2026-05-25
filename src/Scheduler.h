@@ -44,6 +44,13 @@ public:
     // Advances next_* past the just-fired slot.
     void onWateringDone();
 
+    // Returns true if an interrupted cycle shouldn't be resumed because
+    // too much time has passed, or it overlaps with the next cycle.
+    bool isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint32_t remaining_duration_sec);
+
+    // Helper to get the exact unix timestamp of the next scheduled cycle
+    uint32_t getNextCycleUnix(SystemTime now);
+
     // Public utility: compute the next fire time for a given mode and
     // current time. Writes result into out_hour / out_min.
     // Returns false if the mode has no schedule (DESATIVADO / PERSONALIZADO).
@@ -51,8 +58,8 @@ public:
                             uint8_t& out_hour, uint8_t& out_min);
 
 private:
-    // Returns true if the schedule is active on the given calendar day.
-    static bool _dayMatches(const ModeSchedule& sched, const SystemTime& now);
+    // Returns true if the schedule is active on the given calendar day (since 1970).
+    static bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970);
 
     // True while we're inside the trigger minute to prevent double-fire.
     bool _triggered;

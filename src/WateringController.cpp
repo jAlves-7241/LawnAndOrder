@@ -1,6 +1,8 @@
 #include "WateringController.h"
 #include "Scheduler.h"
+#include "Storage.h"
 #include <string.h>
+#include <RTClib.h>
 #include "log.h"
 
 const uint8_t WateringController::_relayPins[NUM_ZONES] = {
@@ -12,8 +14,8 @@ WateringController wateringCtrl;
 // ─────────────────────────────────────────────────────────
 WateringController::WateringController()
     : _queueLen(0), _queuePos(0),
-      _active(false), _isWaiting(false), _zoneIdx(0),
-      _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0),
+      _active(false), _isWaiting(false), _isRelayDeadTimeWaiting(false), _zoneIdx(0),
+      _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0), _relayWaitStartMs(0),
       _runTrigger(WaterTrigger::MANUAL)
 {
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
@@ -26,6 +28,50 @@ void WateringController::begin() {
         pinMode(_relayPins[i], OUTPUT);
     }
     _syncState();
+
+    // Tentar resgatar ciclo interrompido por blackout
+    RecoveryState rs;
+    if (storage.loadRecoveryState(rs) && rs.active) {
+        LOG_I("REGA", "Encontrado ciclo interrompido! A avaliar retoma...");
+        if (gState.rtc_valid) {
+            uint32_t remaining_ms = 0;
+            for (uint8_t i = rs.queuePos; i < rs.queueLen; i++) {
+                remaining_ms += rs.queue[i].duration_ms;
+            }
+            uint32_t current_unix = gState.now.unix;
+            if (!scheduler.isCycleExpired(rs.start_unix_time, current_unix, remaining_ms / 1000UL)) {
+                // Recuperar estado
+                _active = true;
+                _runTrigger = rs.trigger;
+                // Reconstruir queue
+                _queueLen = rs.queueLen;
+                for (uint8_t i = 0; i < _queueLen; i++) {
+                    _queue[i].zone_idx = rs.queue[i].zone_idx;
+                    _queue[i].duration_ms = rs.queue[i].duration_ms;
+                }
+                _queuePos = rs.queuePos;
+                
+                // Timestamp original do arranque do ciclo
+                DateTime startDT(rs.start_unix_time);
+                _cycleStart.year = startDT.year();
+                _cycleStart.month = startDT.month();
+                _cycleStart.day = startDT.day();
+                _cycleStart.hour = startDT.hour();
+                _cycleStart.min = startDT.minute();
+                _cycleStart.sec = startDT.second();
+                _cycleStart.unix = startDT.unixtime();
+
+                LOG_I("REGA", "Retomando ciclo da zona %d", _queue[_queuePos].zone_idx + 1);
+                _startNextZone();
+                return; // Impede _syncState de limpar tudo
+            }
+        } else {
+             LOG_W("REGA", "RTC invalido. Nao eh possivel validar o tempo de retoma.");
+        }
+        // Se chegou aqui, não é válido retomar, limpa NVS
+        rs.active = false;
+        storage.saveRecoveryState(rs);
+    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -55,6 +101,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
+    _isRelayDeadTimeWaiting = false;
     
     LOG_I("REGA", "Iniciar rega geral");
     _startNextZone();
@@ -91,7 +138,12 @@ void WateringController::stop() {
         }
         _active = false;
         _isWaiting = false;
+        _isRelayDeadTimeWaiting = false;
         LOG_I("REGA", "Rega interrompida");
+
+        RecoveryState rs = {};
+        rs.active = false;
+        storage.saveRecoveryState(rs);
     }
     _queueLen = 0;
     _queuePos = 0;
@@ -108,6 +160,18 @@ void WateringController::update() {
         if (millis() - _waitStartMs >= ZONE_WAIT_DELAY_MS) {
             _isWaiting = false;
             _startNextZone();
+        }
+        return;
+    }
+
+    if (_isRelayDeadTimeWaiting) {
+        if (millis() - _relayWaitStartMs >= 20) {
+            _isRelayDeadTimeWaiting = false;
+            if (_zoneIdx < NUM_ZONES) {
+                digitalWrite(_relayPins[_zoneIdx], RELAY_ON);
+            } else {
+                LOG_E("REGA", "zona %d fora dos limites!", _zoneIdx);
+            }
         }
         return;
     }
@@ -166,6 +230,7 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
+    _isRelayDeadTimeWaiting = false;
     return true;
 }
 
@@ -175,6 +240,21 @@ void WateringController::_startNextZone() {
     _zoneStartMs    = millis();
     _activateRelay(_zoneIdx);
     _syncState();
+
+    // Gravar estado de recuperação na NVS a cada transição
+    if (_runTrigger != WaterTrigger::TEST) {
+        RecoveryState rs;
+        rs.active = true;
+        rs.start_unix_time = _cycleStart.unix;
+        rs.queuePos = _queuePos;
+        rs.queueLen = _queueLen;
+        rs.trigger = _runTrigger;
+        for (uint8_t i = 0; i < _queueLen; i++) {
+            rs.queue[i].zone_idx = _queue[i].zone_idx;
+            rs.queue[i].duration_ms = _queue[i].duration_ms;
+        }
+        storage.saveRecoveryState(rs);
+    }
 
     if (_zoneDurationMs % 60000UL == 0) {
         LOG_I("REGA", "Zona %d (%s) activa - dur=%lu min",
@@ -197,20 +277,19 @@ void WateringController::_finishCycle() {
     entry.trigger = _runTrigger;
     memcpy(entry.zone_dur, _zoneDurMin, sizeof(_zoneDurMin));
     history.record(entry);
+
+    // Limpar estado de recuperação na NVS
+    RecoveryState rs = {};
+    rs.active = false;
+    storage.saveRecoveryState(rs);
 }
 
 void WateringController::_activateRelay(uint8_t zone_idx) {
     for (int i = 0; i < NUM_ZONES; i++)
         digitalWrite(_relayPins[i], RELAY_OFF);
 
-    // Pequeno tempo morto (Dead-Time) de 20ms para proteger contra transientes e arco elétrico
-    delay(20);
-
-    if (zone_idx >= NUM_ZONES) {
-        LOG_E("REGA", "zona %d fora dos limites!", zone_idx);
-        return;
-    }
-    digitalWrite(_relayPins[zone_idx], RELAY_ON);
+    _isRelayDeadTimeWaiting = true;
+    _relayWaitStartMs = millis();
 }
 
 void WateringController::_deactivateAll() {
