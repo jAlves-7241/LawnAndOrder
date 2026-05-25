@@ -142,9 +142,13 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     int commas = 0;
     while (*p && commas < 2) { if (*p++ == ',') commas++; }
     for (int i = 0; i < NUM_ZONES; i++) {
-        out.zone_dur[i] = (uint8_t)atoi(p);
-        while (*p && *p != ',') p++;
-        if (*p == ',') p++;
+        if (*p) {
+            out.zone_dur[i] = (uint8_t)atoi(p);
+            while (*p && *p != ',') p++;
+            if (*p == ',') p++;
+        } else {
+            out.zone_dur[i] = 0;
+        }
     }
     return true;
 }

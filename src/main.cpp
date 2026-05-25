@@ -64,6 +64,7 @@ void setup() {
     display.begin();
     encoder.begin();
 
+    rtclock.setErrorCallback(recoverI2C);
     if (!rtclock.begin()) {
         LOG_E("SYS", "RTC nao disponivel");
     }
