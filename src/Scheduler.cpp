@@ -186,7 +186,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint3
     // 3. Safety Gap
     if (next_cycle_unix != 0xFFFFFFFF) {
         uint32_t estimated_end = current_unix + remaining_duration_sec;
-        if ((estimated_end + 7200UL) > next_cycle_unix) {
+        if ((uint64_t)estimated_end + 7200ULL > (uint64_t)next_cycle_unix) {
             LOG_W("SCHED", "Recuperacao descartada: Gap de segurança 2h desrespeitado.");
             return true;
         }

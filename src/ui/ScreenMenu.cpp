@@ -17,20 +17,19 @@ void ScreenMenu::handleRotation(UI& ui, int8_t dir) {
     if (_itemCount == 0) return;
     
 #if MENU_WRAP_AROUND
-    if (dir > 0) {
-        _cur = (_cur + 1) % _itemCount;
-        render(ui);
-    } else if (dir < 0) {
-        if (_cur == 0) _cur = _itemCount - 1;
-        else _cur--;
+    int new_cur = (int)_cur + dir;
+    while (new_cur < 0) new_cur += _itemCount;
+    while (new_cur >= _itemCount) new_cur -= _itemCount;
+    if (new_cur != _cur) {
+        _cur = new_cur;
         render(ui);
     }
 #else
-    if (dir > 0 && _cur < _itemCount - 1) {
-        _cur++;
-        render(ui);
-    } else if (dir < 0 && _cur > 0) {
-        _cur--;
+    int new_cur = (int)_cur + dir;
+    if (new_cur < 0) new_cur = 0;
+    if (new_cur >= _itemCount) new_cur = _itemCount - 1;
+    if (new_cur != _cur) {
+        _cur = new_cur;
         render(ui);
     }
 #endif

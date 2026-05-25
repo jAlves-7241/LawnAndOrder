@@ -53,6 +53,7 @@ private:
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
+    static char* _trimLineBuffer(char* buf, size_t& pos);
     uint16_t    _countLines() const;
     void        _rotateAndAppend(const char* newLine);
     void        _populateCache();
