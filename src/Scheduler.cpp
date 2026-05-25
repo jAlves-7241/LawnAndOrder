@@ -142,7 +142,7 @@ void Scheduler::onWateringDone() {
 uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
     uint8_t nextH = 0, nextM = 0;
     uint32_t nextDay1970 = 0;
-    if (!computeNext(gState.mode, now, nextH, nextM, &nextDay1970)) {
+    if (!computeNext(gState.mode, now, nextH, nextM, &nextDay1970, false)) {
         return 0xFFFFFFFF; // No next cycle
     }
     
@@ -210,7 +210,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint3
 // Returns false if mode has no schedule.
 // ─────────────────────────────────────────────────────────
 bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
-                             uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970) {
+                             uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970, bool writeBack) {
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)mode];
 
     if (sched.slot_count == 0) {
@@ -246,7 +246,7 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     while (dayOffset <= limit) {
         uint32_t candidate_day_1970 = start_day_1970 + dayOffset;
 
-        if (_dayMatches(sched, candidate_day_1970)) {
+        if (_dayMatches(sched, candidate_day_1970, writeBack)) {
             // Scan slots in order
             for (uint8_t i = 0; i < sched.slot_count; i++) {
                 const ScheduleSlot& sl = sched.slots[i];
@@ -280,7 +280,7 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
 // ─────────────────────────────────────────────────────────
 // Static: returns true if the schedule fires on the given day
 // ─────────────────────────────────────────────────────────
-bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970) {
+bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack) {
     switch (sched.day_pattern) {
         case DayPattern::DAILY:
             return true;
@@ -290,12 +290,14 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
             return (sched.dow_mask & (1 << dow)) != 0;
         }
         case DayPattern::EVERY_X_DAYS: {
-            // First use: anchor the reference day to today and persist it
-            if (gState.custom_ref_day == 0xFFFFFFFFUL || candidate_day_1970 < gState.custom_ref_day) {
-                gState.custom_ref_day = candidate_day_1970;
-                LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
-            }
             uint32_t ref_day = gState.custom_ref_day;
+            if (ref_day == 0xFFFFFFFFUL || candidate_day_1970 < ref_day) {
+                if (writeBack) {
+                    gState.custom_ref_day = candidate_day_1970;
+                    LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
+                }
+                ref_day = candidate_day_1970;
+            }
             uint32_t diff = (candidate_day_1970 >= ref_day) ? (candidate_day_1970 - ref_day) : (ref_day - candidate_day_1970);
             if (sched.interval_days == 0) return true;  // guard: treat 0 as daily
             return (diff % sched.interval_days) == 0;

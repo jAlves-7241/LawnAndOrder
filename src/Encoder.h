@@ -23,6 +23,7 @@ private:
     volatile int16_t _delta;    // int16 avoids ISR overflow on fast spins
 
     bool     _btn_prev;
+    bool     _last_reading;
     uint32_t _btn_last_ms;
 
     // Static ISR trampoline - only one Encoder instance is supported.

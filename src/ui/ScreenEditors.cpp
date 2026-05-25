@@ -353,8 +353,39 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         ui.changeScreen(&ui.getScreenDone());
     } else {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        cs.slots[_teCycleIdx].hour   = _teHour;
+
+        // Validar sobreposições antes de guardar
+        uint16_t total_dur = ui.getTotalZoneDuration();
+        uint8_t enCount = 0;
+        for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
+        if (enCount > 1) total_dur += (enCount - 1); // incluir delays de relés
+        
+        uint8_t old_h = cs.slots[_teCycleIdx].hour;
+        uint8_t old_m = cs.slots[_teCycleIdx].minute;
+        cs.slots[_teCycleIdx].hour = _teHour;
         cs.slots[_teCycleIdx].minute = _teMin;
+        
+        bool overlap = false;
+        for (int i = 0; i < cs.slot_count; i++) {
+            for (int j = i + 1; j < cs.slot_count; j++) {
+                uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                int16_t diff = (int16_t)s1 - (int16_t)s2;
+                if (diff < 0) diff = -diff;
+                if (diff > 720) diff = 1440 - diff;
+                if (diff < total_dur) { overlap = true; break; }
+            }
+            if (overlap) break;
+        }
+        
+        if (overlap) {
+            // Reverter alteração
+            cs.slots[_teCycleIdx].hour = old_h;
+            cs.slots[_teCycleIdx].minute = old_m;
+            ui.getScreenInfo().setup("! SOBREPOSICAO !", "Ciclos muito proximos", "para a duracao atual", "Ajuste os horarios.", _backMenu);
+            ui.changeScreen(&ui.getScreenInfo());
+            return;
+        }
 
         // Ensure chronological order
         for (int i = 0; i < cs.slot_count - 1; i++) {

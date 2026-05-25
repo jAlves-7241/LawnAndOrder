@@ -55,7 +55,7 @@ public:
     // current time. Writes result into out_hour / out_min.
     // Returns false if the mode has no schedule (DESATIVADO / PERSONALIZADO).
     bool computeNext(AppMode mode, const SystemTime& now,
-                            uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970 = nullptr);
+                            uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970 = nullptr, bool writeBack = true);
 
 private:
     // Returns true if the schedule is active on the given calendar day (since 1970).
