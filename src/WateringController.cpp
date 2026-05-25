@@ -12,8 +12,8 @@ WateringController wateringCtrl;
 // ─────────────────────────────────────────────────────────
 WateringController::WateringController()
     : _queueLen(0), _queuePos(0),
-      _active(false), _isWaiting(false), _zoneIdx(0),
-      _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0),
+      _active(false), _isWaiting(false), _isRelayDeadTimeWaiting(false), _zoneIdx(0),
+      _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0), _relayWaitStartMs(0),
       _runTrigger(WaterTrigger::MANUAL)
 {
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
@@ -55,6 +55,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
+    _isRelayDeadTimeWaiting = false;
     
     LOG_I("REGA", "Iniciar rega geral");
     _startNextZone();
@@ -91,6 +92,7 @@ void WateringController::stop() {
         }
         _active = false;
         _isWaiting = false;
+        _isRelayDeadTimeWaiting = false;
         LOG_I("REGA", "Rega interrompida");
     }
     _queueLen = 0;
@@ -108,6 +110,18 @@ void WateringController::update() {
         if (millis() - _waitStartMs >= ZONE_WAIT_DELAY_MS) {
             _isWaiting = false;
             _startNextZone();
+        }
+        return;
+    }
+
+    if (_isRelayDeadTimeWaiting) {
+        if (millis() - _relayWaitStartMs >= 20) {
+            _isRelayDeadTimeWaiting = false;
+            if (_zoneIdx < NUM_ZONES) {
+                digitalWrite(_relayPins[_zoneIdx], RELAY_ON);
+            } else {
+                LOG_E("REGA", "zona %d fora dos limites!", _zoneIdx);
+            }
         }
         return;
     }
@@ -166,6 +180,7 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _queuePos   = 0;
     _active     = true;
     _isWaiting  = false;
+    _isRelayDeadTimeWaiting = false;
     return true;
 }
 
@@ -203,14 +218,8 @@ void WateringController::_activateRelay(uint8_t zone_idx) {
     for (int i = 0; i < NUM_ZONES; i++)
         digitalWrite(_relayPins[i], RELAY_OFF);
 
-    // Pequeno tempo morto (Dead-Time) de 20ms para proteger contra transientes e arco elétrico
-    delay(20);
-
-    if (zone_idx >= NUM_ZONES) {
-        LOG_E("REGA", "zona %d fora dos limites!", zone_idx);
-        return;
-    }
-    digitalWrite(_relayPins[zone_idx], RELAY_ON);
+    _isRelayDeadTimeWaiting = true;
+    _relayWaitStartMs = millis();
 }
 
 void WateringController::_deactivateAll() {
