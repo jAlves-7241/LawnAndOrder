@@ -20,6 +20,8 @@ private:
     DurContext _durContext;
     uint8_t _durZoneIdx;
     MenuID _backMenu;
+
+    void _getRange(DurContext ctx, int& vmin, int& vmax);
 };
 
 // ─────────────────────────────────────────────────────────

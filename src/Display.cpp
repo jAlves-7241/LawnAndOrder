@@ -15,10 +15,7 @@ void Display::begin() {
     _backlightOn = true;
     _displayOn = true;
     _lcd.clear();
-    for (int r = 0; r < LCD_ROWS; r++) {
-        memset(_shadow[r], ' ', LCD_COLS);
-        _shadow[r][LCD_COLS] = '\0';
-    }
+    _invalidateShadow();
     LOG_I("LCD", "Pronto");
 }
 

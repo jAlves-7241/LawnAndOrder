@@ -164,7 +164,17 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint3
     }
 
     // 2. Overlap / Missed Cycle
-    uint32_t next_cycle_unix = getNextCycleUnix(gState.now);
+    DateTime currentDT(current_unix);
+    SystemTime currentST = {};
+    currentST.unix = current_unix;
+    currentST.year = currentDT.year();
+    currentST.month = currentDT.month();
+    currentST.day = currentDT.day();
+    currentST.hour = currentDT.hour();
+    currentST.min = currentDT.minute();
+    currentST.sec = currentDT.second();
+
+    uint32_t next_cycle_unix = getNextCycleUnix(currentST);
     
     // Check if there was a scheduled slot between start and now
     // Create a mock SystemTime at start_unix to find the very next slot
