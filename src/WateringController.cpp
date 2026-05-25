@@ -238,7 +238,7 @@ void WateringController::_startNextZone() {
     _zoneIdx        = _queue[_queuePos].zone_idx;
     _zoneDurationMs = _queue[_queuePos].duration_ms;
     _zoneStartMs    = millis();
-    _activateRelay(_zoneIdx);
+    _activateRelay();
     _syncState();
 
     // Gravar estado de recuperação na NVS a cada transição
@@ -284,7 +284,7 @@ void WateringController::_finishCycle() {
     storage.saveRecoveryState(rs);
 }
 
-void WateringController::_activateRelay(uint8_t zone_idx) {
+void WateringController::_activateRelay() {
     for (int i = 0; i < NUM_ZONES; i++)
         digitalWrite(_relayPins[i], RELAY_OFF);
 

@@ -51,7 +51,7 @@ private:
                      WaterTrigger trigger);
     void _startNextZone();
     void _finishCycle();     // record to history and notify scheduler
-    void _activateRelay(uint8_t zone_idx);
+    void _activateRelay();
     void _deactivateAll();
     void _syncState();
 

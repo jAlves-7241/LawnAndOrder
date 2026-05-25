@@ -302,6 +302,7 @@ void UI::dispatchAction(const char* action) {
 
     if (!strcmp(action, "cancel_susp")) {
         gState.suspended = false;
+        gState.suspended_until = 0;
         _configChanged = true;
         _screenDone.setup("Pausa cancelada", "");
         _screenDone.setBackMenu(MenuID::MAIN);
