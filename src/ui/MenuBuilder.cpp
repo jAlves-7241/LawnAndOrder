@@ -181,7 +181,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         makeItem(it++, "Testar Todas (5s)", "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
         for (int i = 0; i < NUM_ZONES; i++) {
             snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, gState.zones[i].name);
-            char act[64];
+            char act[80];
             snprintf(act, sizeof(act),
                      "confirm:Ativar Z%d %s|por 5 segundos?|testes|test_%d",
                      i+1, gState.zones[i].name, i);
