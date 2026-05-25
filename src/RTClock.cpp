@@ -3,8 +3,7 @@
 
 RTClock rtclock;
 
-// Declared in main.cpp — recovers a stuck I2C bus
-extern void recoverI2C();
+
 
 static const char* DOW_NAMES[] = {
     "Dom","Seg","Ter","Qua","Qui","Sex","Sab"
@@ -12,7 +11,7 @@ static const char* DOW_NAMES[] = {
 
 // ─────────────────────────────────────────────────────────
 RTClock::RTClock()
-    : _found(false), _lostPower(false), _lastReadMs(0)
+    : _found(false), _lostPower(false), _lastReadMs(0), _errorCb(nullptr)
 {}
 
 bool RTClock::begin() {
@@ -79,7 +78,9 @@ void RTClock::update() {
         if (consecErrors >= 3) {
             LOG_E("RTC", "I2C com leituras corrompidas (%04d-%02d-%02d). A recuperar barramento...",
                   utcDt.year(), utcDt.month(), utcDt.day());
-            recoverI2C();
+            if (_errorCb) {
+                _errorCb();
+            }
             consecErrors = 0;
         }
         return; // Aborta o update para proteger o gState contra dados corrompidos

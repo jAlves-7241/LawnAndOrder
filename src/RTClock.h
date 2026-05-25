@@ -23,6 +23,8 @@
 
 class RTClock {
 public:
+    using ErrorCallback = void (*)();
+
     RTClock();
 
     // Initialise I2C and the RTC chip.
@@ -42,11 +44,14 @@ public:
     // True if the chip was found and the oscillator is running.
     bool isValid() const { return _found && !_lostPower; }
 
+    void setErrorCallback(ErrorCallback cb) { _errorCb = cb; }
+
 private:
     RTC_Chip _rtc;
     bool     _found;
     bool     _lostPower;
     uint32_t _lastReadMs;
+    ErrorCallback _errorCb;
 
     static void _copyToState(const DateTime& dt);
     static bool _isEU_DST(const DateTime& dt);

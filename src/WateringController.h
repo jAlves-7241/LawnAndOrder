@@ -35,10 +35,12 @@ private:
 
     bool     _active;
     bool     _isWaiting;
+    bool     _isRelayDeadTimeWaiting;
     uint8_t  _zoneIdx;
     uint32_t _zoneStartMs;
     uint32_t _zoneDurationMs;
     uint32_t _waitStartMs;
+    uint32_t _relayWaitStartMs;
 
     // ── History tracking ──────────────────────────────────
     WaterTrigger _runTrigger;              // trigger type of current cycle

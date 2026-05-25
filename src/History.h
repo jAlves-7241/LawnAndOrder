@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <FS.h>
 #include "AppState.h"   // WaterTrigger, HistoryEntry, NUM_ZONES
 #include "config.h"
 
@@ -26,9 +27,25 @@ public:
     void    clear();
     uint16_t entryCount() const;
 
+    void    update();
+
 private:
     bool     _ready;
     uint16_t _lineCount;   // cached line count - avoids re-reading file on every record()
+
+    enum class RotState { IDLE, COPYING, FINISHING };
+    RotState _rotState = RotState::IDLE;
+
+    File _rotSrc;
+    File _rotDst;
+    uint16_t _rotDiscard;
+    uint16_t _rotKeep;
+    uint16_t _rotSkipped;
+    uint16_t _rotCopied;
+
+    char _rotLineBuf[64];
+    size_t _rotLinePos;
+    char _rotPendingLine[128];
 
     // Cache for UI display
     HistoryEntry _cache[HISTORY_DISPLAY];
