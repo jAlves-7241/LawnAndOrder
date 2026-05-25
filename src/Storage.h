@@ -33,7 +33,7 @@
 //   On factory reset            → storage.clear() + initAppState()
 // ─────────────────────────────────────────────────────────
 
-#define NVS_VERSION 3   // increment when key schema changes
+#define NVS_VERSION 4   // increment when key schema changes
 
 class Storage {
 public:

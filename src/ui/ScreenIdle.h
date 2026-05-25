@@ -18,6 +18,4 @@ private:
     
     // Renders the entire screen
     void fullRender(UI& ui);
-    // Optimised render for progress only
-    void renderProgress(UI& ui);
 };
