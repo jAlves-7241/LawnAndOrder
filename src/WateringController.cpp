@@ -135,7 +135,7 @@ void WateringController::stop() {
         _deactivateAll();
         if (!_isWaiting && !_isRelayDeadTimeWaiting) {
             uint32_t elapsed = millis() - _zoneStartMs;
-            uint8_t ran_min = (uint8_t)max(1UL, elapsed / 60000UL);
+            uint8_t ran_min = (uint8_t)((elapsed + 30000UL) / 60000UL);
             if (_runTrigger != WaterTrigger::TEST) {
                 _zoneDurMin[_zoneIdx] = ran_min;
             }
@@ -285,15 +285,24 @@ void WateringController::_startNextZone() {
 void WateringController::_finishCycle() {
     scheduler.onWateringDone();
 
-    HistoryEntry entry;
-    entry.year    = _cycleStart.year;
-    entry.month   = _cycleStart.month;
-    entry.day     = _cycleStart.day;
-    entry.hour    = _cycleStart.hour;
-    entry.min     = _cycleStart.min;
-    entry.trigger = _runTrigger;
-    memcpy(entry.zone_dur, _zoneDurMin, sizeof(_zoneDurMin));
-    history.record(entry);
+    bool anyRun = false;
+    for (int i = 0; i < NUM_ZONES; i++) {
+        if (_zoneDurMin[i] > 0) anyRun = true;
+    }
+
+    if (!anyRun) {
+        LOG_I("REGA", "Ciclo sem duracao efetiva. Ignorar historico.");
+    } else {
+        HistoryEntry entry;
+        entry.year    = _cycleStart.year;
+        entry.month   = _cycleStart.month;
+        entry.day     = _cycleStart.day;
+        entry.hour    = _cycleStart.hour;
+        entry.min     = _cycleStart.min;
+        entry.trigger = _runTrigger;
+        memcpy(entry.zone_dur, _zoneDurMin, sizeof(_zoneDurMin));
+        history.record(entry);
+    }
 
     // Limpar estado de recuperação na NVS
     RecoveryState rs = {};

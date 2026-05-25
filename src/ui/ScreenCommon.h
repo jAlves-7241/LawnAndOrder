@@ -36,6 +36,7 @@ private:
     char _rows[4][LCD_COLS + 1];
     MenuID _backMenu;
     char _tag[16];
+    bool _selectionOk;
 };
 
 // ─────────────────────────────────────────────────────────

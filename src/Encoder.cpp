@@ -4,7 +4,7 @@ Encoder* Encoder::_inst = nullptr;
 
 Encoder::Encoder(uint8_t clk, uint8_t dt, uint8_t sw)
     : _clk(clk), _dt(dt), _sw(sw),
-      _delta(0), _btn_prev(false), _btn_last_ms(0)
+      _delta(0), _btn_prev(false), _last_reading(false), _btn_last_ms(0)
 {
     _inst = this;
 }
@@ -39,22 +39,23 @@ int8_t Encoder::getRotation() {
 }
 
 bool Encoder::getClick() {
-    bool     pressed = (digitalRead(_sw) == LOW);
+    bool     reading = (digitalRead(_sw) == LOW);
     uint32_t now     = millis();
 
-    // Ignorar qualquer oscilação durante a janela de debounce
-    if (now - _btn_last_ms < DEBOUNCE_MS) {
-        return false; 
-    }
-
-    if (pressed && !_btn_prev) {
-        _btn_prev = true;
-        _btn_last_ms = now;
-        return true;
-    } else if (!pressed && _btn_prev) {
-        _btn_prev = false;
+    if (reading != _last_reading) {
         _btn_last_ms = now;
     }
 
+    if ((now - _btn_last_ms) > DEBOUNCE_MS) {
+        if (reading != _btn_prev) {
+            _btn_prev = reading;
+            if (_btn_prev) {
+                _last_reading = reading;
+                return true;
+            }
+        }
+    }
+
+    _last_reading = reading;
     return false;
 }

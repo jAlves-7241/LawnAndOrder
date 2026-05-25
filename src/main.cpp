@@ -23,11 +23,24 @@ void recoverI2C() {
     LOG_W("SYS", "A iniciar recuperacao do barramento I2C preso...");
     Wire.end();
     
-    // Forçar linhas a HIGH manualmente (SDA=21, SCL=22)
+    pinMode(21, INPUT_PULLUP); // SDA como entrada com pull-up
+    pinMode(22, OUTPUT);       // SCL como saída manual
+    
+    // Toggle SCL até 9 vezes enquanto SDA estiver preso em LOW
+    for (int i = 0; i < 9; i++) {
+        if (digitalRead(21) == HIGH) break; // Escravo libertou SDA
+        digitalWrite(22, LOW);
+        delayMicroseconds(5);
+        digitalWrite(22, HIGH);
+        delayMicroseconds(5);
+    }
+    
+    // Gerar uma condição de STOP manual (SCL HIGH, depois SDA HIGH)
     pinMode(21, OUTPUT);
-    pinMode(22, OUTPUT);
-    digitalWrite(21, HIGH);
+    digitalWrite(21, LOW);
     digitalWrite(22, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(21, HIGH); // Transição LOW -> HIGH com SCL HIGH = STOP
     delay(10);
     
     Wire.begin();

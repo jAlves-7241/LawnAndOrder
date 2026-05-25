@@ -38,10 +38,10 @@ void ScreenConfirm::setup(const char* l1, const char* l2, MenuID backMenu, const
     strncpy(_rows[0], Display::cx(buf, "-- CONFIRMAR? --"), LCD_COLS + 1);
     strncpy(_rows[1], Display::fx(buf, l1), LCD_COLS + 1);
     strncpy(_rows[2], Display::fx(buf, l2), LCD_COLS + 1);
-    strncpy(_rows[3], Display::cx(buf, "[OK]      [Voltar]"), LCD_COLS + 1);
     strncpy(_tag, tag, sizeof(_tag) - 1);
     _tag[sizeof(_tag) - 1] = '\0';
     _backMenu = backMenu;
+    _selectionOk = false;
 }
 
 void ScreenConfirm::onEnter(UI& ui) {
@@ -49,25 +49,32 @@ void ScreenConfirm::onEnter(UI& ui) {
 }
 
 void ScreenConfirm::handleRotation(UI& ui, int8_t dir) {
-    ui.goMenu(_backMenu);
+    _selectionOk = !_selectionOk;
+    render(ui);
 }
 
 void ScreenConfirm::handleClick(UI& ui) {
-    if (!ui.executeConfirmed(_tag)) {
-        if (!strcmp(_tag, "general") || !strcmp(_tag, "custom")) {
-            ui.getScreenDone().setup("Rega iniciada", "");
-        } else if (!strncmp(_tag, "test_", 5)) {
-            ui.getScreenDone().setup("Teste iniciado", "");
-        } else {
-            ui.getScreenDone().setup(_rows[1], _rows[2]);
+    if (_selectionOk) {
+        if (!ui.executeConfirmed(_tag)) {
+            if (!strcmp(_tag, "general") || !strcmp(_tag, "custom")) {
+                ui.getScreenDone().setup("Rega iniciada", "");
+            } else if (!strncmp(_tag, "test_", 5)) {
+                ui.getScreenDone().setup("Teste iniciado", "");
+            } else {
+                ui.getScreenDone().setup(_rows[1], _rows[2]);
+            }
+            ui.getScreenDone().setBackMenu(_backMenu);
+            ui.changeScreen(&ui.getScreenDone());
         }
-        ui.getScreenDone().setBackMenu(_backMenu);
-        ui.changeScreen(&ui.getScreenDone());
+    } else {
+        ui.goMenu(_backMenu);
     }
 }
 
 void ScreenConfirm::render(UI& ui) {
-    ui.getDisplay().setRows(_rows[0], _rows[1], _rows[2], _rows[3]);
+    char l3[LCD_COLS + 1];
+    snprintf(l3, sizeof(l3), "%-10s %-9s", _selectionOk ? ">OK" : " OK", _selectionOk ? " Voltar" : ">Voltar");
+    ui.getDisplay().setRows(_rows[0], _rows[1], _rows[2], l3);
 }
 
 // ─────────────────────────────────────────────────────────
