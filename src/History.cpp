@@ -169,6 +169,20 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     return true;
 }
 
+char* History::_trimLineBuffer(char* buf, size_t& pos) {
+    buf[pos] = '\0';
+    // Trim right
+    while (pos > 0 && (buf[pos - 1] == '\r' || buf[pos - 1] == ' ' || buf[pos - 1] == '\n')) {
+        buf[--pos] = '\0';
+    }
+    // Trim left
+    char* p = buf;
+    while (*p == ' ') p++;
+    
+    pos = 0; // Reset pos for next line
+    return p;
+}
+
 uint16_t History::_countLines() const {
     if (!_ready) return 0;
     File f = LittleFS.open(HISTORY_FILE, "r");
@@ -203,16 +217,7 @@ void History::_populateCache() {
         for (int i = 0; i < bytesRead; i++) {
             char c = chunk[i];
             if (c == '\n') {
-                line[linePos] = '\0';
-
-                // Trim right carriage return, spaces, and newlines
-                while (linePos > 0 && (line[linePos - 1] == '\r' || line[linePos - 1] == ' ' || line[linePos - 1] == '\n')) {
-                    line[--linePos] = '\0';
-                }
-
-                char* p = line;
-                while (*p == ' ') p++;
-
+                char* p = _trimLineBuffer(line, linePos);
                 if (strlen(p) > 0) {
                     HistoryEntry temp;
                     if (_lineToEntry(p, temp)) {
@@ -226,7 +231,6 @@ void History::_populateCache() {
                         }
                     }
                 }
-                linePos = 0;
             } else if (c != '\r' && linePos < sizeof(line) - 1) {
                 line[linePos++] = c;
             }
@@ -235,13 +239,7 @@ void History::_populateCache() {
 
     // Process final line if file does not end with '\n'
     if (linePos > 0) {
-        line[linePos] = '\0';
-        while (linePos > 0 && (line[linePos - 1] == '\r' || line[linePos - 1] == ' ' || line[linePos - 1] == '\n')) {
-            line[--linePos] = '\0';
-        }
-        char* p = line;
-        while (*p == ' ') p++;
-
+        char* p = _trimLineBuffer(line, linePos);
         if (strlen(p) > 0) {
             HistoryEntry temp;
             if (_lineToEntry(p, temp)) {
@@ -305,13 +303,7 @@ void History::update() {
             for (int i = 0; i < bytesRead; i++) {
                 char c = chunk[i];
                 if (c == '\n') {
-                    _rotLineBuf[_rotLinePos] = '\0';
-                    // Trim right carriage return, spaces, and newlines
-                    while (_rotLinePos > 0 && (_rotLineBuf[_rotLinePos - 1] == '\r' || _rotLineBuf[_rotLinePos - 1] == ' ' || _rotLineBuf[_rotLinePos - 1] == '\n')) {
-                        _rotLineBuf[--_rotLinePos] = '\0';
-                    }
-                    char* p = _rotLineBuf;
-                    while (*p == ' ') p++;
+                    char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
                     
                     if (strlen(p) > 0) {
                         HistoryEntry temp;
@@ -330,7 +322,6 @@ void History::update() {
                             LOG_W("HIST", "Linha corrompida expurgada do disco.");
                         }
                     }
-                    _rotLinePos = 0;
                 } else if (c != '\r' && _rotLinePos < sizeof(_rotLineBuf) - 1) {
                     _rotLineBuf[_rotLinePos++] = c;
                 }
@@ -338,12 +329,7 @@ void History::update() {
         } else {
             // EOF
             if (_rotLinePos > 0) {
-                _rotLineBuf[_rotLinePos] = '\0';
-                while (_rotLinePos > 0 && (_rotLineBuf[_rotLinePos - 1] == '\r' || _rotLineBuf[_rotLinePos - 1] == ' ' || _rotLineBuf[_rotLinePos - 1] == '\n')) {
-                    _rotLineBuf[--_rotLinePos] = '\0';
-                }
-                char* p = _rotLineBuf;
-                while (*p == ' ') p++;
+                char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
                 if (strlen(p) > 0) {
                     HistoryEntry temp;
                     if (_lineToEntry(p, temp)) {
@@ -357,7 +343,6 @@ void History::update() {
                         LOG_W("HIST", "Linha corrompida expurgada do disco.");
                     }
                 }
-                _rotLinePos = 0;
             }
             _rotState = RotState::FINISHING;
         }

@@ -358,6 +358,20 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.slots[_teCycleIdx].hour   = _teHour;
         cs.slots[_teCycleIdx].minute = _teMin;
+
+        // Ensure chronological order
+        for (int i = 0; i < cs.slot_count - 1; i++) {
+            for (int j = 0; j < cs.slot_count - i - 1; j++) {
+                uint16_t t1 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                uint16_t t2 = cs.slots[j+1].hour * 60 + cs.slots[j+1].minute;
+                if (t1 > t2) {
+                    ScheduleSlot temp = cs.slots[j];
+                    cs.slots[j] = cs.slots[j+1];
+                    cs.slots[j+1] = temp;
+                }
+            }
+        }
+
         ui.flagConfigChanged();
         scheduler.onModeChanged();
         ui.goMenu(_backMenu);
