@@ -296,7 +296,7 @@ void UI::dispatchAction(const char* action) {
         _d.displayOn();
         _d.backlightOn();
         _lastActivity = millis();
-        goMenu(MenuID::BLSEL);
+        goMenu(MenuID::DEF_AVANCADO);
         return;
     }
 
