@@ -133,7 +133,12 @@ void WateringController::startTest(int8_t zone_idx) {
 void WateringController::stop() {
     if (_active) {
         _deactivateAll();
-        if (!_isWaiting) {
+        if (!_isWaiting && !_isRelayDeadTimeWaiting) {
+            uint32_t elapsed = millis() - _zoneStartMs;
+            uint8_t ran_min = (uint8_t)max(1UL, elapsed / 60000UL);
+            if (_runTrigger != WaterTrigger::TEST) {
+                _zoneDurMin[_zoneIdx] = ran_min;
+            }
             LOG_I("REGA", "Zona %d (%s) desactivada (interrompida)", _zoneIdx + 1, gState.zones[_zoneIdx].name);
         }
         _active = false;
@@ -141,9 +146,7 @@ void WateringController::stop() {
         _isRelayDeadTimeWaiting = false;
         LOG_I("REGA", "Rega interrompida");
 
-        RecoveryState rs = {};
-        rs.active = false;
-        storage.saveRecoveryState(rs);
+        _finishCycle();
     }
     _queueLen = 0;
     _queuePos = 0;
@@ -198,6 +201,20 @@ void WateringController::update() {
             _waitStartMs = millis();
             LOG_D("REGA", "Zona %d concluida - aguardar %lu s", _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
             _syncState();
+            
+            if (_runTrigger != WaterTrigger::TEST) {
+                RecoveryState rs;
+                rs.active = true;
+                rs.start_unix_time = _cycleStart.unix;
+                rs.queuePos = _queuePos;
+                rs.queueLen = _queueLen;
+                rs.trigger = _runTrigger;
+                for (uint8_t i = 0; i < _queueLen; i++) {
+                    rs.queue[i].zone_idx = _queue[i].zone_idx;
+                    rs.queue[i].duration_ms = _queue[i].duration_ms;
+                }
+                storage.saveRecoveryState(rs);
+            }
         } else {
             _active = false;
             _queueLen = 0;
