@@ -54,7 +54,13 @@ void ScreenConfirm::handleRotation(UI& ui, int8_t dir) {
 
 void ScreenConfirm::handleClick(UI& ui) {
     if (!ui.executeConfirmed(_tag)) {
-        ui.getScreenDone().setup(_rows[1], _rows[2]);
+        if (!strcmp(_tag, "general") || !strcmp(_tag, "custom")) {
+            ui.getScreenDone().setup("Rega iniciada", "");
+        } else if (!strncmp(_tag, "test_", 5)) {
+            ui.getScreenDone().setup("Teste iniciado", "");
+        } else {
+            ui.getScreenDone().setup(_rows[1], _rows[2]);
+        }
         ui.getScreenDone().setBackMenu(_backMenu);
         ui.changeScreen(&ui.getScreenDone());
     }
