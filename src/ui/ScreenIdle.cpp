@@ -6,6 +6,7 @@
 void ScreenIdle::onEnter(UI& ui) {
     _lastWateringActive = false;
     _lastProgress = 255;
+    _lastMinute = 255;
     render(ui);
 }
 
@@ -18,15 +19,22 @@ void ScreenIdle::handleClick(UI& ui) {
 }
 
 void ScreenIdle::update(UI& ui) {
+    bool needsRender = false;
+
     if (_lastWateringActive != gState.watering.active) {
-        render(ui);
-        return;
+        needsRender = true;
+    } else if (gState.watering.active && !gState.watering.is_waiting) {
+        if (_lastProgress != gState.watering.progress_pct) {
+            needsRender = true;
+        }
     }
 
-    if (gState.watering.active && !gState.watering.is_waiting) {
-        if (_lastProgress != gState.watering.progress_pct) {
-            render(ui);
-        }
+    if (_lastMinute != gState.now.min) {
+        needsRender = true;
+    }
+
+    if (needsRender) {
+        render(ui);
     }
 }
 
@@ -37,6 +45,7 @@ void ScreenIdle::render(UI& ui) {
 void ScreenIdle::fullRender(UI& ui) {
     _lastWateringActive = gState.watering.active;
     _lastProgress = gState.watering.progress_pct;
+    _lastMinute = gState.now.min;
 
     char b0[LCD_COLS+1], b3[LCD_COLS+1];
 
@@ -49,17 +58,12 @@ void ScreenIdle::fullRender(UI& ui) {
     }
 
     if (gState.watering.active) {
-        if (gState.watering.is_waiting) {
-            char p0[LCD_COLS+1], p1[LCD_COLS+1];
-            ui.getDisplay().setRows(b0, ui.getDisplay().cx(p0, "Pausa entre zonas"), ui.getDisplay().cx(p1, "Aguarde..."), "");
-        } else {
-            uint8_t zi = gState.watering.zone_idx;
-            if (zi >= NUM_ZONES) zi = 0;
-            char zrow[LCD_COLS+1], pb[LCD_COLS+1];
-            snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
-            ui.getDisplay().pbar(pb, _lastProgress);
-            ui.getDisplay().setRows(b0, "A regar agora...", zrow, pb);
-        }
+        uint8_t zi = gState.watering.zone_idx;
+        if (zi >= NUM_ZONES) zi = 0;
+        char zrow[LCD_COLS+1], pb[LCD_COLS+1];
+        snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
+        ui.getDisplay().pbar(pb, _lastProgress);
+        ui.getDisplay().setRows(b0, "A regar agora...", zrow, pb);
     } else {
         if (!gState.rtc_valid) {
             ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, "! Acertar hora !"));

@@ -13,6 +13,7 @@ void Encoder::begin() {
     pinMode(_clk, INPUT);
     pinMode(_dt,  INPUT);
     pinMode(_sw,  INPUT_PULLUP);
+    _btn_last_ms = millis();
     attachInterrupt(digitalPinToInterrupt(_clk), _isr, RISING);
 }
 

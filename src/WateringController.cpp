@@ -172,6 +172,7 @@ void WateringController::update() {
             _isRelayDeadTimeWaiting = false;
             if (_zoneIdx < NUM_ZONES) {
                 digitalWrite(_relayPins[_zoneIdx], RELAY_ON);
+                _zoneStartMs = millis();
             } else {
                 LOG_E("REGA", "zona %d fora dos limites!", _zoneIdx);
             }
@@ -254,7 +255,6 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
 void WateringController::_startNextZone() {
     _zoneIdx        = _queue[_queuePos].zone_idx;
     _zoneDurationMs = _queue[_queuePos].duration_ms;
-    _zoneStartMs    = millis();
     _activateRelay();
     _syncState();
 

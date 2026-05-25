@@ -138,6 +138,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     gState.rtc_valid = true;
 
     // Forçar releitura para gState
+    _lastReadMs = 0;
     update();
 
     // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)

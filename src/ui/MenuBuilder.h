@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────
 struct MenuItem {
     char label[21];   // 20 LCD chars + \0
-    char action[64];  // widened to 64 - test confirm strings can reach ~58 chars
+    char action[80];  // widened to 80 - history confirm strings can reach ~65 chars
 };
 
 class MenuBuilder {

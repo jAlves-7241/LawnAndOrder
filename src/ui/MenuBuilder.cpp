@@ -139,7 +139,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                 snprintf(l1, sizeof(l1), "Z1:%dmin  Z2:%dmin", e.zone_dur[0], e.zone_dur[1]);
                 snprintf(l2, sizeof(l2), "Z3:%dmin  Z4:%dmin", e.zone_dur[2], e.zone_dur[3]);
 
-                char act[64];
+                char act[80];
                 snprintf(act, sizeof(act),
                          "info:%02d/%02d %02d:%02d|%s|%s| |hist",
                          e.day, m, e.hour, e.min, l1, l2);

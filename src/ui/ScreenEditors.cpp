@@ -12,8 +12,8 @@ extern RTClock rtclock;
 // ─────────────────────────────────────────────────────────
 // ScreenDurPick
 // ─────────────────────────────────────────────────────────
-void ScreenDurPick::setup(uint8_t initial, DurContext ctx, uint8_t zoneIdx, MenuID backMenu) {
-    int vmin = 1, vmax = 20;
+void ScreenDurPick::_getRange(DurContext ctx, int& vmin, int& vmax) {
+    vmin = 1; vmax = 20;
     if (ctx == DurContext::CFG_ZONE) {
         vmin = 0; vmax = 20;
     } else if (ctx == DurContext::SUSPEND) {
@@ -23,6 +23,11 @@ void ScreenDurPick::setup(uint8_t initial, DurContext ctx, uint8_t zoneIdx, Menu
     } else if (ctx == DurContext::NUM_CYCLES) {
         vmin = 1; vmax = 4;
     }
+}
+
+void ScreenDurPick::setup(uint8_t initial, DurContext ctx, uint8_t zoneIdx, MenuID backMenu) {
+    int vmin, vmax;
+    _getRange(ctx, vmin, vmax);
 
     _durValue = (initial >= vmin && initial <= vmax) ? initial : (uint8_t)vmin;
     _durContext = ctx;
@@ -35,16 +40,8 @@ void ScreenDurPick::onEnter(UI& ui) {
 }
 
 void ScreenDurPick::handleRotation(UI& ui, int8_t dir) {
-    int vmin = 1, vmax = 20;
-    if (_durContext == DurContext::CFG_ZONE) {
-        vmin = 0; vmax = 20;
-    } else if (_durContext == DurContext::SUSPEND) {
-        vmin = 1; vmax = 15;
-    } else if (_durContext == DurContext::FREQ_DAYS) {
-        vmin = 1; vmax = 14;
-    } else if (_durContext == DurContext::NUM_CYCLES) {
-        vmin = 1; vmax = 4;
-    }
+    int vmin, vmax;
+    _getRange(_durContext, vmin, vmax);
 
     int v = (int)_durValue + dir;
     while (v < vmin) v += (vmax - vmin + 1);
