@@ -331,7 +331,7 @@ void UI::dispatchAction(const char* action) {
     }
 
     if (strncmp(action, "info:", 5) == 0) {
-        char buf[64];
+        char buf[80];
         strncpy(buf, action + 5, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
         char* t0 = strtok(buf, "|");
@@ -347,7 +347,7 @@ void UI::dispatchAction(const char* action) {
     }
 
     if (strncmp(action, "confirm:", 8) == 0) {
-        char buf[64];
+        char buf[80];
         strncpy(buf, action + 8, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
         char* t1 = strtok(buf, "|");
