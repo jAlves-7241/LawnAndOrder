@@ -81,7 +81,7 @@ bool Storage::load() {
         cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
     }
 
-    LOG_I("NVS", "Dados blob carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
+    LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
     return true;
 }
 
@@ -117,7 +117,7 @@ void Storage::save() {
         memcmp(&blob, &current, sizeof(blob)) != 0) {
         
         prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
-        LOG_I("NVS", "Dados blob actualizados");
+        LOG_I("NVS", "Dados actualizados");
     }
 }
 
