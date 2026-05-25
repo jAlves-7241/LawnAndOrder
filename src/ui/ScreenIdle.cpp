@@ -18,30 +18,20 @@ void ScreenIdle::handleClick(UI& ui) {
 }
 
 void ScreenIdle::update(UI& ui) {
-    // Only re-render entirely if watering state changes
     if (_lastWateringActive != gState.watering.active) {
         render(ui);
         return;
     }
 
     if (gState.watering.active && !gState.watering.is_waiting) {
-        // If watering, update the progress bar selectively to save I2C traffic
         if (_lastProgress != gState.watering.progress_pct) {
-            renderProgress(ui);
+            render(ui);
         }
     }
 }
 
 void ScreenIdle::render(UI& ui) {
     fullRender(ui);
-}
-
-void ScreenIdle::renderProgress(UI& ui) {
-    _lastProgress = gState.watering.progress_pct;
-    char pb[LCD_COLS + 1];
-    ui.getDisplay().pbar(pb, _lastProgress);
-    // Update only the 4th row (index 3)
-    ui.getDisplay().setRows(nullptr, nullptr, nullptr, pb);
 }
 
 void ScreenIdle::fullRender(UI& ui) {

@@ -5,16 +5,27 @@
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS = "rega";
 
-// ── Key names - kept short to minimise NVS overhead ───────
-static const char* KEY_VER      = "ver";
-static const char* KEY_MODE     = "mode";
-static const char* KEY_BL       = "bl";
-static const char* KEY_SUNT     = "sunt";
-static const char* KEY_CRD      = "crd";
-static const char* KEY_CIF      = "cif";
-static const char* KEY_CSC      = "csc";
-// Zone keys are built dynamically: "z0e","z0d","z1e","z1d"…
-// Custom slot keys: "c0h","c0m"…
+struct __attribute__((packed)) AppConfigBlob {
+    uint8_t  version;
+    uint8_t  mode;
+    uint32_t backlight_timeout_ms;
+    uint32_t suspended_until;
+    uint32_t custom_ref_day;
+    bool     auto_dst;
+    bool     setup_done;
+    
+    struct {
+        bool    enabled;
+        uint8_t duration_min;
+    } zones[NUM_ZONES];
+    
+    uint8_t  custom_interval_days;
+    uint8_t  custom_slot_count;
+    struct {
+        uint8_t hour;
+        uint8_t minute;
+    } custom_slots[MAX_SLOTS_PER_MODE];
+};
 
 static Preferences prefs;
 Storage storage;
@@ -30,128 +41,83 @@ void Storage::begin() {
     }
 }
 
+static const char* KEY_CFG = "cfg";
+
 // ─────────────────────────────────────────────────────────
 bool Storage::load() {
     if (!_ready) return false;
 
-    // Version check - if missing or wrong version, bail out and keep defaults
-    uint8_t ver = prefs.getUChar(KEY_VER, 0xFF);
-    if (ver != NVS_VERSION) {
-        LOG_W("NVS", "Versao incompativel (%d != %d) - usar defaults", ver, NVS_VERSION);
+    AppConfigBlob blob;
+    size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
+    if (readBytes != sizeof(blob) || blob.version != NVS_VERSION) {
+        LOG_W("NVS", "Blob invalido ou versao incorreta (%d). A usar defaults.", blob.version);
         return false;
     }
 
-    // ── Mode ─────────────────────────────────────────────
-    uint8_t mode = prefs.getUChar(KEY_MODE, (uint8_t)gState.mode);
-    if (mode < (uint8_t)AppMode::_COUNT)
-        gState.mode = (AppMode)mode;
+    if (blob.mode < (uint8_t)AppMode::_COUNT)
+        gState.mode = (AppMode)blob.mode;
 
-    // ── Zones ─────────────────────────────────────────────
-    char key[5];
+    gState.backlight_timeout_ms = blob.backlight_timeout_ms;
+    gState.suspended_until      = blob.suspended_until;
+    gState.custom_ref_day       = blob.custom_ref_day;
+    gState.auto_dst             = blob.auto_dst;
+    gState.setup_done           = blob.setup_done;
+    gState.suspended            = (gState.suspended_until > 0);
+
     for (int i = 0; i < NUM_ZONES; i++) {
-        snprintf(key, sizeof(key), "z%de", i);
-        gState.zones[i].enabled =
-            (bool)prefs.getUChar(key, gState.zones[i].enabled ? 1 : 0);
-
-        snprintf(key, sizeof(key), "z%dd", i);
-        uint8_t dur = prefs.getUChar(key, gState.zones[i].duration_min);
-        // Clamp to valid range in case of flash corruption
-        gState.zones[i].duration_min = (dur <= 20) ? dur : gState.zones[i].duration_min;
+        gState.zones[i].enabled = blob.zones[i].enabled;
+        gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : gState.zones[i].duration_min;
     }
 
-    // ── Backlight timeout ─────────────────────────────────
-    gState.backlight_timeout_ms =
-        prefs.getULong(KEY_BL, gState.backlight_timeout_ms);
-
-    // ── DST ───────────────────────────────────────────────
-    gState.auto_dst = prefs.getBool("dst", gState.auto_dst);
-
-    // ── Setup Wizard ──────────────────────────────────────
-    gState.setup_done = (bool)prefs.getUChar("sdone", 0);
-
-    // ── Suspended ─────────────────────────────────────────
-    gState.suspended_until =
-        prefs.getUInt(KEY_SUNT, gState.suspended_until);
-    // Restore suspended flag - the Scheduler will auto-clear it once
-    // gState.now.unix >= suspended_until (checked every second in update()).
-    gState.suspended = (gState.suspended_until > 0);
-
-    // ── Custom Schedule ───────────────────────────────────
-    gState.custom_ref_day = prefs.getUInt(KEY_CRD, gState.custom_ref_day);
-    
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-    cs.interval_days = prefs.getUChar(KEY_CIF, cs.interval_days);
+    cs.interval_days = blob.custom_interval_days;
     if (cs.interval_days == 0 || cs.interval_days > 14) cs.interval_days = 1;
-    cs.slot_count    = prefs.getUChar(KEY_CSC, cs.slot_count);
+    
+    cs.slot_count = blob.custom_slot_count;
     if (cs.slot_count == 0 || cs.slot_count > MAX_SLOTS_PER_MODE) cs.slot_count = 1;
 
     for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
-        char kh[5], km[5];
-        snprintf(kh, sizeof(kh), "c%dh", i);
-        snprintf(km, sizeof(km), "c%dm", i);
-        cs.slots[i].hour   = prefs.getUChar(kh, cs.slots[i].hour);
-        if (cs.slots[i].hour > 23) cs.slots[i].hour = 0;
-        cs.slots[i].minute = prefs.getUChar(km, cs.slots[i].minute);
-        if (cs.slots[i].minute > 59) cs.slots[i].minute = 0;
+        cs.slots[i].hour   = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
+        cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
     }
 
-    LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
+    LOG_I("NVS", "Dados blob carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
     return true;
 }
-
 
 // ─────────────────────────────────────────────────────────
 void Storage::save() {
     if (!_ready) return;
 
-    bool changed = false;
+    AppConfigBlob blob = {};
+    blob.version = NVS_VERSION;
+    blob.mode    = (uint8_t)gState.mode;
+    blob.backlight_timeout_ms = gState.backlight_timeout_ms;
+    blob.suspended_until      = gState.suspended_until;
+    blob.custom_ref_day       = gState.custom_ref_day;
+    blob.auto_dst             = gState.auto_dst;
+    blob.setup_done           = gState.setup_done;
 
-    auto updateUChar = [&](const char* k, uint8_t v) {
-        if (prefs.getUChar(k, 0xFF) != v) { prefs.putUChar(k, v); changed = true; }
-    };
-    auto updateUInt = [&](const char* k, uint32_t v) {
-        if (prefs.getUInt(k, 0) != v) { prefs.putUInt(k, v); changed = true; }
-    };
-    auto updateULong = [&](const char* k, uint32_t v) {
-        if (prefs.getULong(k, 0) != v) { prefs.putULong(k, v); changed = true; }
-    };
-
-    updateUChar(KEY_VER,  NVS_VERSION);
-    updateUChar(KEY_MODE, (uint8_t)gState.mode);
-    updateULong(KEY_BL,   gState.backlight_timeout_ms);
-    updateUInt(KEY_SUNT,  gState.suspended_until);
-    updateUInt(KEY_CRD,   gState.custom_ref_day);
-
-    if (prefs.getBool("dst", true) != gState.auto_dst) {
-        prefs.putBool("dst", gState.auto_dst);
-        changed = true;
-    }
-
-    updateUChar("sdone", gState.setup_done ? 1 : 0);
-
-    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-    updateUChar(KEY_CIF, cs.interval_days);
-    updateUChar(KEY_CSC, cs.slot_count);
-
-    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
-        char kh[5], km[5];
-        snprintf(kh, sizeof(kh), "c%dh", i);
-        snprintf(km, sizeof(km), "c%dm", i);
-        updateUChar(kh, cs.slots[i].hour);
-        updateUChar(km, cs.slots[i].minute);
-    }
-
-    char key[5];
     for (int i = 0; i < NUM_ZONES; i++) {
-        snprintf(key, sizeof(key), "z%de", i);
-        updateUChar(key, gState.zones[i].enabled ? 1 : 0);
-
-        snprintf(key, sizeof(key), "z%dd", i);
-        updateUChar(key, gState.zones[i].duration_min);
+        blob.zones[i].enabled      = gState.zones[i].enabled;
+        blob.zones[i].duration_min = gState.zones[i].duration_min;
     }
 
-    if (changed) {
-        LOG_I("NVS", "Dados actualizados");
+    const ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    blob.custom_interval_days = cs.interval_days;
+    blob.custom_slot_count    = cs.slot_count;
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        blob.custom_slots[i].hour   = cs.slots[i].hour;
+        blob.custom_slots[i].minute = cs.slots[i].minute;
+    }
+
+    // Read current to avoid unnecessary write
+    AppConfigBlob current;
+    if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) != sizeof(current) ||
+        memcmp(&blob, &current, sizeof(blob)) != 0) {
+        
+        prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+        LOG_I("NVS", "Dados blob actualizados");
     }
 }
 
@@ -175,4 +141,5 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount)
     prefs.putUInt("hcnt", lineCount);
     prefs.putBytes("hcache", src, size);
 }
+
 
