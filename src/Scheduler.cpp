@@ -8,7 +8,7 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _triggered(false), _lastMin(0xFF), _wasWatering(false)
+    : _triggered(false), _lastMin(0xFF)
 {}
 
 // ─────────────────────────────────────────────────────────
@@ -45,15 +45,8 @@ void Scheduler::update() {
         }
     }
 
-    // Detect watering completion so we can advance next_*
-    bool isWatering = gState.watering.active;
-    if (_wasWatering && !isWatering) {
-        onWateringDone();
-    }
-    _wasWatering = isWatering;
-
     // Don't trigger while a cycle is already running
-    if (isWatering) return;
+    if (gState.watering.active) return;
 
     // On minute rollover, reset trigger guard and recompute next_*
     if (t.min != _lastMin) {
@@ -139,6 +132,38 @@ void Scheduler::onWateringDone() {
 }
 
 // ─────────────────────────────────────────────────────────
+static SystemTime utcToLocal(uint32_t utc_unix) {
+    DateTime utcDT(utc_unix);
+    DateTime localDT = utcDT;
+    bool isDst = false;
+    uint8_t m = utcDT.month();
+    if (gState.auto_dst) {
+        if (m > 3 && m < 10) isDst = true;
+        else if (m == 3 || m == 10) {
+            uint8_t ls = 31 - DateTime(utcDT.year(), m, 31, 0, 0, 0).dayOfTheWeek();
+            if (m == 3) {
+                if (utcDT.day() > ls || (utcDT.day() == ls && utcDT.hour() >= 1)) isDst = true;
+            } else {
+                if (utcDT.day() < ls || (utcDT.day() == ls && utcDT.hour() < 1)) isDst = true;
+            }
+        }
+    }
+    if (isDst) {
+        localDT = DateTime(utc_unix + 3600);
+    }
+    SystemTime st = {};
+    st.year = localDT.year();
+    st.month = localDT.month();
+    st.day = localDT.day();
+    st.hour = localDT.hour();
+    st.min = localDT.minute();
+    st.sec = localDT.second();
+    st.dow = localDT.dayOfTheWeek();
+    st.unix = utc_unix;
+    return st;
+}
+
+// ─────────────────────────────────────────────────────────
 uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
     uint8_t nextH = 0, nextM = 0;
     uint32_t nextDay1970 = 0;
@@ -146,16 +171,41 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
         return 0xFFFFFFFF; // No next cycle
     }
     
-    DateTime next(DateTime(nextDay1970 * 86400UL).year(),
-                  DateTime(nextDay1970 * 86400UL).month(),
-                  DateTime(nextDay1970 * 86400UL).day(),
-                  nextH, nextM, 0);
-    return next.unixtime();
+    DateTime nextLocal(DateTime(nextDay1970 * 86400UL).year(),
+                       DateTime(nextDay1970 * 86400UL).month(),
+                       DateTime(nextDay1970 * 86400UL).day(),
+                       nextH, nextM, 0);
+    uint32_t nextLocalUnix = nextLocal.unixtime();
+    uint32_t nextUTCUnix = nextLocalUnix;
+    
+    if (gState.auto_dst) {
+        // Fast heuristic for Local -> UTC DST check
+        bool isDstLocal = false;
+        uint16_t year = nextLocal.year();
+        uint8_t month = nextLocal.month();
+        uint8_t day = nextLocal.day();
+        uint8_t hour = nextLocal.hour();
+        
+        if (month > 3 && month < 10) isDstLocal = true;
+        else if (month == 3 || month == 10) {
+            uint8_t ls = 31 - DateTime(year, month, 31, 0, 0, 0).dayOfTheWeek();
+            if (month == 3) {
+                if (day > ls || (day == ls && hour >= 2)) isDstLocal = true;
+            } else {
+                if (day < ls || (day == ls && hour < 2)) isDstLocal = true;
+            }
+        }
+        if (isDstLocal) {
+            nextUTCUnix = nextLocalUnix - 3600;
+        }
+    }
+    return nextUTCUnix;
 }
 
 // ─────────────────────────────────────────────────────────
-bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint32_t remaining_duration_sec) {
+bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_time, uint32_t remaining_duration_sec) {
     // 1. Hard Limits
+    uint32_t current_unix = current_time.unix;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     uint32_t max_allowed_duration = (sched.slot_count <= 1) ? 43200UL : 28800UL; // 12h or 8h
     if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
@@ -164,28 +214,11 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, uint32_t current_unix, uint3
     }
 
     // 2. Overlap / Missed Cycle
-    DateTime currentDT(current_unix);
-    SystemTime currentST = {};
-    currentST.unix = current_unix;
-    currentST.year = currentDT.year();
-    currentST.month = currentDT.month();
-    currentST.day = currentDT.day();
-    currentST.hour = currentDT.hour();
-    currentST.min = currentDT.minute();
-    currentST.sec = currentDT.second();
-
-    uint32_t next_cycle_unix = getNextCycleUnix(currentST);
+    uint32_t next_cycle_unix = getNextCycleUnix(current_time);
     
     // Check if there was a scheduled slot between start and now
     // Create a mock SystemTime at start_unix to find the very next slot
-    DateTime startDT(start_unix);
-    SystemTime startST = {};
-    startST.year = startDT.year();
-    startST.month = startDT.month();
-    startST.day = startDT.day();
-    startST.hour = startDT.hour();
-    startST.min = startDT.minute();
-    startST.sec = startDT.second();
+    SystemTime startST = utcToLocal(start_unix);
     
     uint32_t next_from_start = getNextCycleUnix(startST);
     if (next_from_start != 0xFFFFFFFF && next_from_start <= current_unix) {

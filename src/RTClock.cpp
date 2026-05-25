@@ -41,7 +41,24 @@ bool RTClock::begin() {
     }
 #endif
 
-    _copyToState(_rtc.now());
+    DateTime utcDt = _rtc.now();
+    
+    // Proteger o arranque contra barramento I2C preso ou corrompido
+    if (utcDt.year() < 2020 || utcDt.year() > 2099) {
+        LOG_E("RTC", "Leitura de arranque corrompida (%04d-%02d-%02d)",
+              utcDt.year(), utcDt.month(), utcDt.day());
+        _found = false;
+        gState.rtc_valid = false;
+        return false;
+    }
+
+    DateTime localDt = utcDt;
+    if (gState.auto_dst && _isEU_DST(utcDt)) {
+        localDt = DateTime(utcDt.unixtime() + 3600);
+    }
+
+    _copyToState(localDt);
+    gState.now.unix = utcDt.unixtime();
 
     LOG_I("RTC", "OK - %04d-%02d-%02d %02d:%02d:%02d (%s)",
           gState.now.year,  gState.now.month,  gState.now.day,

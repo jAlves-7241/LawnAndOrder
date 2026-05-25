@@ -38,8 +38,7 @@ void WateringController::begin() {
             for (uint8_t i = rs.queuePos; i < rs.queueLen; i++) {
                 remaining_ms += rs.queue[i].duration_ms;
             }
-            uint32_t current_unix = gState.now.unix;
-            if (!scheduler.isCycleExpired(rs.start_unix_time, current_unix, remaining_ms / 1000UL)) {
+            if (!scheduler.isCycleExpired(rs.start_unix_time, gState.now, remaining_ms / 1000UL)) {
                 // Recuperar estado
                 _active = true;
                 _runTrigger = rs.trigger;

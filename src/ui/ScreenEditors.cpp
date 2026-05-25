@@ -72,7 +72,7 @@ void ScreenDurPick::handleClick(UI& ui) {
                     int16_t diff = (int16_t)s1 - (int16_t)s2;
                     if (diff < 0) diff = -diff;
                     if (diff > 720) diff = 1440 - diff;
-                    if (diff <= total_dur) { overlap = true; break; }
+                    if (diff < total_dur) { overlap = true; break; }
                 }
                 if (overlap) break;
             }
