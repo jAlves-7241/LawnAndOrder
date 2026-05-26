@@ -80,6 +80,7 @@ void ScreenMenu::render(UI& ui) {
             ui.getDisplay().fx(rows[i], "");
         }
     }
+    static_assert(MENU_VISIBLE == 3, "ScreenMenu requires exactly 3 visible rows");
     ui.getDisplay().setRows(hbuf, rows[0], rows[1], rows[2]);
 }
 

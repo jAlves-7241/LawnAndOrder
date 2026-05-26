@@ -1,6 +1,7 @@
 #include "Scheduler.h"
 #include "WateringController.h"
 #include "Storage.h"
+#include "RTClock.h"
 #include <RTClib.h>
 #include "log.h"
 
@@ -132,38 +133,6 @@ void Scheduler::onWateringDone() {
 }
 
 // ─────────────────────────────────────────────────────────
-static SystemTime utcToLocal(uint32_t utc_unix) {
-    DateTime utcDT(utc_unix);
-    DateTime localDT = utcDT;
-    bool isDst = false;
-    uint8_t m = utcDT.month();
-    if (gState.auto_dst) {
-        if (m > 3 && m < 10) isDst = true;
-        else if (m == 3 || m == 10) {
-            uint8_t ls = 31 - DateTime(utcDT.year(), m, 31, 0, 0, 0).dayOfTheWeek();
-            if (m == 3) {
-                if (utcDT.day() > ls || (utcDT.day() == ls && utcDT.hour() >= 1)) isDst = true;
-            } else {
-                if (utcDT.day() < ls || (utcDT.day() == ls && utcDT.hour() < 1)) isDst = true;
-            }
-        }
-    }
-    if (isDst) {
-        localDT = DateTime(utc_unix + 3600);
-    }
-    SystemTime st = {};
-    st.year = localDT.year();
-    st.month = localDT.month();
-    st.day = localDT.day();
-    st.hour = localDT.hour();
-    st.min = localDT.minute();
-    st.sec = localDT.second();
-    st.dow = localDT.dayOfTheWeek();
-    st.unix = utc_unix;
-    return st;
-}
-
-// ─────────────────────────────────────────────────────────
 uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
     uint8_t nextH = 0, nextM = 0;
     uint32_t nextDay1970 = 0;
@@ -171,15 +140,15 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
         return 0xFFFFFFFF; // No next cycle
     }
     
-    DateTime nextLocal(DateTime(nextDay1970 * 86400UL).year(),
-                       DateTime(nextDay1970 * 86400UL).month(),
-                       DateTime(nextDay1970 * 86400UL).day(),
-                       nextH, nextM, 0);
+    DateTime dt(nextDay1970 * 86400UL);
+    DateTime nextLocal(dt.year(), dt.month(), dt.day(), nextH, nextM, 0);
     uint32_t nextLocalUnix = nextLocal.unixtime();
     uint32_t nextUTCUnix = nextLocalUnix;
     
     if (gState.auto_dst) {
         // Fast heuristic for Local -> UTC DST check
+        // LIMITATION: During the ambiguous hour of October DST end (01:00-02:00 local),
+        // we default to assuming DST is still active without sub-hour history.
         bool isDstLocal = false;
         uint16_t year = nextLocal.year();
         uint8_t month = nextLocal.month();
@@ -213,12 +182,21 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
         return true;
     }
 
-    // 2. Overlap / Missed Cycle
+    // Overlap / Missed Cycle
     uint32_t next_cycle_unix = getNextCycleUnix(current_time);
     
     // Check if there was a scheduled slot between start and now
     // Create a mock SystemTime at start_unix to find the very next slot
-    SystemTime startST = utcToLocal(start_unix);
+    DateTime localDT = rtclock.utcToLocal(DateTime(start_unix));
+    SystemTime startST = {};
+    startST.year = localDT.year();
+    startST.month = localDT.month();
+    startST.day = localDT.day();
+    startST.hour = localDT.hour();
+    startST.min = localDT.minute();
+    startST.sec = localDT.second();
+    startST.dow = localDT.dayOfTheWeek();
+    startST.unix = start_unix;
     
     uint32_t next_from_start = getNextCycleUnix(startST);
     if (next_from_start != 0xFFFFFFFF && next_from_start <= current_unix) {
@@ -306,7 +284,7 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     // Fallback: show the first slot time if no exact match found in lookahead
     out_hour = sched.slots[0].hour;
     out_min  = sched.slots[0].minute;
-    if (out_day_1970) *out_day_1970 = start_day_1970 + dayOffset;
+    if (out_day_1970) *out_day_1970 = 0;
     return false;
 }
 
@@ -324,7 +302,7 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
         }
         case DayPattern::EVERY_X_DAYS: {
             uint32_t ref_day = gState.custom_ref_day;
-            if (ref_day == 0xFFFFFFFFUL || candidate_day_1970 < ref_day) {
+            if (ref_day == 0xFFFFFFFFUL) {
                 if (writeBack) {
                     gState.custom_ref_day = candidate_day_1970;
                     LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);

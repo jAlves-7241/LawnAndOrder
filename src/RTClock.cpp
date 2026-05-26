@@ -135,6 +135,8 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     // Converter para UTC se o DST estiver ativo e aplicável a esta hora
     if (gState.auto_dst) {
         // Fast heuristic for Local -> UTC DST check
+        // LIMITATION: During the ambiguous hour of October DST end (01:00-02:00 local),
+        // we default to assuming DST is still active without sub-hour history.
         bool isDstLocal = false;
         if (month > 3 && month < 10) isDstLocal = true;
         else if (month == 3 || month == 10) {

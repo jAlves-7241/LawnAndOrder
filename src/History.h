@@ -30,8 +30,8 @@ public:
     void    update();
 
 private:
-    bool     _ready;
-    uint16_t _lineCount;   // cached line count - avoids re-reading file on every record()
+    bool     _ready = false;
+    uint16_t _lineCount = 0;   // cached line count - avoids re-reading file on every record()
 
     enum class RotState { IDLE, COPYING, FINISHING };
     RotState _rotState = RotState::IDLE;
@@ -49,7 +49,7 @@ private:
 
     // Cache for UI display
     HistoryEntry _cache[HISTORY_DISPLAY];
-    uint8_t      _cacheCount;
+    uint8_t      _cacheCount = 0;
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);

@@ -214,6 +214,7 @@ void UI::dispatchAction(const char* action) {
 
     if (strncmp(action, "sel:", 4) == 0) {
         uint8_t m = atoi(action+4);
+        if (m >= (uint8_t)AppMode::_COUNT) return;
         gState.mode = (AppMode)m;
         _configChanged = true;
         scheduler.onModeChanged();
@@ -339,11 +340,12 @@ void UI::dispatchAction(const char* action) {
         char buf[80];
         strncpy(buf, action + 5, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
-        char* t0 = strtok(buf, "|");
-        char* t1 = strtok(NULL, "|");
-        char* t2 = strtok(NULL, "|");
-        char* t3 = strtok(NULL, "|");
-        char* back = strtok(NULL, "|");
+        char* saveptr;
+        char* t0 = strtok_r(buf, "|", &saveptr);
+        char* t1 = strtok_r(NULL, "|", &saveptr);
+        char* t2 = strtok_r(NULL, "|", &saveptr);
+        char* t3 = strtok_r(NULL, "|", &saveptr);
+        char* back = strtok_r(NULL, "|", &saveptr);
         if (t0 && t1 && t2 && t3 && back) {
             _screenInfo.setup(t0, t1, t2, t3, MenuBuilder::parseMenuID(back));
             changeScreen(&_screenInfo);
@@ -355,10 +357,11 @@ void UI::dispatchAction(const char* action) {
         char buf[80];
         strncpy(buf, action + 8, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
-        char* t1 = strtok(buf, "|");
-        char* t2 = strtok(NULL, "|");
-        char* back = strtok(NULL, "|");
-        char* tag = strtok(NULL, "|");
+        char* saveptr;
+        char* t1 = strtok_r(buf, "|", &saveptr);
+        char* t2 = strtok_r(NULL, "|", &saveptr);
+        char* back = strtok_r(NULL, "|", &saveptr);
+        char* tag = strtok_r(NULL, "|", &saveptr);
         if (t1 && t2 && back && tag) {
             _screenConfirm.setup(t1, t2, MenuBuilder::parseMenuID(back), tag);
             changeScreen(&_screenConfirm);

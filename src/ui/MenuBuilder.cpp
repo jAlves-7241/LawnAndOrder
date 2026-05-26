@@ -276,6 +276,10 @@ const char* MenuBuilder::modeName(uint8_t m) {
 }
 
 void MenuBuilder::modeHours(uint8_t m, char* dest, size_t maxLen) {
+    if (m >= (uint8_t)AppMode::_COUNT) {
+        snprintf(dest, maxLen, "?");
+        return;
+    }
     const ModeSchedule& sched = MODE_SCHEDULES[m];
 
     if (sched.slot_count == 0) {

@@ -11,7 +11,7 @@ public:
 
     void begin();
 
-    // Returns -1, 0, or +1 accumulated since last call. Resets on read.
+    // Returns accumulated rotation delta since last call (clamped to ±127). Resets on read.
     int8_t getRotation();
 
     // Returns true exactly once per physical click (debounced).

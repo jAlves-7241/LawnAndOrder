@@ -52,6 +52,7 @@ void ScreenDurPick::handleRotation(UI& ui, int8_t dir) {
 
 void ScreenDurPick::handleClick(UI& ui) {
     if (_durContext == DurContext::CFG_ZONE) {
+        if (_durZoneIdx >= NUM_ZONES) return;
         uint8_t old_dur = gState.zones[_durZoneIdx].duration_min;
         bool    old_en  = gState.zones[_durZoneIdx].enabled;
         
@@ -114,7 +115,7 @@ void ScreenDurPick::handleClick(UI& ui) {
         uint8_t anchor_hour = cs.slots[0].hour;
         uint8_t anchor_min = cs.slots[0].minute;
         cs.slot_count = (_durValue > 0) ? _durValue : 1;
-        
+        if (cs.slot_count == 0) cs.slot_count = 1;
         uint16_t interval = 1440 / cs.slot_count;
         for (int i = 0; i < cs.slot_count; i++) {
             uint16_t mins = (anchor_hour * 60 + anchor_min + i * interval) % 1440;
@@ -294,7 +295,7 @@ void ScreenDateEdit::render(UI& ui) {
 // ─────────────────────────────────────────────────────────
 void ScreenTimeEdit::setup(TimeEditContext ctx, uint8_t cycleIdx, MenuID backMenu) {
     _teContext  = ctx;
-    _teCycleIdx = cycleIdx;
+    _teCycleIdx = (cycleIdx < MAX_SLOTS_PER_MODE) ? cycleIdx : 0;
 
     if (ctx == TimeEditContext::RTC) {
         _teHour   = gState.rtc_valid ? gState.now.hour : 0;
@@ -409,9 +410,9 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 void ScreenTimeEdit::render(UI& ui) {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
     const char* title = "Data/Hora";
+    char cbuf[21];
 
     if (_teContext == TimeEditContext::CUSTOM_CYCLE) {
-        char cbuf[21];
         snprintf(cbuf, sizeof(cbuf), "Horario Ciclo %d", _teCycleIdx + 1);
         title = cbuf;
     }

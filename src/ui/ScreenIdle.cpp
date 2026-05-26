@@ -59,9 +59,12 @@ void ScreenIdle::fullRender(UI& ui) {
 
     if (gState.watering.active) {
         uint8_t zi = gState.watering.zone_idx;
-        if (zi >= NUM_ZONES) zi = 0;
         char zrow[LCD_COLS+1], pb[LCD_COLS+1];
-        snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
+        if (zi >= NUM_ZONES) {
+            snprintf(zrow, sizeof(zrow), "Erro: Zona %d", zi + 1);
+        } else {
+            snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
+        }
         ui.getDisplay().pbar(pb, _lastProgress);
         ui.getDisplay().setRows(b0, "A regar agora...", zrow, pb);
     } else {

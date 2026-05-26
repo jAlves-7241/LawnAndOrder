@@ -22,7 +22,12 @@ void Encoder::begin() {
 //   DT == HIGH → counter-cw (-1)
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
-    _inst->_delta += (digitalRead(_inst->_dt) == LOW) ? 1 : -1;
+    int16_t d = (digitalRead(_inst->_dt) == LOW) ? 1 : -1;
+    if (d > 0) {
+        if (_inst->_delta < 32000) _inst->_delta += d;
+    } else {
+        if (_inst->_delta > -32000) _inst->_delta += d;
+    }
 }
 
 int8_t Encoder::getRotation() {
