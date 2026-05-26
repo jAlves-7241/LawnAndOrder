@@ -130,10 +130,11 @@ void Storage::clear() {
 
 // ─────────────────────────────────────────────────────────
 bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount) {
-    if (!_ready) return false;
-    lineCount = prefs.getUShort("hcnt", 0);
+    if (!_ready) { lineCount = 0; return false; }
     size_t readBytes = prefs.getBytes("hcache", dest, size);
-    return (readBytes == size);
+    if (readBytes != size) { lineCount = 0; return false; }
+    lineCount = prefs.getUShort("hcnt", 0);
+    return true;
 }
 
 void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount) {

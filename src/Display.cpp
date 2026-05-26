@@ -150,6 +150,6 @@ char* Display::pbar(char* buf, uint8_t pct) {
     char pct_str[6];
     snprintf(pct_str, sizeof(pct_str), "%3d%%", pct);
     memcpy(buf + pos, pct_str, 4); pos += 4;
-    buf[LCD_COLS] = '\0';
+    buf[pos] = '\0';
     return buf;
 }

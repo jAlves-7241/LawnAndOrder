@@ -73,7 +73,9 @@ void ScreenConfirm::handleClick(UI& ui) {
 
 void ScreenConfirm::render(UI& ui) {
     char l3[LCD_COLS + 1];
-    snprintf(l3, sizeof(l3), "%-10s %-9s", _selectionOk ? ">OK" : " OK", _selectionOk ? " Voltar" : ">Voltar");
+    int w1 = LCD_COLS / 2;
+    int w2 = LCD_COLS - w1 - 1;
+    snprintf(l3, sizeof(l3), "%-*s %-*s", w1, _selectionOk ? ">OK" : " OK", w2, _selectionOk ? " Voltar" : ">Voltar");
     ui.getDisplay().setRows(_rows[0], _rows[1], _rows[2], l3);
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v0.4.5"
+#define FW_VERSION "v0.4.6"
 #define FW_BUILD_DATE "26Mai2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
@@ -73,7 +73,7 @@
 
 // ── Application ───────────────────────────────────────────
 // Se 1, os menus dão a volta quando chegam ao fim. Se 0, param nos limites.
-#define MENU_WRAP_AROUND 0
+#define MENU_WRAP_AROUND 1
 
 #define NUM_ZONES 4
 #define MAX_SLOTS_PER_MODE 4 // Personalizado can have up to 4 cycles
@@ -90,4 +90,6 @@
 #define SUSPEND_DEFAULT_DAYS 3 // Dias padrão para suspensão de rega
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
 #define DATE_YEAR_MAX 2099     // Ano máximo para o editor de data
-#define DATE_YEAR_SPAN (DATE_YEAR_MAX - DATE_YEAR_MIN + 1) // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)
+#define DATE_YEAR_SPAN                                                         \
+  (DATE_YEAR_MAX - DATE_YEAR_MIN +                                             \
+   1) // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)
