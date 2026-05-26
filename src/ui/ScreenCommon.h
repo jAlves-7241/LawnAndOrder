@@ -44,7 +44,7 @@ private:
 // ─────────────────────────────────────────────────────────
 class ScreenDone : public UIScreen {
 public:
-    void setup(const char* l1, const char* l2);
+    void setup(const char* l1, const char* l2, MenuID back = MenuID::MAIN);
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;

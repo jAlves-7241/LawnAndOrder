@@ -16,6 +16,12 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
     itemCount = 0;
     MenuItem* it = items;
 
+    auto add_item = [&](const char* label, const char* action) {
+        if (it - items < MAX_ITEMS) {
+            makeItem(it++, label, action);
+        }
+    };
+
     auto mc = [&](uint8_t i) -> const char* {
         return ((uint8_t)gState.mode == i) ? "[*]" : "[ ]";
     };
@@ -24,72 +30,72 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 
     switch (mid) {
     case MenuID::MAIN:
-        makeItem(it++, "Rega Manual",       "go:manual");
-        makeItem(it++, "Programacao",       "go:prog");
-        makeItem(it++, "Definicoes",        "go:def");
-        makeItem(it++, "<- Voltar",         "go:idle");
+        add_item("Rega Manual",       "go:manual");
+        add_item("Programacao",       "go:prog");
+        add_item("Definicoes",        "go:def");
+        add_item("<- Voltar",         "go:idle");
         break;
 
     case MenuID::MANUAL:
-        makeItem(it++, "Rega Geral",    "confirm:Iniciar rega com|params. atuais?|main|general");
-        makeItem(it++, "Personalizado", "go:czonas");
-        makeItem(it++, "<- Voltar",     "go:main");
+        add_item("Rega Geral",    "confirm:Iniciar rega com|params. atuais?|main|general");
+        add_item("Personalizado", "go:czonas");
+        add_item("<- Voltar",     "go:main");
         break;
 
     case MenuID::PROG:
-        makeItem(it++, "Ver Horarios",     "horarios");
-        makeItem(it++, "Alterar Modo",     "go:modos");
+        add_item("Ver Horarios",     "horarios");
+        add_item("Alterar Modo",     "go:modos");
         if (gState.mode == AppMode::PERSONALIZADO) {
-            makeItem(it++, "Personalizar", "go:ccustom");
+            add_item("Personalizar", "go:ccustom");
         }
-        makeItem(it++, "Configurar Zonas", "go:cfgz");
+        add_item("Configurar Zonas", "go:cfgz");
         if (gState.suspended)
-            makeItem(it++, "Retomar Rega", "cancel_susp");
+            add_item("Retomar Rega", "cancel_susp");
         else
-            makeItem(it++, "Suspender Rega", "dur_pick:suspend");
-        makeItem(it++, "<- Voltar",        "go:main");
+            add_item("Suspender Rega", "dur_pick:suspend");
+        add_item("<- Voltar",        "go:main");
         break;
 
     case MenuID::CFG_CUSTOM: {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         snprintf(lbuf, sizeof(lbuf), "Freq: %d dias", cs.interval_days);
-        makeItem(it++, lbuf, "dur_pick:freq");
+        add_item(lbuf, "dur_pick:freq");
         snprintf(lbuf, sizeof(lbuf), "Ciclos: %d", cs.slot_count);
-        makeItem(it++, lbuf, "dur_pick:cycles");
+        add_item(lbuf, "dur_pick:cycles");
         for (int i = 0; i < cs.slot_count; i++) {
             snprintf(lbuf, sizeof(lbuf), "Ciclo %d: %02d:%02d", i + 1, cs.slots[i].hour, cs.slots[i].minute);
             char act[16];
             snprintf(act, sizeof(act), "time_edit:c%d", i);
-            makeItem(it++, lbuf, act);
+            add_item(lbuf, act);
         }
-        makeItem(it++, "<- Terminar", "go:prog");
+        add_item("<- Terminar", "go:prog");
         break;
     }
 
     case MenuID::SETUP_CUSTOM: {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         snprintf(lbuf, sizeof(lbuf), "Freq: %d dias", cs.interval_days);
-        makeItem(it++, lbuf, "dur_pick:freq");
+        add_item(lbuf, "dur_pick:freq");
         snprintf(lbuf, sizeof(lbuf), "Ciclos: %d", cs.slot_count);
-        makeItem(it++, lbuf, "dur_pick:cycles");
+        add_item(lbuf, "dur_pick:cycles");
         for (int i = 0; i < cs.slot_count; i++) {
             snprintf(lbuf, sizeof(lbuf), "Ciclo %d: %02d:%02d", i + 1, cs.slots[i].hour, cs.slots[i].minute);
             char act[16];
             snprintf(act, sizeof(act), "time_edit:c%d", i);
-            makeItem(it++, lbuf, act);
+            add_item(lbuf, act);
         }
-        makeItem(it++, "Avancar >", "setup_advance");
-        makeItem(it++, "<- Voltar", "setup_back");
+        add_item("Avancar >", "setup_advance");
+        add_item("<- Voltar", "setup_back");
         break;
     }
 
     case MenuID::MODOS:
-        snprintf(lbuf, sizeof(lbuf), "%s Intenso",      mc(0)); makeItem(it++, lbuf, "sel:0");
-        snprintf(lbuf, sizeof(lbuf), "%s Medio",         mc(1)); makeItem(it++, lbuf, "sel:1");
-        snprintf(lbuf, sizeof(lbuf), "%s Fraco",         mc(2)); makeItem(it++, lbuf, "sel:2");
-        snprintf(lbuf, sizeof(lbuf), "%s Desativado",    mc(3)); makeItem(it++, lbuf, "sel:3");
-        snprintf(lbuf, sizeof(lbuf), "%s Personalizado", mc(4)); makeItem(it++, lbuf, "sel:4");
-        makeItem(it++, "<- Voltar", "go:prog");
+        snprintf(lbuf, sizeof(lbuf), "%s Intenso",      mc(0)); add_item(lbuf, "sel:0");
+        snprintf(lbuf, sizeof(lbuf), "%s Medio",         mc(1)); add_item(lbuf, "sel:1");
+        snprintf(lbuf, sizeof(lbuf), "%s Fraco",         mc(2)); add_item(lbuf, "sel:2");
+        snprintf(lbuf, sizeof(lbuf), "%s Desativado",    mc(3)); add_item(lbuf, "sel:3");
+        snprintf(lbuf, sizeof(lbuf), "%s Personalizado", mc(4)); add_item(lbuf, "sel:4");
+        add_item("<- Voltar", "go:prog");
         break;
 
     case MenuID::CFG_ZONAS:
@@ -100,9 +106,9 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             else
                 snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
-            makeItem(it++, lbuf, act);
+            add_item(lbuf, act);
         }
-        makeItem(it++, "<- Voltar", "go:prog");
+        add_item("<- Voltar", "go:prog");
         break;
 
     case MenuID::CUSTOM_ZONAS:
@@ -111,10 +117,10 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                      gState.custom_sel[i] ? "[X]" : "[ ]",
                      i+1, gState.zones[i].name);
             char act[8]; snprintf(act, sizeof(act), "cz:%d", i);
-            makeItem(it++, lbuf, act);
+            add_item(lbuf, act);
         }
-        makeItem(it++, "-> Definir duracao", "dur_pick:custom");
-        makeItem(it++, "<- Voltar",          "go:manual");
+        add_item("-> Definir duracao", "dur_pick:custom");
+        add_item("<- Voltar",          "go:manual");
         break;
 
     case MenuID::HISTORICO: {
@@ -122,7 +128,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         uint8_t n = history.readLast(HISTORY_DISPLAY, entries);
 
         if (n == 0) {
-            makeItem(it++, "Sem registos", "");
+            add_item("Sem registos", "");
         } else {
             for (int8_t i = (int8_t)n - 1; i >= 0; i--) {
                 const HistoryEntry& e = entries[i];
@@ -143,24 +149,24 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                 snprintf(act, sizeof(act),
                          "info:%02d/%02d %02d:%02d|%s|%s| |hist",
                          e.day, m, e.hour, e.min, l1, l2);
-                makeItem(it++, lbuf, act);
+                add_item(lbuf, act);
             }
         }
-        makeItem(it++, "<- Voltar", "go:def");
+        add_item("<- Voltar", "go:def");
         break;
     }
 
     case MenuID::DEF: {
-        makeItem(it++, "Testar Zonas",    "go:testes");
-        makeItem(it++, "Historico",       "go:hist");
-        makeItem(it++, "Data/Hora",       "date_edit:rtc");
-        makeItem(it++, "Def. Avancadas",  "go:def_avancado");
-        makeItem(it++, "<- Voltar",       "go:main");
+        add_item("Testar Zonas",    "go:testes");
+        add_item("Historico",       "go:hist");
+        add_item("Data/Hora",       "date_edit:rtc");
+        add_item("Def. Avancadas",  "go:def_avancado");
+        add_item("<- Voltar",       "go:main");
         break;
     }
 
     case MenuID::DEF_AVANCADO: {
-        makeItem(it++, gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
+        add_item(gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
             case 30000UL:              blLabel = "Ecra: 30 seg"; break;
@@ -170,33 +176,33 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             case BACKLIGHT_TIMEOUT_NEVER: blLabel = "Ecra: sempre"; break;
             default:                   blLabel = "Ecra: 2 min";  break;
         }
-        makeItem(it++, blLabel,           "go:blsel");
-        makeItem(it++, "Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
-        makeItem(it++, "Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
-        makeItem(it++, "<- Voltar",       "go:def");
+        add_item(blLabel,           "go:blsel");
+        add_item("Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
+        add_item("Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
+        add_item("<- Voltar",       "go:def");
         break;
     }
 
     case MenuID::TESTES:
-        makeItem(it++, "Testar Todas (5s)", "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
+        add_item("Testar Todas (5s)", "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
         for (int i = 0; i < NUM_ZONES; i++) {
             snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, gState.zones[i].name);
             char act[80];
             snprintf(act, sizeof(act),
                      "confirm:Ativar Z%d %s|por 5 segundos?|testes|test_%d",
                      i+1, gState.zones[i].name, i);
-            makeItem(it++, lbuf, act);
+            add_item(lbuf, act);
         }
-        makeItem(it++, "<- Voltar", "go:def");
+        add_item("<- Voltar", "go:def");
         break;
 
     case MenuID::SETUP_MODE:
-        makeItem(it++, "Intenso",       "sel:0");
-        makeItem(it++, "Medio",         "sel:1");
-        makeItem(it++, "Fraco",         "sel:2");
-        makeItem(it++, "Personalizado", "sel:4");
-        makeItem(it++, "Saltar >",      "setup_advance");
-        makeItem(it++, "<- Voltar",     "setup_back");
+        add_item("Intenso",       "sel:0");
+        add_item("Medio",         "sel:1");
+        add_item("Fraco",         "sel:2");
+        add_item("Personalizado", "sel:4");
+        add_item("Saltar >",      "setup_advance");
+        add_item("<- Voltar",     "setup_back");
         break;
 
     case MenuID::SETUP_ZONES:
@@ -207,10 +213,10 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             else
                 snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
-            makeItem(it++, lbuf, act);
+            add_item(lbuf, act);
         }
-        makeItem(it++, "Terminar >",  "setup_advance");
-        makeItem(it++, "<- Voltar",   "setup_back");
+        add_item("Terminar >",  "setup_advance");
+        add_item("<- Voltar",   "setup_back");
         break;
 
     case MenuID::BLSEL: {
@@ -218,21 +224,21 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             return (gState.backlight_timeout_ms == ms) ? "[*]" : "[ ]";
         };
         snprintf(lbuf, sizeof(lbuf), "%s 30 segundos", blmc(30000UL));
-        makeItem(it++, lbuf, "bl:30000");
+        add_item(lbuf, "bl:30000");
         snprintf(lbuf, sizeof(lbuf), "%s  1 minuto",   blmc(60000UL));
-        makeItem(it++, lbuf, "bl:60000");
+        add_item(lbuf, "bl:60000");
         snprintf(lbuf, sizeof(lbuf), "%s  2 minutos",  blmc(120000UL));
-        makeItem(it++, lbuf, "bl:120000");
+        add_item(lbuf, "bl:120000");
         snprintf(lbuf, sizeof(lbuf), "%s  5 minutos",  blmc(300000UL));
-        makeItem(it++, lbuf, "bl:300000");
+        add_item(lbuf, "bl:300000");
         snprintf(lbuf, sizeof(lbuf), "%s  Sempre",     blmc(BACKLIGHT_TIMEOUT_NEVER));
-        makeItem(it++, lbuf, "bl:4294967295");
-        makeItem(it++, "<- Voltar", "go:def_avancado");
+        add_item(lbuf, "bl:4294967295");
+        add_item("<- Voltar", "go:def_avancado");
         break;
     }
 
     default:
-        makeItem(it++, "<- Voltar", "go:main");
+        add_item("<- Voltar", "go:main");
         break;
     }
 
@@ -269,21 +275,21 @@ const char* MenuBuilder::modeName(uint8_t m) {
     }
 }
 
-const char* MenuBuilder::modeHours(uint8_t m) {
-    static char buf[32];
+void MenuBuilder::modeHours(uint8_t m, char* dest, size_t maxLen) {
     const ModeSchedule& sched = MODE_SCHEDULES[m];
 
-    if (sched.slot_count == 0) return "---";
+    if (sched.slot_count == 0) {
+        snprintf(dest, maxLen, "---");
+        return;
+    }
 
-    buf[0] = '\0';
+    dest[0] = '\0';
     for (uint8_t i = 0; i < sched.slot_count; i++) {
         char tbuf[8];
         snprintf(tbuf, sizeof(tbuf), "%02d:%02d", 
                  sched.slots[i].hour, sched.slots[i].minute);
         
-        if (i > 0) strncat(buf, "+", sizeof(buf) - strlen(buf) - 1);
-        strncat(buf, tbuf, sizeof(buf) - strlen(buf) - 1);
+        if (i > 0) strncat(dest, "+", maxLen - strlen(dest) - 1);
+        strncat(dest, tbuf, maxLen - strlen(dest) - 1);
     }
-
-    return buf;
 }

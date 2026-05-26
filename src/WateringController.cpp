@@ -1,6 +1,7 @@
 #include "WateringController.h"
 #include "Scheduler.h"
 #include "Storage.h"
+#include "RTClock.h"
 #include <string.h>
 #include <RTClib.h>
 #include "log.h"
@@ -32,6 +33,20 @@ void WateringController::begin() {
     // Tentar resgatar ciclo interrompido por blackout
     RecoveryState rs;
     if (storage.loadRecoveryState(rs) && rs.active) {
+        if (rs.queueLen > NUM_ZONES || rs.queuePos >= rs.queueLen) {
+            LOG_W("REGA", "Recovery state invalid, discarding");
+            rs.active = false;
+            storage.saveRecoveryState(rs);
+            return;
+        }
+        for (uint8_t i = 0; i < rs.queueLen; i++) {
+            if (rs.queue[i].zone_idx >= NUM_ZONES) {
+                LOG_W("REGA", "Recovery zone_idx invalid");
+                rs.active = false;
+                storage.saveRecoveryState(rs);
+                return;
+            }
+        }
         LOG_I("REGA", "Encontrado ciclo interrompido! A avaliar retoma...");
         if (gState.rtc_valid) {
             uint32_t remaining_ms = 0;
@@ -50,15 +65,16 @@ void WateringController::begin() {
                 }
                 _queuePos = rs.queuePos;
                 
-                // Timestamp original do arranque do ciclo
-                DateTime startDT(rs.start_unix_time);
+                // Timestamp original do arranque do ciclo (convertido para local time)
+                DateTime utcDT(rs.start_unix_time);
+                DateTime startDT = RTClock::utcToLocal(utcDT);
                 _cycleStart.year = startDT.year();
                 _cycleStart.month = startDT.month();
                 _cycleStart.day = startDT.day();
                 _cycleStart.hour = startDT.hour();
                 _cycleStart.min = startDT.minute();
                 _cycleStart.sec = startDT.second();
-                _cycleStart.unix = startDT.unixtime();
+                _cycleStart.unix = utcDT.unixtime();
 
                 LOG_I("REGA", "Retomando ciclo da zona %d", _queue[_queuePos].zone_idx + 1);
                 _startNextZone();

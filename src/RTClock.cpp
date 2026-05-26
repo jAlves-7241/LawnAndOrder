@@ -211,3 +211,10 @@ bool RTClock::_isEU_DST(const DateTime& dt) {
     }
     return false;
 }
+
+DateTime RTClock::utcToLocal(const DateTime& utcDt) {
+    if (gState.auto_dst && _isEU_DST(utcDt)) {
+        return DateTime(utcDt.unixtime() + 3600);
+    }
+    return utcDt;
+}

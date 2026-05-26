@@ -12,7 +12,7 @@ public:
     void render(UI& ui) override;
 
 private:
-    static const uint8_t MAX_ITEMS = 12;
+    static const uint8_t MAX_ITEMS = MenuBuilder::MAX_ITEMS;
 
     MenuID _mid;
     MenuItem _items[MAX_ITEMS];

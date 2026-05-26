@@ -23,11 +23,16 @@ bool History::begin(bool formatOnFail) {
         // Tenta carregar da NVS primeiro
         if (storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount)) {
             // Cache e total recuperados instantaneamente da NVS!
-            // Calcular _cacheCount com base nos registos válidos (ano diferente de zero)
-            _cacheCount = 0;
+            // Compactar cache para eliminar possíveis lacunas/gaps resultantes de corrupção
+            uint8_t validCount = 0;
+            HistoryEntry tempCache[HISTORY_DISPLAY] = {};
             for (int i = 0; i < HISTORY_DISPLAY; i++) {
-                if (_cache[i].year > 0) _cacheCount++;
+                if (_cache[i].year > 0) {
+                    tempCache[validCount++] = _cache[i];
+                }
             }
+            memcpy(_cache, tempCache, sizeof(_cache));
+            _cacheCount = validCount;
             LOG_I("HIST", "Carregado via NVS - %d entradas", _lineCount);
         } else {
             // Fallback (apenas se NVS estiver vazio ou corrompido)
@@ -49,9 +54,18 @@ void History::record(const HistoryEntry& entry) {
 
     if (_rotState != RotState::IDLE) {
         LOG_W("HIST", "Rotacao pendente, forçar conclusao sincrona...");
+        uint32_t bailMs = millis();
         while (_rotState != RotState::IDLE) {
             esp_task_wdt_reset();
             update();
+            if (millis() - bailMs > 5000) {
+                LOG_E("HIST", "Rotation stuck, aborting");
+                if (_rotSrc) _rotSrc.close();
+                if (_rotDst) _rotDst.close();
+                LittleFS.remove("/hist_tmp.csv");
+                _rotState = RotState::IDLE;
+                break;
+            }
         }
     }
 
@@ -261,9 +275,18 @@ void History::_populateCache() {
 void History::_rotateAndAppend(const char* newLine) {
     if (_rotState != RotState::IDLE) {
         LOG_W("HIST", "Rotacao forçada sincrona!");
+        uint32_t bailMs = millis();
         while (_rotState != RotState::IDLE) {
             esp_task_wdt_reset();
             update();
+            if (millis() - bailMs > 5000) {
+                LOG_E("HIST", "Rotation stuck, aborting");
+                if (_rotSrc) _rotSrc.close();
+                if (_rotDst) _rotDst.close();
+                LittleFS.remove("/hist_tmp.csv");
+                _rotState = RotState::IDLE;
+                break;
+            }
         }
     }
 

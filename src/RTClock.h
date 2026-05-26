@@ -41,6 +41,9 @@ public:
     // Set only hour and minute, keeping the current date.
     void setTime(uint8_t hour, uint8_t minute);
 
+    // Convert UTC DateTime to Local DateTime using DST logic.
+    static DateTime utcToLocal(const DateTime& utcDt);
+
     // True if the chip was found and the oscillator is running.
     bool isValid() const { return _found && !_lostPower; }
 
