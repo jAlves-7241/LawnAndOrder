@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v0.4.4"
-#define FW_BUILD_DATE "25Mai2026"
+#define FW_VERSION "v0.4.5"
+#define FW_BUILD_DATE "26Mai2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
@@ -90,4 +90,4 @@
 #define SUSPEND_DEFAULT_DAYS 3 // Dias padrão para suspensão de rega
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
 #define DATE_YEAR_MAX 2099     // Ano máximo para o editor de data
-#define DATE_YEAR_SPAN 80 // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)
+#define DATE_YEAR_SPAN (DATE_YEAR_MAX - DATE_YEAR_MIN + 1) // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)

@@ -262,6 +262,8 @@ void UI::dispatchAction(const char* action) {
         } else if (!strcmp(type, "cycles")) {
             ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
             _screenDurPick.setup(cs.slot_count, DurContext::NUM_CYCLES, 0, _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
+        } else {
+            return; // unknown type — don't enter uninitialized screen
         }
         changeScreen(&_screenDurPick);
         return;
@@ -318,7 +320,9 @@ void UI::dispatchAction(const char* action) {
             snprintf(l2, sizeof(l2), "Rega desligada");
             l3[0] = '\0';
         } else {
-            snprintf(l2, sizeof(l2), "H: %s", MenuBuilder::modeHours((uint8_t)gState.mode));
+            char hbuf[32];
+            MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
+            snprintf(l2, sizeof(l2), "H: %s", hbuf);
             if (gState.mode == AppMode::PERSONALIZADO) {
                 ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
                 snprintf(l3, sizeof(l3), "F: a cada %d dias", cs.interval_days);
@@ -389,7 +393,7 @@ void UI::dispatchAction(const char* action) {
 }
 
 uint16_t UI::getTotalZoneDuration() {
-    uint8_t total = 0;
+    uint16_t total = 0;
     for (int i = 0; i < NUM_ZONES; i++) {
         if (gState.zones[i].enabled)
             total += gState.zones[i].duration_min;

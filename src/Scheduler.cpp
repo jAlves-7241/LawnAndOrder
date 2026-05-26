@@ -256,8 +256,8 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
     DateTime current(now.year, now.month, now.day, now.hour, now.min, now.sec);
     uint32_t start_day_1970 = current.unixtime() / 86400UL;
 
-    uint8_t dayOffset = 0;
-    uint8_t limit = 15;
+    uint16_t dayOffset = 0;
+    uint16_t limit = 15;
 
     // Fast-jump O(1) math for DayPattern::EVERY_X_DAYS
     if (sched.day_pattern == DayPattern::EVERY_X_DAYS && sched.interval_days > 0) {

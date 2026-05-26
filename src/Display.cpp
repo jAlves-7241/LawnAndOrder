@@ -132,21 +132,22 @@ char* Display::hdr(char* buf, const char* s) {
     memcpy(buf + pos, s, len); pos += len;
     buf[pos++] = ' ';
     memset(buf + pos, '~', rt); pos += rt;
-    buf[LCD_COLS] = '\0';
+    buf[pos] = '\0';
     return buf;
 }
 
 // [#####--------] pct%  (total 20 chars)
 char* Display::pbar(char* buf, uint8_t pct) {
     if (pct > 100) pct = 100;
-    // Layout: "[" + 13 chars bar + "] " + 3 chars pct + "%" = 19 chars → pad to 20
-    int filled = (pct * 13) / 100;
+    int barWidth = LCD_COLS - 7;
+    if (barWidth < 0) barWidth = 0;
+    int filled = (barWidth > 0) ? ((pct * barWidth) / 100) : 0;
     int pos = 0;
     buf[pos++] = '[';
-    for (int i = 0; i < 13; i++) buf[pos++] = (i < filled) ? '#' : '-';
+    for (int i = 0; i < barWidth; i++) buf[pos++] = (i < filled) ? '#' : '-';
     buf[pos++] = ']';
     buf[pos++] = ' ';
-    char pct_str[5];
+    char pct_str[6];
     snprintf(pct_str, sizeof(pct_str), "%3d%%", pct);
     memcpy(buf + pos, pct_str, 4); pos += 4;
     buf[LCD_COLS] = '\0';

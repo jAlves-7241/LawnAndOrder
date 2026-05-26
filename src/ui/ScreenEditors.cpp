@@ -411,7 +411,7 @@ void ScreenTimeEdit::render(UI& ui) {
     const char* title = "Data/Hora";
 
     if (_teContext == TimeEditContext::CUSTOM_CYCLE) {
-        static char cbuf[21];
+        char cbuf[21];
         snprintf(cbuf, sizeof(cbuf), "Horario Ciclo %d", _teCycleIdx + 1);
         title = cbuf;
     }

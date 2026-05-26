@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
+#include <Wire.h>
 
 #include "config.h"
 #include "AppState.h"
@@ -16,8 +17,6 @@
 Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 static UI      ui(display, encoder);
-
-#include <Wire.h>
 
 void recoverI2C() {
     LOG_W("SYS", "A iniciar recuperacao do barramento I2C preso...");

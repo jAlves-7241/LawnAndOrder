@@ -73,7 +73,7 @@ public:
     void saveRecoveryState(const RecoveryState& rs);
 
 private:
-    bool _ready;  // true after begin() succeeds
+    bool _ready = false;  // true after begin() succeeds
 };
 
 extern Storage storage;

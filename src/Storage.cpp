@@ -47,7 +47,7 @@ static const char* KEY_CFG = "cfg";
 bool Storage::load() {
     if (!_ready) return false;
 
-    AppConfigBlob blob;
+    AppConfigBlob blob = {};
     size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
     if (readBytes != sizeof(blob) || blob.version != NVS_VERSION) {
         LOG_W("NVS", "Blob invalido ou versao incorreta (%d). A usar defaults.", blob.version);
@@ -131,14 +131,14 @@ void Storage::clear() {
 // ─────────────────────────────────────────────────────────
 bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount) {
     if (!_ready) return false;
-    lineCount = prefs.getUInt("hcnt", 0);
+    lineCount = prefs.getUShort("hcnt", 0);
     size_t readBytes = prefs.getBytes("hcache", dest, size);
     return (readBytes == size);
 }
 
 void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount) {
     if (!_ready) return;
-    prefs.putUInt("hcnt", lineCount);
+    prefs.putUShort("hcnt", lineCount);
     prefs.putBytes("hcache", src, size);
 }
 
