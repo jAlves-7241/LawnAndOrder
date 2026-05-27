@@ -316,22 +316,52 @@ void UI::dispatchAction(const char* action) {
 
     if (!strcmp(action, "horarios")) {
         char l1[LCD_COLS+1], l2[LCD_COLS+1], l3[LCD_COLS+1];
+
         snprintf(l1, sizeof(l1), "Modo: %s", MenuBuilder::modeName((uint8_t)gState.mode));
+
         if (gState.mode == AppMode::DESATIVADO) {
             snprintf(l2, sizeof(l2), "Rega desligada");
             l3[0] = '\0';
+
+        } else if (gState.mode == AppMode::PERSONALIZADO) {
+            ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+
+            if (cs.slot_count <= 2) {
+                // Cabe numa linha: "H: 06:00+18:00"
+                char hbuf[32];
+                MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
+                snprintf(l2, sizeof(l2), "H: %s", hbuf);
+                snprintf(l3, sizeof(l3), "F: a cada %d dias", cs.interval_days);
+            } else {
+                // 3 ou 4 ciclos: dividir em duas linhas de horas
+                // Linha horas A: ciclos 0 e 1
+                snprintf(l2, sizeof(l2), "H: %02d:%02d + %02d:%02d",
+                         cs.slots[0].hour, cs.slots[0].minute,
+                         cs.slots[1].hour, cs.slots[1].minute);
+                // Linha horas B: ciclos 2 (e 3 se existir)
+                if (cs.slot_count == 4) {
+                    snprintf(l3, sizeof(l3), "   %02d:%02d + %02d:%02d",
+                             cs.slots[2].hour, cs.slots[2].minute,
+                             cs.slots[3].hour, cs.slots[3].minute);
+                } else {
+                    snprintf(l3, sizeof(l3), "   %02d:%02d",
+                             cs.slots[2].hour, cs.slots[2].minute);
+                }
+                // Frequência sacrificada, mas apenas cabem 4 linhas (0 a 3)
+            }
+
         } else {
+            // Modos fixos (Intenso, Médio, Fraco): no máximo 3 slots, sempre cabem
             char hbuf[32];
             MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
             snprintf(l2, sizeof(l2), "H: %s", hbuf);
-            if (gState.mode == AppMode::PERSONALIZADO) {
-                ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-                snprintf(l3, sizeof(l3), "F: a cada %d dias", cs.interval_days);
-            } else {
-                snprintf(l3, sizeof(l3), "F: Diaria");
-            }
+            snprintf(l3, sizeof(l3), "F: Diaria");
         }
+
         _screenInfo.setup("HORARIOS ATUAIS", l1, l2, l3, MenuID::PROG);
+        // Para o caso de 4 ciclos, a linha l4 seria a 4ª linha do ScreenInfo
+        // mas setup() só aceita 4 parâmetros de linha (l0..l3).
+        // Com a estrutura atual, l3 fica como frequência ou último ciclo.
         changeScreen(&_screenInfo);
         return;
     }

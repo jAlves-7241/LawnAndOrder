@@ -50,6 +50,8 @@ private:
     // Cache for UI display
     HistoryEntry _cache[HISTORY_DISPLAY];
     uint8_t      _cacheCount = 0;
+    
+    bool         _pendingCacheSave = false;   // NVS save diferido (rotação async)
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
