@@ -106,6 +106,10 @@ void ScreenDurPick::handleClick(UI& ui) {
     if (_durContext == DurContext::NUM_CYCLES) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         uint16_t total_dur = ui.getTotalZoneDuration();
+        uint8_t enCount = 0;
+        for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
+        if (enCount > 1) total_dur += (enCount - 1);
+        
         if ((uint32_t)_durValue * total_dur > 1440) {
             ui.getScreenInfo().setup("! ERRO !", "Duracao total",
                       "excede 24h.", "", _backMenu);
@@ -336,7 +340,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
     if (_teContext == TimeEditContext::RTC) {
         if (!rtclock.isValid()) {
-            ui.getScreenInfo().setup("! SEM RTC !", "Modulo nao", "encontrado.", "", MenuID::DEF);
+            ui.getScreenInfo().setup("! SEM RTC !", "Modulo nao", "encontrado.", "", ui.inSetup() ? _backMenu : MenuID::DEF);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }

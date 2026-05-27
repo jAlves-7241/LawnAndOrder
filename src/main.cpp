@@ -19,6 +19,7 @@ static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 static UI      ui(display, encoder);
 
 void recoverI2C() {
+    esp_task_wdt_reset();
     LOG_W("SYS", "A iniciar recuperacao do barramento I2C preso...");
     Wire.end();
     
@@ -27,6 +28,7 @@ void recoverI2C() {
     
     // Toggle SCL até 9 vezes enquanto SDA estiver preso em LOW
     for (int i = 0; i < 9; i++) {
+        esp_task_wdt_reset();
         if (digitalRead(21) == HIGH) break; // Escravo libertou SDA
         digitalWrite(22, LOW);
         delayMicroseconds(5);
@@ -44,6 +46,7 @@ void recoverI2C() {
     
     Wire.begin();
     rtclock.begin();
+    esp_task_wdt_reset();
     display.begin();
     LOG_I("SYS", "Recuperacao I2C concluida.");
 }

@@ -190,6 +190,8 @@ void WateringController::update() {
             if (_zoneIdx < NUM_ZONES) {
                 digitalWrite(_relayPins[_zoneIdx], RELAY_ON);
                 _zoneStartMs = millis();
+                gState.watering.progress_pct = 0;
+                _syncState();
             } else {
                 LOG_E("REGA", "zona %d fora dos limites!", _zoneIdx);
             }
@@ -275,6 +277,7 @@ void WateringController::_startNextZone() {
     _zoneIdx        = _queue[_queuePos].zone_idx;
     _zoneDurationMs = _queue[_queuePos].duration_ms;
     _activateRelay();
+    gState.watering.progress_pct = 0;
     _syncState();
 
     // Gravar estado de recuperação na NVS a cada transição
