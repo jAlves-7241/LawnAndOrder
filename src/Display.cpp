@@ -15,6 +15,7 @@ void Display::begin() {
     _backlightOn = true;
     _displayOn = true;
     _lcd.clear();
+    delay(10); // Aguardar que o comando de limpeza termine no hardware real
     _invalidateShadow();
     LOG_I("LCD", "Pronto");
 }
@@ -23,6 +24,7 @@ void Display::backlightOn() {
     if (_backlightOn) return;
     _lcd.backlight();
     _backlightOn = true;
+    _invalidateShadow(); // Forçar redesenho completo ao acordar para corrigir glitches físicos
 }
 
 void Display::backlightOff() {
@@ -53,6 +55,14 @@ void Display::_invalidateShadow() {
 
 void Display::setRows(const char* r0, const char* r1,
                       const char* r2, const char* r3) {
+    // Forçar atualização total a cada 60 segundos para autocorrigir ruído no bus I2C (glitches físicos)
+    static uint32_t lastFullRefresh = 0;
+    uint32_t now = millis();
+    if (now - lastFullRefresh >= 60000UL) {
+        _invalidateShadow();
+        lastFullRefresh = now;
+    }
+
     const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
     for (int r = 0; r < LCD_ROWS; r++) {
         if (rows[r]) _writeRow(r, rows[r]);
