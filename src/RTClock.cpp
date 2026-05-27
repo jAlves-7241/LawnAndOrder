@@ -69,18 +69,76 @@ bool RTClock::begin() {
 
 // ─────────────────────────────────────────────────────────
 void RTClock::update() {
-    if (!_found) return;
-
     uint32_t nowMs = millis();
     if ((nowMs - _lastReadMs) < 1000UL) return;
     _lastReadMs = nowMs;
 
+    if (!_found) {
+        // Tentar redetetar o RTC a quente (hotplug) a cada 10 segundos
+        static uint32_t lastRtcRetryMs = 0;
+        if (nowMs - lastRtcRetryMs >= 10000UL) {
+            lastRtcRetryMs = nowMs;
+            LOG_I("RTC", "A tentar detetar RTC a quente...");
+            if (_rtc.begin()) {
+                _found = true;
+                #ifdef WOKWI_SIM
+                    _lostPower = false;
+                    if (!gState.rtc_valid) gState.rtc_valid = true;
+                #else
+                    _lostPower = _rtc.lostPower();
+                    if (!gState.rtc_valid) gState.rtc_valid = !_lostPower;
+                #endif
+                
+                LOG_I("RTC", "Modulo detetado a quente (hotplug) com sucesso!");
+                
+                DateTime utcDt = _rtc.now();
+                if (utcDt.year() >= 2020 && utcDt.year() <= 2099 && !_lostPower) {
+                    DateTime localDt = utcDt;
+                    if (gState.auto_dst && _isEU_DST(utcDt)) {
+                        localDt = DateTime(utcDt.unixtime() + 3600);
+                    }
+                    _copyToState(localDt);
+                    gState.now.unix = utcDt.unixtime();
+                    LOG_I("RTC", "Sincronizado com o RTC a quente: %04d-%02d-%02d %02d:%02d:%02d",
+                          gState.now.year, gState.now.month, gState.now.day,
+                          gState.now.hour, gState.now.min, gState.now.sec);
+                } else {
+                    // Se o RTC tem hora inválida mas o utilizador já configurou hora no software
+                    if (gState.rtc_valid) {
+                        set(gState.now.year, gState.now.month, gState.now.day,
+                            gState.now.hour, gState.now.min, gState.now.sec);
+                    }
+                }
+            }
+        }
+
+        // Se continua nao encontrado, mantem relogio por software
+        if (!gState.rtc_valid) {
+            // Garantir que temos uma data de arranque coerente em RAM
+            if (gState.now.year < 2020) {
+                gState.now.year = 2026;
+                gState.now.month = 1;
+                gState.now.day = 1;
+                gState.now.hour = 0;
+                gState.now.min = 0;
+                gState.now.sec = 0;
+                gState.now.dow = 4; // Quinta-feira
+                gState.now.unix = 1767225600UL;
+            }
+        }
+        _incrementSoftwareClock();
+        return;
+    }
+
 #ifndef WOKWI_SIM
-    // Re-check oscillator health - detects mid-run battery failure.
+    // Re-check oscillator health - detects mid-run battery failure or EMI reset.
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
-            gState.rtc_valid = false;
-            LOG_E("RTC", "Falha na bateria em operacao");
+            LOG_W("RTC", "Pilha falhou/Reset EMI detetado. A tentar restaurar RTC via RAM...");
+            set(gState.now.year, gState.now.month, gState.now.day,
+                gState.now.hour, gState.now.min, gState.now.sec);
+        } else {
+            LOG_E("RTC", "Falha na bateria e hora da RAM invalida");
         }
     }
 #endif
@@ -99,7 +157,9 @@ void RTClock::update() {
                 _errorCb();
             }
             consecErrors = 0;
+            _found = false; // Força a re-deteção a quente (hotplug) no próximo ciclo
         }
+        _incrementSoftwareClock(); // Impede que o relógio congele no display durante falhas I2C
         return; // Aborta o update para proteger o gState contra dados corrompidos
     } else {
         consecErrors = 0;
@@ -123,8 +183,6 @@ void RTClock::update() {
 // ─────────────────────────────────────────────────────────
 void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                   uint8_t  hour, uint8_t minute, uint8_t second) {
-    if (!_found) return;
-
     // Preservar a suspensão mantendo a diferença de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
 
@@ -134,9 +192,6 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // Converter para UTC se o DST estiver ativo e aplicável a esta hora
     if (gState.auto_dst) {
-        // Fast heuristic for Local -> UTC DST check
-        // LIMITATION: During the ambiguous hour of October DST end (01:00-02:00 local),
-        // we default to assuming DST is still active without sub-hour history.
         bool isDstLocal = false;
         if (month > 3 && month < 10) isDstLocal = true;
         else if (month == 3 || month == 10) {
@@ -152,13 +207,26 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         }
     }
 
-    _rtc.adjust(utcDt);
+    if (_found) {
+        _rtc.adjust(utcDt);
+    } else {
+        LOG_I("RTC", "A tentar gravar hora no RTC...");
+        if (_rtc.begin()) {
+            _found = true;
+            _rtc.adjust(utcDt);
+            LOG_I("RTC", "RTC ligado e hora gravada com sucesso!");
+        }
+    }
+
     _lostPower       = false;
     gState.rtc_valid = true;
 
+    // Atualizar a RAM imediatamente (importante para fallback software)
+    _copyToState(localDt);
+    gState.now.unix = utcDt.unixtime();
+
     // Forçar releitura para gState
     _lastReadMs = 0;
-    update();
 
     // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)
     if (gState.suspended && gState.suspended_until > 0 && oldUnixUTC > 0) {
@@ -178,9 +246,24 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 }
 
 void RTClock::setTime(uint8_t hour, uint8_t minute) {
-    if (!_found) return;
     const SystemTime& t = gState.now;
     set(t.year, t.month, t.day, hour, minute, 0);
+}
+
+void RTClock::_incrementSoftwareClock() {
+    uint32_t currentUnix = gState.now.unix;
+    if (currentUnix < 1577836800UL) { // Menor que 2020-01-01
+        currentUnix = 1767225600UL;   // 2026-01-01 00:00:00 UTC
+    }
+    
+    currentUnix += 1;
+    DateTime utcDt(currentUnix);
+    DateTime localDt = utcDt;
+    if (gState.auto_dst && _isEU_DST(utcDt)) {
+        localDt = DateTime(utcDt.unixtime() + 3600);
+    }
+    _copyToState(localDt);
+    gState.now.unix = currentUnix;
 }
 
 // ─────────────────────────────────────────────────────────

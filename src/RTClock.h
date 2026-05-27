@@ -56,6 +56,8 @@ private:
     uint32_t _lastReadMs;
     ErrorCallback _errorCb;
 
+    void _incrementSoftwareClock();
+
     static void _copyToState(const DateTime& dt);
     static bool _isEU_DST(const DateTime& dt);
 };

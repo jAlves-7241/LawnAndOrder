@@ -10,8 +10,8 @@ Encoder::Encoder(uint8_t clk, uint8_t dt, uint8_t sw)
 }
 
 void Encoder::begin() {
-    pinMode(_clk, INPUT);
-    pinMode(_dt,  INPUT);
+    pinMode(_clk, INPUT_PULLUP);
+    pinMode(_dt,  INPUT_PULLUP);
     pinMode(_sw,  INPUT_PULLUP);
     _btn_last_ms = millis();
     attachInterrupt(digitalPinToInterrupt(_clk), _isr, RISING);
