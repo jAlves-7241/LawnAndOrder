@@ -35,7 +35,7 @@
 
 #define NVS_VERSION 4   // increment when key schema changes
 
-struct RecoveryState {
+struct __attribute__((packed)) RecoveryState {
     bool active;
     uint32_t start_unix_time;
     uint8_t queuePos;
