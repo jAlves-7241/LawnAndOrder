@@ -102,7 +102,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled)
-                snprintf(lbuf, sizeof(lbuf), "[ON]  Z%d %-6s %2dmin", i+1, z.name, z.duration_min);
+                snprintf(lbuf, sizeof(lbuf), "[ON] Z%d %-6s %2dmin", i+1, z.name, z.duration_min);
             else
                 snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
@@ -209,7 +209,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled)
-                snprintf(lbuf, sizeof(lbuf), "[ON]  Z%d %-6s %2dmin", i+1, z.name, z.duration_min);
+                snprintf(lbuf, sizeof(lbuf), "[ON] Z%d %-6s %2dmin", i+1, z.name, z.duration_min);
             else
                 snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
