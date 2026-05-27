@@ -73,28 +73,35 @@ void History::record(const HistoryEntry& entry) {
     _entryToLine(entry, line, sizeof(line));
 
     if (_lineCount >= HISTORY_MAX_ENTRIES) {
+        // Caminho assíncrono: guardar entrada pendente, NVS será salvo no FINISHING
         _rotateAndAppend(line);
-    } else {
-        File f = LittleFS.open(HISTORY_FILE, "a");
-        if (!f) { LOG_E("HIST", "Falha ao abrir ficheiro"); return; }
-        f.println(line);
-        f.close();
-        _lineCount++;
+        _pendingCacheSave = true;
+        // Atualizar cache em RAM já (para UI imediata), mas NVS só no FINISHING
+        if (_cacheCount < HISTORY_DISPLAY) {
+            _cache[_cacheCount++] = entry;
+        } else {
+            for (int i = 0; i < HISTORY_DISPLAY - 1; i++) _cache[i] = _cache[i + 1];
+            _cache[HISTORY_DISPLAY - 1] = entry;
+        }
+        LOG_I("HIST", "Rotacao iniciada, NVS diferido");
+        return;   // <-- NÃO salvar NVS aqui
     }
 
-    // Atualizar o cache em memória (shift left se estiver cheio)
+    // Caminho síncrono: salvar ficheiro + NVS imediatamente (comportamento atual)
+    File f = LittleFS.open(HISTORY_FILE, "a");
+    if (!f) { LOG_E("HIST", "Falha ao abrir ficheiro"); return; }
+    f.println(line);
+    f.close();
+    _lineCount++;
+
     if (_cacheCount < HISTORY_DISPLAY) {
         _cache[_cacheCount++] = entry;
     } else {
-        for (int i = 0; i < HISTORY_DISPLAY - 1; i++) {
-            _cache[i] = _cache[i + 1];
-        }
+        for (int i = 0; i < HISTORY_DISPLAY - 1; i++) _cache[i] = _cache[i + 1];
         _cache[HISTORY_DISPLAY - 1] = entry;
     }
 
-    // Persistir cache de imediato na NVS
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
-
     LOG_I("HIST", "Registado: %s", line);
 }
 
@@ -379,11 +386,20 @@ void History::update() {
 
         if (LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
             _lineCount = _rotCopied + 1;
-            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount); // Update NVS immediately
-            LOG_I("HIST", "Rotacao concluida. Novas entradas: %d", _lineCount);
+
+            // Salvar NVS agora que _lineCount é correto E cache já foi atualizado
+            if (_pendingCacheSave) {
+                _pendingCacheSave = false;
+                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+                LOG_I("HIST", "Rotacao concluida + NVS atualizado. Entradas: %d", _lineCount);
+            } else {
+                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+                LOG_I("HIST", "Rotacao concluida. Entradas: %d", _lineCount);
+            }
         } else {
             LOG_E("HIST", "rename falhou - manter original");
             LittleFS.remove("/hist_tmp.csv");
+            _pendingCacheSave = false;
         }
         _rotState = RotState::IDLE;
     }
