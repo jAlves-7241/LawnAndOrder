@@ -64,6 +64,7 @@ void WateringController::begin() {
                     _queue[i].duration_ms = rs.queue[i].duration_ms;
                 }
                 _queuePos = rs.queuePos;
+                memcpy(_zoneDurMin, rs.zone_dur_min, sizeof(_zoneDurMin));
                 
                 // Timestamp original do arranque do ciclo (convertido para local time)
                 DateTime utcDT(rs.start_unix_time);
@@ -231,6 +232,7 @@ void WateringController::update() {
                     rs.queue[i].zone_idx = _queue[i].zone_idx;
                     rs.queue[i].duration_ms = _queue[i].duration_ms;
                 }
+                memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
                 storage.saveRecoveryState(rs);
             }
         } else {
@@ -287,6 +289,7 @@ void WateringController::_startNextZone() {
             rs.queue[i].zone_idx = _queue[i].zone_idx;
             rs.queue[i].duration_ms = _queue[i].duration_ms;
         }
+        memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
         storage.saveRecoveryState(rs);
     }
 

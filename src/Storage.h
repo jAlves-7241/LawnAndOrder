@@ -44,6 +44,7 @@ struct __attribute__((packed)) RecoveryState {
         uint8_t  zone_idx;
         uint32_t duration_ms;
     } queue[NUM_ZONES];
+    uint8_t zone_dur_min[NUM_ZONES];
     WaterTrigger trigger;
 };
 
