@@ -54,14 +54,14 @@
 #define SCHED_CUSTOM_SLOTS 1
 
 // ── Zone Defaults ─────────────────────────────────────────
-#define ZONE1_NAME "Jardim"
-#define ZONE1_DUR 15
-#define ZONE2_NAME "Horta"
-#define ZONE2_DUR 15
-#define ZONE3_NAME "Relvado"
-#define ZONE3_DUR 10
-#define ZONE4_NAME "Sebe"
-#define ZONE4_DUR 10
+#define ZONE1_NAME "Entrada"
+#define ZONE1_DUR 8
+#define ZONE2_NAME "Portao"
+#define ZONE2_DUR 8
+#define ZONE3_NAME "Garagem"
+#define ZONE3_DUR 8
+#define ZONE4_NAME "Artificial"
+#define ZONE4_DUR 0
 
 // ── RTC / Tempo ───────────────────────────────────────────
 #define AUTO_DST_DEFAULT true // Ajuste automático de horário de verão (EU)
@@ -83,7 +83,7 @@
 #define ZONE_TEST_DURATION_S 5    // seconds per zone in test mode
 #define ZONE_WAIT_DELAY_MS 5000UL // ms to wait between zones closing/opening
 #define BACKLIGHT_TIMEOUT_NEVER 0xFFFFFFFFUL // sentinel - never turn off
-#define DISPLAY_OFF_DELAY_MS 60000UL // turn off pixels 60s after backlight
+#define DISPLAY_OFF_DELAY_MS 20000UL // turn off pixels 20s after backlight
 
 // ── Otimizações e Segurança ───────────────────────────────
 #define WDT_TIMEOUT_S 8        // Watchdog timeout em segundos
