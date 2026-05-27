@@ -7,6 +7,10 @@ void ScreenIdle::onEnter(UI& ui) {
     _lastWateringActive = false;
     _lastProgress = 255;
     _lastMinute = 255;
+    _lastSuspended = false;
+    _lastMode = AppMode::MEDIO;
+    _lastNextH = 0xFF;
+    _lastNextM = 0xFF;
     render(ui);
 }
 
@@ -33,6 +37,10 @@ void ScreenIdle::update(UI& ui) {
         needsRender = true;
     }
 
+    if (_lastSuspended != gState.suspended) needsRender = true;
+    if (_lastMode != gState.mode) needsRender = true;
+    if (_lastNextH != gState.next_hour || _lastNextM != gState.next_min) needsRender = true;
+
     if (needsRender) {
         render(ui);
     }
@@ -46,6 +54,10 @@ void ScreenIdle::fullRender(UI& ui) {
     _lastWateringActive = gState.watering.active;
     _lastProgress = gState.watering.progress_pct;
     _lastMinute = gState.now.min;
+    _lastSuspended = gState.suspended;
+    _lastMode = gState.mode;
+    _lastNextH = gState.next_hour;
+    _lastNextM = gState.next_min;
 
     char b0[LCD_COLS+1], b3[LCD_COLS+1];
 
