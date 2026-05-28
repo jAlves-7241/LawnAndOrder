@@ -69,6 +69,21 @@ void History::record(const HistoryEntry& entry) {
         }
     }
 
+    if (_exportState != ExportState::IDLE) {
+        LOG_W("HIST", "Exportacao pendente, forçar conclusao sincrona...");
+        uint32_t bailMs = millis();
+        while (_exportState != ExportState::IDLE) {
+            esp_task_wdt_reset();
+            update();
+            if (millis() - bailMs > 5000) {
+                LOG_E("HIST", "Export stuck, aborting");
+                if (_exportFile) _exportFile.close();
+                _exportState = ExportState::IDLE;
+                break;
+            }
+        }
+    }
+
     char line[LINE_BUF];
     _entryToLine(entry, line, sizeof(line));
 
@@ -126,6 +141,11 @@ void History::clear() {
         if (_rotDst) _rotDst.close();
         LittleFS.remove("/hist_tmp.csv");
         _rotState = RotState::IDLE;
+    }
+    
+    if (_exportState != ExportState::IDLE) {
+        if (_exportFile) _exportFile.close();
+        _exportState = ExportState::IDLE;
     }
     
     LittleFS.remove(HISTORY_FILE);
@@ -323,7 +343,7 @@ void History::_rotateAndAppend(const char* newLine) {
 }
 
 void History::update() {
-    if (_rotState == RotState::IDLE) return;
+    if (_rotState == RotState::IDLE && _exportState == ExportState::IDLE) return;
 
     if (_rotState == RotState::COPYING) {
         char chunk[256];
@@ -460,6 +480,10 @@ void History::update() {
 void History::startExport() {
     if (!_ready || _lineCount == 0) return;
     if (_exportState != ExportState::IDLE) return;
+    if (_rotState != RotState::IDLE) {
+        LOG_W("HIST", "Nao e possivel exportar durante a rotacao de historico");
+        return;
+    }
 
     _exportFile = LittleFS.open(HISTORY_FILE, "r");
     if (!_exportFile) {
