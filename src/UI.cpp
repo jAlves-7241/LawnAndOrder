@@ -286,6 +286,18 @@ void UI::dispatchAction(const char* action) {
         return;
     }
 
+    if (!strcmp(action, "export_hist")) {
+        if (history.entryCount() == 0) {
+            _screenInfo.setup("! AVISO !", "Historico vazio.", "Nada para exportar.", "", MenuID::DEF_AVANCADO);
+            changeScreen(&_screenInfo);
+        } else {
+            history.startExport();
+            _screenExport.setup(MenuID::DEF_AVANCADO);
+            changeScreen(&_screenExport);
+        }
+        return;
+    }
+
     if (!strcmp(action, "toggle_dst")) {
         gState.auto_dst = !gState.auto_dst;
         _configChanged = true;

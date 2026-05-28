@@ -403,4 +403,92 @@ void History::update() {
         }
         _rotState = RotState::IDLE;
     }
+
+    // ── Export via Serial (async) ──
+    if (_exportState == ExportState::SENDING) {
+        char chunk[256];
+        int bytesRead = _exportFile.read((uint8_t*)chunk, sizeof(chunk));
+
+        if (bytesRead > 0) {
+            for (int i = 0; i < bytesRead; i++) {
+                char c = chunk[i];
+                if (c == '\n') {
+                    _exportLineBuf[_exportLinePos] = '\0';
+                    // Trim CR
+                    while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
+                        _exportLineBuf[--_exportLinePos] = '\0';
+                    }
+                    if (_exportLinePos > 0) {
+                        Serial.println(_exportLineBuf);
+                        _exportSent++;
+                    }
+                    _exportLinePos = 0;
+                } else if (_exportLinePos < sizeof(_exportLineBuf) - 1) {
+                    _exportLineBuf[_exportLinePos++] = c;
+                }
+            }
+        } else {
+            // EOF — process last line if no trailing newline
+            if (_exportLinePos > 0) {
+                _exportLineBuf[_exportLinePos] = '\0';
+                while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
+                    _exportLineBuf[--_exportLinePos] = '\0';
+                }
+                if (_exportLinePos > 0) {
+                    Serial.println(_exportLineBuf);
+                    _exportSent++;
+                }
+                _exportLinePos = 0;
+            }
+            _exportState = ExportState::FOOTER;
+        }
+        return; // yield
+    }
+
+    if (_exportState == ExportState::FOOTER) {
+        _exportFile.close();
+        Serial.printf("--- FIM: %d registos ---\n", _exportSent);
+        LOG_I("HIST", "Exportacao concluida: %d registos", _exportSent);
+        _exportState = ExportState::IDLE;
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// Serial Export
+// ─────────────────────────────────────────────────────────
+
+void History::startExport() {
+    if (!_ready || _lineCount == 0) return;
+    if (_exportState != ExportState::IDLE) return;
+
+    _exportFile = LittleFS.open(HISTORY_FILE, "r");
+    if (!_exportFile) {
+        LOG_E("HIST", "Falha ao abrir ficheiro para exportacao");
+        return;
+    }
+
+    _exportSent = 0;
+    _exportTotal = _lineCount;
+    _exportLinePos = 0;
+
+    // Print CSV header
+    Serial.println();
+    Serial.println("--- HISTORICO LAWN&ORDER ---");
+    Serial.println("Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)");
+
+    _exportState = ExportState::SENDING;
+    LOG_I("HIST", "Exportacao iniciada: %d registos", _exportTotal);
+}
+
+bool History::isExporting() const {
+    return _exportState != ExportState::IDLE;
+}
+
+uint8_t History::exportProgress() const {
+    if (_exportTotal == 0) return 100;
+    return (uint8_t)(((uint32_t)_exportSent * 100) / _exportTotal);
+}
+
+uint16_t History::exportSent() const {
+    return _exportSent;
 }

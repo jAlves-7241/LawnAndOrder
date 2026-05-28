@@ -178,6 +178,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         }
         add_item(blLabel,           "go:blsel");
         add_item("Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
+        add_item("Exportar Historico", "export_hist");
         add_item("Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
         add_item("<- Voltar",       "go:def");
         break;

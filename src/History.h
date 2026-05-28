@@ -29,6 +29,12 @@ public:
 
     void    update();
 
+    // Serial export
+    void     startExport();
+    bool     isExporting() const;
+    uint8_t  exportProgress() const;
+    uint16_t exportSent() const;
+
 private:
     bool     _ready = false;
     uint16_t _lineCount = 0;   // cached line count - avoids re-reading file on every record()
@@ -52,6 +58,15 @@ private:
     uint8_t      _cacheCount = 0;
     
     bool         _pendingCacheSave = false;   // NVS save diferido (rotação async)
+
+    // ── Export via Serial (async) ──
+    enum class ExportState : uint8_t { IDLE, SENDING, FOOTER };
+    ExportState _exportState = ExportState::IDLE;
+    File        _exportFile;
+    uint16_t    _exportSent;
+    uint16_t    _exportTotal;
+    char        _exportLineBuf[64];
+    size_t      _exportLinePos;
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
