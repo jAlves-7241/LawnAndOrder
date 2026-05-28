@@ -26,7 +26,7 @@ void ScreenExport::update(UI& ui) {
     if (!history.isExporting()) {
         // Exportação concluída — transicionar para ScreenDone
         char msg[LCD_COLS + 1];
-        snprintf(msg, sizeof(msg), "%d registos enviados", history.exportSent());
+        snprintf(msg, sizeof(msg), "%d enviados", history.exportSent());
         ui.getScreenDone().setup("Exportacao concluida", msg);
         ui.getScreenDone().setBackMenu(_backMenu);
         ui.changeScreen(&ui.getScreenDone());
