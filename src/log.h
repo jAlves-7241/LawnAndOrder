@@ -26,30 +26,41 @@
 #define LOG_LEVEL LVL_INFO
 #endif
 
+// ── Suspensão temporária de logs ─────────────────────────
+// Quando true, todas as macros LOG_* são silenciadas em runtime.
+// Usado pelo módulo History para evitar intercalar logs com dados
+// CSV durante a exportação via Serial.
+extern bool _log_suspended;
+
 // ── Macros ────────────────────────────────────────────────
 // A tag é uma string literal (ex: "NVS", "RTC", "REGA").
 // O \n é adicionado automaticamente - não incluir no fmt.
+//
+// AVISO: Estas macros usam Serial.printf() e NÃO são seguras
+// para uso dentro de ISR (IRAM_ATTR). Utilizar apenas no loop()
+// ou em funções chamadas a partir do loop().
 
 #if LOG_LEVEL >= LVL_ERROR
-  #define LOG_E(tag, fmt, ...) Serial.printf("[" tag "] ERRO: " fmt "\n", ##__VA_ARGS__)
+  #define LOG_E(tag, fmt, ...) do { if (!_log_suspended) Serial.printf("[" tag "] ERRO: " fmt "\n", ##__VA_ARGS__); } while(0)
 #else
   #define LOG_E(tag, fmt, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL >= LVL_WARN
-  #define LOG_W(tag, fmt, ...) Serial.printf("[" tag "] AVISO: " fmt "\n", ##__VA_ARGS__)
+  #define LOG_W(tag, fmt, ...) do { if (!_log_suspended) Serial.printf("[" tag "] AVISO: " fmt "\n", ##__VA_ARGS__); } while(0)
 #else
   #define LOG_W(tag, fmt, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL >= LVL_INFO
-  #define LOG_I(tag, fmt, ...) Serial.printf("[" tag "] " fmt "\n", ##__VA_ARGS__)
+  #define LOG_I(tag, fmt, ...) do { if (!_log_suspended) Serial.printf("[" tag "] " fmt "\n", ##__VA_ARGS__); } while(0)
 #else
   #define LOG_I(tag, fmt, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL >= LVL_DEBUG
-  #define LOG_D(tag, fmt, ...) Serial.printf("[" tag "] " fmt "\n", ##__VA_ARGS__)
+  #define LOG_D(tag, fmt, ...) do { if (!_log_suspended) Serial.printf("[" tag "] " fmt "\n", ##__VA_ARGS__); } while(0)
 #else
   #define LOG_D(tag, fmt, ...) ((void)0)
 #endif
+

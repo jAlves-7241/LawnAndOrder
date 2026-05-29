@@ -9,11 +9,8 @@
 #include <stdlib.h>
 #include "log.h"
 
-extern WateringController wateringCtrl;
-extern RTClock rtclock;
-extern Scheduler scheduler;
-extern Storage storage;
-extern History history;
+// Nota: extern wateringCtrl, rtclock, scheduler, storage, history
+// já declarados nos respectivos headers (.h) incluídos acima.
 
 // ─────────────────────────────────────────────────────────
 // Constructor / begin
@@ -164,6 +161,8 @@ bool UI::executeConfirmed(const char* tag) {
 
     if (!strcmp(tag, "reset")) {
         storage.clear();
+        Serial.flush();   // Garantir que logs pendentes no buffer UART são transmitidos
+        delay(50);
         ESP.restart();
         return true;
     }
@@ -282,6 +281,18 @@ void UI::dispatchAction(const char* action) {
             int ci = atoi(type+1);
             _screenTimeEdit.setup(TimeEditContext::CUSTOM_CYCLE, ci, _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
             changeScreen(&_screenTimeEdit);
+        }
+        return;
+    }
+
+    if (!strcmp(action, "export_hist")) {
+        if (history.entryCount() == 0) {
+            _screenInfo.setup("! AVISO !", "Historico vazio.", "Nada para exportar.", "", MenuID::DEF_AVANCADO);
+            changeScreen(&_screenInfo);
+        } else {
+            history.startExport();
+            _screenExport.setup(MenuID::DEF_AVANCADO);
+            changeScreen(&_screenExport);
         }
         return;
     }
