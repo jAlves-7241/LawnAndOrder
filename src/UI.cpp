@@ -160,6 +160,7 @@ bool UI::executeConfirmed(const char* tag) {
     LOG_I("UI", "Confirmado tag: %s", tag);
 
     if (!strcmp(tag, "reset")) {
+        history.clear();
         storage.clear();
         Serial.flush();   // Garantir que logs pendentes no buffer UART são transmitidos
         delay(50);

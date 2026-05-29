@@ -156,6 +156,7 @@ void History::clear() {
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
     _cacheCount = 0;
+    _pendingCacheSave = false;
     memset(_cache, 0, sizeof(_cache));
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
     LOG_I("HIST", "Historico apagado");
@@ -501,14 +502,15 @@ void History::startExport() {
     _exportTotal = _lineCount;
     _exportLinePos = 0;
 
+    // Suspender logs temporariamente para evitar corromper o output CSV no serial
+    _log_suspended = true;
+
     // Print CSV header
     Serial.println();
     Serial.println("--- HISTORICO LAWN&ORDER ---");
     Serial.println("Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)");
 
     _exportState = ExportState::SENDING;
-    LOG_I("HIST", "Exportacao iniciada: %d registos", _exportTotal);
-    _log_suspended = true;
 }
 
 bool History::isExporting() const {

@@ -17,6 +17,7 @@ private:
     void _cmdSetTime(char* args);
     void _cmdExportConfig();
     void _cmdImportConfig(char* hexStr);
+    void _cmdClearHistory();
     void _cmdReboot();
 };
 
