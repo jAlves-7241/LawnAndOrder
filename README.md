@@ -121,6 +121,39 @@ O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo
 
 ---
 
+### Assistente de Configuração (Setup Wizard)
+
+No primeiro arranque (ou após um reset de fábrica), o sistema entra automaticamente no **Assistente de Configuração**. Este guia interativo orienta o utilizador passo a passo nas seguintes etapas cruciais:
+1. **Ecrã de Boas-Vindas**: Apresentação inicial do assistente.
+2. **Acerto de Data e Hora**: Definição inicial do relógio local em tempo real.
+3. **Seleção de Modo**: Escolha do modo automático de rega (Intenso, Médio, Fraco ou Personalizado).
+4. **Configuração Avançada (Modo Personalizado)**: Se selecionado, define a frequência em dias, o número de ciclos diários e o horário preciso de cada ciclo.
+5. **Configuração das Zonas**: Ativação/desativação de cada zona e respetivos tempos individuais de rega.
+6. **Ecrã de Conclusão**: Guarda as definições de forma persistente na NVS e inicia o sistema no estado de repouso (`IDLE`).
+
+Qualquer progresso ou recuo no assistente é suportado de forma intuitiva rodando e clicando no encoder.
+
+---
+
+### Terminal de Comando Serial CLI
+
+O Lawn & Order dispõe de um terminal de comandos interativo acessível através da porta de comunicação Serial a **115200 baud** (com terminação de linha `LF` ou `CR`). O terminal funciona de forma totalmente não bloqueante no loop de execução do ESP32.
+
+#### Comandos Disponíveis:
+
+| Comando | Descrição | Exemplo / Formato |
+|---|---|---|
+| **`help`** ou **`?`** | Mostra o menu de ajuda com a lista de comandos. | `help` |
+| **`status`** | Relatório detalhado em tempo real de telemetria (hora local e UTC, estado do RTC, modo ativo, suspensão, configuração das 4 zonas de rega e estado da rega em curso com percentagem de progresso). | `status` |
+| **`set_time`** | Define a data e hora do hardware RTC, com validação inteligente contra anos fora de gama (`2020-2099`), dias inválidos por mês e anos bissextos. Atualiza o agendamento imediatamente. | `set_time 2026-05-29 15:30:00` |
+| **`export_config`** | Gera e exporta um **Hex Blob** seguro contendo todas as configurações atuais do sistema para cópia de segurança. | `export_config` |
+| **`import_config`** | Importa as definições a partir do Hex Blob fornecido, valida a integridade, grava-as na NVS Flash e atualiza a interface LCD. | `import_config <68_caracteres_hex>` |
+| **`reboot`** | Efetua o reinício físico de segurança do ESP32. | `reboot` |
+
+> **Salvaguarda de Transmissão:** O terminal descarta automaticamente qualquer entrada serial e permanece silencioso sempre que a funcionalidade de **Exportação de Histórico** via LittleFS estiver ativa, evitando corrupção ou colisão na porta série.
+
+---
+
 ## Hardware necessário
 
 | Componente | Especificação |
@@ -157,7 +190,7 @@ O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo
 
 | Funcionalidade | Estado |
 |---|---|
-| Interface LCD + encoder (FSM com 7 estados) | ✅ Completo |
+| Interface LCD + encoder (Ecrãs modulares OOP e MenuBuilder) | ✅ Completo |
 | Modos automáticos com horários configuráveis | ✅ Completo |
 | Rega manual geral e personalizada | ✅ Completo |
 | Testes de zona (5s por zona) | ✅ Completo |
@@ -173,8 +206,14 @@ O fluxo guia-te pelo dia, mês, ano, hora e minutos. Apenas no final do processo
 | Modo Personalizado (horário livre) | ✅ Completo |
 | Acertar data completa (dia/mês/ano) via encoder | ✅ Completo |
 | Horário de Verão Automático | ✅ Completo |
-| Assistente de setup inicial | ✅ Completo |
+| Assistente de setup inicial (Setup Wizard) | ✅ Completo |
 | Sistema de logs com níveis de severidade | ✅ Completo |
+| Terminal Serial CLI não bloqueante | ✅ Completo |
+| Recuperação automática de barramento I2C preso | ✅ Completo |
+| Watchdog de hardware (ESP-IDF) integrado | ✅ Completo |
+| Cache binária NVS de histórico para arranque rápido | ✅ Completo |
+| NVS flash batching (Diferimento de escrita) | ✅ Completo |
+| Exportação assíncrona de CSV via Serial | ✅ Completo |
 
 
 ---
@@ -223,6 +262,15 @@ Ctrl + Alt + S
 ```
 rega-esp32/
 ├── src/
+│   ├── ui/                        ecrãs modulares e construtor de menus (UIScreen, MenuBuilder, etc.)
+│   │   ├── UIScreen.h             classe base para todos os ecrãs polimórficos
+│   │   ├── UITypes.h              definições de enums, contextos e passos de configuração
+│   │   ├── MenuBuilder.h / .cpp   construção dinâmica de menus e items
+│   │   ├── ScreenCommon.h / .cpp  ecrãs comuns (ScreenInfo, ScreenConfirm, ScreenDone)
+│   │   ├── ScreenEditors.h / .cpp ecrãs de edição (ScreenDurPick, ScreenDateEdit, ScreenTimeEdit)
+│   │   ├── ScreenIdle.h / .cpp    ecrã principal com telemetria e barra de progresso
+│   │   ├── ScreenMenu.h / .cpp    renderização e navegação de menus dinâmicos
+│   │   └── ScreenSetup.h / .cpp   ecrãs do assistente de configuração inicial (Setup Wizard)
 │   ├── config.h                   pinos, constantes, horários padrão, versão
 │   ├── log.h                      macros de log com níveis (ERRO/AVISO/INFO/DEBUG)
 │   ├── AppState.h / .cpp          estado global (gState), tabela de horários
@@ -231,9 +279,10 @@ rega-esp32/
 │   ├── RTClock.h / .cpp           módulo DS3231 (DS1307 em Wokwi)
 │   ├── Scheduler.h / .cpp         agendamento automático, cálculo de próxima rega
 │   ├── WateringController.h/.cpp  fila de zonas, controlo de relés, registo de histórico
-│   ├── History.h / .cpp           leitura/escrita do histórico CSV em LittleFS
+│   ├── History.h / .cpp           leitura/escrita de CSV e exportação assíncrona
 │   ├── Storage.h / .cpp           persistência de configurações em NVS
-│   ├── UI.h / .cpp                máquina de estados da interface (7 estados, 10 menus)
+│   ├── Terminal.h / .cpp          terminal serial de comandos CLI não bloqueante
+│   ├── UI.h / .cpp                gestor central de ecrãs e navegação
 │   └── main.cpp                   setup() e loop()
 ├── diagram.json                   circuito para o simulador Wokwi
 ├── platformio.ini                 configuração PlatformIO
@@ -244,24 +293,31 @@ rega-esp32/
 
 ```
 setup()
-  initAppState()          defaults em RAM
-  storage.begin/load()    sobrescreve RAM com valores guardados em NVS
-  history.begin()         monta LittleFS
-  display/encoder.begin() hardware UI
-  rtclock.begin()         DS3231 → gState.now, gState.rtc_valid
-  wateringCtrl.begin()    configura pinos de relé
-  scheduler.begin()       calcula primeiro next_hour/min
-  ui.begin()              desenha ecrã de idle
+  Pinos de relé forced OFF   Segurança física imediata dos relés
+  esp_task_wdt_init()        Inicialização do Watchdog de hardware (5 segundos)
+  initAppState()             Carrega definições por omissão em RAM
+  storage.begin/load()       Sobrescreve RAM com valores guardados em NVS
+  history.begin()            Monta LittleFS
+  display/encoder.begin()    Inicializa hardware da UI
+  rtclock.begin()            DS3231 → gState.now, gState.rtc_valid (com callback recoverI2C)
+  wateringCtrl.begin()       Configura pinos de relé
+  Limpa suspensão expirada   BUG-5 fix: limpa suspensão stale da NVS caso expirada
+  scheduler.begin()          Calcula próximo ciclo com base no RTC e no modo
+  ui.begin()                 Configura primeiro ecrã (Setup Wizard ou IDLE)
+  terminal.begin()           Inicializa o Terminal Serial de comandos
 ```
 
 ### Fluxo do loop
 
 ```
 loop() - executado continuamente
-  rtclock.update()       lê DS3231 → gState.now (1×/seg)
-  scheduler.update()     verifica trigger, inicia rega, expira suspensão
-  ui.update()            trata encoder, redesenha LCD
-  wateringCtrl.update()  avança temporizador de zona, controla relés
+  esp_task_wdt_reset()   Alimenta o Watchdog de hardware (WDT) em cada iteração
+  rtclock.update()       Lê DS3231 → gState.now (1×/seg)
+  scheduler.update()     Verifica triggers automáticos e expiração de suspensão
+  ui.update()            Trata inputs do encoder, processa timeouts de ecrã/backlight
+  wateringCtrl.update()  Avança temporizadores de zona e ativa/desativa relés
+  history.update()       Executa a rotação e cópia de ficheiro CSV em background
+  terminal.update()      Processa a entrada serial não bloqueante e comandos CLI
 ```
 
 ---
@@ -272,7 +328,9 @@ loop() - executado continuamente
 
 **ISR no encoder** - A rotação é capturada por interrupção hardware (`IRAM_ATTR`). O `loop()` lê apenas o delta acumulado, evitando perder passos quando o bus I2C está ocupado.
 
-**Máquina de estados da UI** - 7 estados (`IDLE`, `MENU`, `INFO`, `CONFIRM`, `DONE`, `DUR_PICK`, `TIME_EDIT`). Ações codificadas em strings compactas nos itens de menu (ex: `"confirm:...|main|general"`) - menus declarados como dados estáticos, sem callbacks.
+**Arquitetura polimórfica de UI (UIScreen)** - Para garantir máxima escalabilidade e legibilidade do código, a antiga máquina de estados monolítica de 7 estados foi completamente reestruturada numa arquitetura modular orientada a objetos. Cada ecrã da interface física é uma classe especializada que herda de `UIScreen` (como `ScreenIdle`, `ScreenMenu`, `ScreenSetup`, etc.). Cada ecrã gere individualmente o seu desenho (`render`), interações do encoder (`handleRotation` / `handleClick`) e atualização de tempo (`update`).
+
+**MenuBuilder e dispatch de ações** - O `MenuBuilder` constrói dinamicamente as estruturas de dados dos menus e submenus, incluindo itens com ações codificadas em formato string e tags de controlo compactas (ex: `"confirm:Iniciar rega...|main|general"`). O gestor central `UI` despacha as ações para o ecrã correspondente de forma desacoplada e limpa.
 
 **`WaterTrigger` no histórico** - Cada ciclo é marcado com `AUTO`/`MANUAL`/`CUSTOM`/`TEST`. O caractere ASCII do enum é escrito diretamente no CSV (`A`, `M`, `C`, `T`), eliminando conversões.
 
@@ -287,6 +345,10 @@ loop() - executado continuamente
 **NVS Batching (Diferimento de Flash)** - Para preservar a integridade da memória flash NVS contra o desgaste das rotações de alta frequência do encoder, as escritas em flash (`storage.save()`) são agrupadas em batch e efetuadas apenas na transição do ecrã de menu de regresso ao ecrã principal `IDLE`.
 
 **Scheduler O(1) com Salto Modular** - Para o modo `EVERY_X_DAYS`, eliminámos a pesquisa sequencial temporal linear diária. O Scheduler calcula a correspondência do dia utilizando aritmética modular em tempo constante $O(1)$, com salvaguardas contra o recuo abrupto no relógio do RTC (ex: falha de bateria).
+
+**Recuperação automática de barramento I2C preso (`recoverI2C`)** - Em caso de ruído ou falha transitória que prenda a linha SDA em LOW (um problema clássico em barramentos I2C com cabos longos), a rotina de erro do RTC liberta o barramento gerando manualmente até 9 pulsos de relógio no pino SCL, finalizando com uma condição de STOP manual. Isto permite ao sistema recuperar a comunicação com o ecrã LCD e o RTC sem necessidade de reiniciar o microcontrolador.
+
+**Segurança física de hardware em boot** - Ao arrancar o ESP32, os pinos de GPIO podem flutuar eletricamente e causar ativações breves e indesejadas nos relés de rega. Para mitigar isto, o Lawn & Order força de forma imediata o estado de todos os relés para desligados (`RELAY_OFF`) como primeira ação absoluta da função `setup()`, antes de qualquer outra inicialização de periféricos ou sistema de ficheiros.
 
 ---
 
