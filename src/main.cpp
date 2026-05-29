@@ -13,10 +13,11 @@
 #include "UI.h"
 #include "WateringController.h"
 #include "log.h"
+#include "Terminal.h"
 
 Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
-static UI      ui(display, encoder);
+UI             ui(display, encoder);
 
 void recoverI2C() {
     esp_task_wdt_reset();
@@ -103,6 +104,7 @@ void setup() {
 
     scheduler.begin();    // computes next_hour/min from live RTC + current mode
     ui.begin();
+    terminal.begin();
 
     LOG_I("SYS", "Sistema pronto.");
 }
@@ -115,4 +117,5 @@ void loop() {
     ui.update();            // handles encoder, redraws LCD
     wateringCtrl.update();  // advances zone timer, drives relays
     history.update();       // processes background file rotations
+    terminal.update();
 }
