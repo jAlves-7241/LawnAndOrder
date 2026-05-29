@@ -109,6 +109,8 @@ void Terminal::_processCommand(char* cmd) {
         _cmdExportConfig();
     } else if (strcmp(trimmed, "import_config") == 0) {
         _cmdImportConfig(args);
+    } else if (strcmp(trimmed, "clear_history") == 0) {
+        _cmdClearHistory();
     } else if (strcmp(trimmed, "reboot") == 0) {
         _cmdReboot();
     } else {
@@ -127,6 +129,7 @@ void Terminal::_cmdHelp() {
     Serial.println("                               Ex: set_time 2026-05-29 15:30:00");
     Serial.println("  export_config              - Exporta a configuracao atual (Hex Blob)");
     Serial.println("  import_config <68_hex>     - Importa configuracoes a partir do Hex Blob");
+    Serial.println("  clear_history              - Apaga completamente o historico de regas do sistema");
     Serial.println("  reboot                     - Reinicia o controlador ESP32");
     Serial.println("======================================================================");
 }
@@ -283,6 +286,14 @@ void Terminal::_cmdImportConfig(char* hexStr) {
     } else {
         Serial.println("Erro: Falha na importacao do Hex Blob. Verifique a integridade da string.");
     }
+}
+
+void Terminal::_cmdClearHistory() {
+    Serial.println("A limpar o historico de regas...");
+    history.clear();
+    // Reposicionar ecra fisico para Idle para refletir o historico limpo imediatamente
+    ui.goIdle();
+    Serial.println("Historico de regas limpo com sucesso!");
 }
 
 void Terminal::_cmdReboot() {

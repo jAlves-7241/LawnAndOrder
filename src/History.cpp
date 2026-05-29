@@ -156,6 +156,7 @@ void History::clear() {
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
     _cacheCount = 0;
+    _pendingCacheSave = false;
     memset(_cache, 0, sizeof(_cache));
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
     LOG_I("HIST", "Historico apagado");
