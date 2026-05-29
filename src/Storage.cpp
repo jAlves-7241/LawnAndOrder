@@ -5,28 +5,6 @@
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS = "rega";
 
-struct __attribute__((packed)) AppConfigBlob {
-    uint8_t  version;
-    uint8_t  mode;
-    uint32_t backlight_timeout_ms;
-    uint32_t suspended_until;
-    uint32_t custom_ref_day;
-    bool     auto_dst;
-    bool     setup_done;
-    
-    struct {
-        bool    enabled;
-        uint8_t duration_min;
-    } zones[NUM_ZONES];
-    
-    uint8_t  custom_interval_days;
-    uint8_t  custom_slot_count;
-    struct {
-        uint8_t hour;
-        uint8_t minute;
-    } custom_slots[MAX_SLOTS_PER_MODE];
-};
-
 static Preferences prefs;
 Storage storage;
 
@@ -57,15 +35,19 @@ bool Storage::load() {
     if (blob.mode < (uint8_t)AppMode::_COUNT)
         gState.mode = (AppMode)blob.mode;
 
-    gState.backlight_timeout_ms = blob.backlight_timeout_ms;
+    if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER && blob.backlight_timeout_ms < 30000UL) {
+        gState.backlight_timeout_ms = 120000UL; // Fallback para 2 minutos
+    } else {
+        gState.backlight_timeout_ms = blob.backlight_timeout_ms;
+    }
     gState.suspended_until      = blob.suspended_until;
     gState.custom_ref_day       = blob.custom_ref_day;
-    gState.auto_dst             = blob.auto_dst;
-    gState.setup_done           = blob.setup_done;
-    gState.suspended            = (gState.suspended_until > 0);
+    gState.auto_dst             = !!blob.auto_dst;
+    gState.setup_done           = !!blob.setup_done;
+    gState.suspended            = (gState.suspended_until > gState.now.unix);
 
     for (int i = 0; i < NUM_ZONES; i++) {
-        gState.zones[i].enabled = blob.zones[i].enabled;
+        gState.zones[i].enabled = !!blob.zones[i].enabled;
         gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : gState.zones[i].duration_min;
     }
 
@@ -153,5 +135,110 @@ bool Storage::loadRecoveryState(RecoveryState& rs) {
 void Storage::saveRecoveryState(const RecoveryState& rs) {
     if (!_ready) return;
     prefs.putBytes("recv", &rs, sizeof(rs));
+}
+
+// ─────────────────────────────────────────────────────────
+void Storage::exportConfigHex(char* hexOut) {
+    AppConfigBlob blob = {};
+    blob.version = NVS_VERSION;
+    blob.mode    = (uint8_t)gState.mode;
+    blob.backlight_timeout_ms = gState.backlight_timeout_ms;
+    blob.suspended_until      = gState.suspended_until;
+    blob.custom_ref_day       = gState.custom_ref_day;
+    blob.auto_dst             = gState.auto_dst;
+    blob.setup_done           = gState.setup_done;
+
+    for (int i = 0; i < NUM_ZONES; i++) {
+        blob.zones[i].enabled      = gState.zones[i].enabled;
+        blob.zones[i].duration_min = gState.zones[i].duration_min;
+    }
+
+    const ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    blob.custom_interval_days = cs.interval_days;
+    blob.custom_slot_count    = cs.slot_count;
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        blob.custom_slots[i].hour   = cs.slots[i].hour;
+        blob.custom_slots[i].minute = cs.slots[i].minute;
+    }
+
+    // Convert to hex string
+    uint8_t* ptr = (uint8_t*)&blob;
+    for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
+        sprintf(hexOut + (i * 2), "%02X", ptr[i]);
+    }
+    hexOut[sizeof(AppConfigBlob) * 2] = '\0';
+}
+
+// ─────────────────────────────────────────────────────────
+bool Storage::importConfigHex(const char* hexIn) {
+    if (!hexIn) return false;
+    size_t len = strlen(hexIn);
+    if (len != sizeof(AppConfigBlob) * 2) {
+        LOG_W("NVS", "Importacao falhou: comprimento de string invalido (%d vs %d)", len, sizeof(AppConfigBlob) * 2);
+        return false;
+    }
+
+    // Validação de caracteres hexadecimais
+    for (size_t i = 0; i < len; i++) {
+        char c = hexIn[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+            LOG_W("NVS", "Importacao falhou: caracter invalido encontrado (%c)", c);
+            return false;
+        }
+    }
+
+    AppConfigBlob blob = {};
+    uint8_t* ptr = (uint8_t*)&blob;
+    for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
+        char tmp[3] = { hexIn[i * 2], hexIn[i * 2 + 1], '\0' };
+        char* endptr;
+        ptr[i] = (uint8_t)strtol(tmp, &endptr, 16);
+        if (*endptr != '\0') return false;
+    }
+
+    if (blob.version != NVS_VERSION) {
+        LOG_W("NVS", "Importacao falhou: versao incompativel (%d vs %d)", blob.version, NVS_VERSION);
+        return false;
+    }
+
+    // Aplicar e validar limites de segurança
+    if (blob.mode < (uint8_t)AppMode::_COUNT) {
+        gState.mode = (AppMode)blob.mode;
+    } else {
+        LOG_W("NVS", "Importacao falhou: modo invalido (%d)", blob.mode);
+        return false;
+    }
+
+    if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER && blob.backlight_timeout_ms < 30000UL) {
+        gState.backlight_timeout_ms = 120000UL; // Fallback para 2 minutos
+    } else {
+        gState.backlight_timeout_ms = blob.backlight_timeout_ms;
+    }
+    gState.suspended_until      = blob.suspended_until;
+    gState.custom_ref_day       = blob.custom_ref_day;
+    gState.auto_dst             = !!blob.auto_dst;
+    gState.setup_done           = !!blob.setup_done;
+    gState.suspended            = (gState.suspended_until > gState.now.unix);
+
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = !!blob.zones[i].enabled;
+        gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : gState.zones[i].duration_min;
+    }
+
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.interval_days = blob.custom_interval_days;
+    if (cs.interval_days == 0 || cs.interval_days > 14) cs.interval_days = 1;
+    
+    cs.slot_count = blob.custom_slot_count;
+    if (cs.slot_count == 0 || cs.slot_count > MAX_SLOTS_PER_MODE) cs.slot_count = 1;
+
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        cs.slots[i].hour   = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
+        cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
+    }
+
+    LOG_I("NVS", "Configuracoes importadas com sucesso via Hex String.");
+    save(); // Grava no NVS flash com memcmp de segurança incorporado
+    return true;
 }
 

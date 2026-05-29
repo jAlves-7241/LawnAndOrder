@@ -48,6 +48,28 @@ struct __attribute__((packed)) RecoveryState {
     WaterTrigger trigger;
 };
 
+struct __attribute__((packed)) AppConfigBlob {
+    uint8_t  version;
+    uint8_t  mode;
+    uint32_t backlight_timeout_ms;
+    uint32_t suspended_until;
+    uint32_t custom_ref_day;
+    bool     auto_dst;
+    bool     setup_done;
+    
+    struct {
+        bool    enabled;
+        uint8_t duration_min;
+    } zones[NUM_ZONES];
+    
+    uint8_t  custom_interval_days;
+    uint8_t  custom_slot_count;
+    struct {
+        uint8_t hour;
+        uint8_t minute;
+    } custom_slots[MAX_SLOTS_PER_MODE];
+};
+
 
 class Storage {
 public:
@@ -72,6 +94,12 @@ public:
     // Persist recovery state to NVS
     bool loadRecoveryState(RecoveryState& rs);
     void saveRecoveryState(const RecoveryState& rs);
+
+    // Export current state as a 68-character hexadecimal string
+    void exportConfigHex(char* hexOut);
+
+    // Import a 68-character hexadecimal string, validate and save to NVS
+    bool importConfigHex(const char* hexIn);
 
 private:
     bool _ready = false;  // true after begin() succeeds

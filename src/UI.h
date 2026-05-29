@@ -11,6 +11,7 @@
 #include "ui/ScreenCommon.h"
 #include "ui/ScreenEditors.h"
 #include "ui/ScreenSetup.h"
+#include "ui/ScreenExport.h"
 
 class UI {
 public:
@@ -48,6 +49,7 @@ public:
     ScreenDateEdit& getScreenDateEdit() { return _screenDateEdit; }
     ScreenTimeEdit& getScreenTimeEdit() { return _screenTimeEdit; }
     ScreenSetupWelcome& getScreenSetupWelcome() { return _screenSetupWelcome; }
+    ScreenExport& getScreenExport() { return _screenExport; }
 
     uint16_t getTotalZoneDuration();
     
@@ -74,6 +76,7 @@ private:
     ScreenDateEdit _screenDateEdit;
     ScreenTimeEdit _screenTimeEdit;
     ScreenSetupWelcome _screenSetupWelcome;
+    ScreenExport _screenExport;
 
     bool _inSetup;
     SetupStep _setupStep;
