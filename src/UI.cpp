@@ -9,11 +9,8 @@
 #include <stdlib.h>
 #include "log.h"
 
-extern WateringController wateringCtrl;
-extern RTClock rtclock;
-extern Scheduler scheduler;
-extern Storage storage;
-extern History history;
+// Nota: extern wateringCtrl, rtclock, scheduler, storage, history
+// já declarados nos respectivos headers (.h) incluídos acima.
 
 // ─────────────────────────────────────────────────────────
 // Constructor / begin
@@ -164,6 +161,8 @@ bool UI::executeConfirmed(const char* tag) {
 
     if (!strcmp(tag, "reset")) {
         storage.clear();
+        Serial.flush();   // Garantir que logs pendentes no buffer UART são transmitidos
+        delay(50);
         ESP.restart();
         return true;
     }

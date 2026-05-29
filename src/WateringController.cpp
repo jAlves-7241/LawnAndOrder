@@ -151,8 +151,12 @@ void WateringController::stop() {
         _deactivateAll();
         if (!_isWaiting && !_isRelayDeadTimeWaiting) {
             uint32_t elapsed = millis() - _zoneStartMs;
-            uint32_t raw_min = (elapsed + 30000UL) / 60000UL;
-            uint8_t ran_min = (raw_min > 255) ? 255 : (uint8_t)raw_min;
+            // Se correu menos de 30s, registar 0 min (evita "1 min" para interrupções imediatas)
+            uint8_t ran_min = 0;
+            if (elapsed >= 30000UL) {
+                uint32_t raw_min = (elapsed + 30000UL) / 60000UL;
+                ran_min = (raw_min > 255) ? 255 : (uint8_t)raw_min;
+            }
             if (_runTrigger != WaterTrigger::TEST) {
                 _zoneDurMin[_zoneIdx] = ran_min;
             }
