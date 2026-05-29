@@ -9,6 +9,9 @@
 
 History history;
 
+// Flag global para suspensão temporária de logs durante exportação Serial
+bool _log_suspended = false;
+
 static const size_t LINE_BUF = 52;
 
 // ─────────────────────────────────────────────────────────
@@ -79,6 +82,7 @@ void History::record(const HistoryEntry& entry) {
                 LOG_E("HIST", "Export stuck, aborting");
                 if (_exportFile) _exportFile.close();
                 _exportState = ExportState::IDLE;
+                _log_suspended = false;
                 break;
             }
         }
@@ -146,6 +150,7 @@ void History::clear() {
     if (_exportState != ExportState::IDLE) {
         if (_exportFile) _exportFile.close();
         _exportState = ExportState::IDLE;
+        _log_suspended = false;
     }
     
     LittleFS.remove(HISTORY_FILE);
@@ -468,6 +473,7 @@ void History::update() {
     if (_exportState == ExportState::FOOTER) {
         _exportFile.close();
         Serial.printf("--- FIM: %d registos ---\n", _exportSent);
+        _log_suspended = false;
         LOG_I("HIST", "Exportacao concluida: %d registos", _exportSent);
         _exportState = ExportState::IDLE;
     }
@@ -502,6 +508,7 @@ void History::startExport() {
 
     _exportState = ExportState::SENDING;
     LOG_I("HIST", "Exportacao iniciada: %d registos", _exportTotal);
+    _log_suspended = true;
 }
 
 bool History::isExporting() const {
