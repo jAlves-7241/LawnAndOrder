@@ -1,6 +1,7 @@
 #include "Encoder.h"
 
 Encoder* Encoder::_inst = nullptr;
+static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 Encoder::Encoder(uint8_t clk, uint8_t dt, uint8_t sw)
     : _clk(clk), _dt(dt), _sw(sw),
@@ -23,15 +24,17 @@ void Encoder::begin() {
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
     int16_t d = (digitalRead(_inst->_dt) == LOW) ? 1 : -1;
+    portENTER_CRITICAL_ISR(&mux);
     if (d > 0) {
         if (_inst->_delta < 32000) _inst->_delta += d;
     } else {
         if (_inst->_delta > -32000) _inst->_delta += d;
     }
+    portEXIT_CRITICAL_ISR(&mux);
 }
 
 int8_t Encoder::getRotation() {
-    noInterrupts();
+    portENTER_CRITICAL(&mux);
     int16_t raw = _delta;
     if (raw > 127) {
         _delta = raw - 127;
@@ -42,7 +45,7 @@ int8_t Encoder::getRotation() {
     } else {
         _delta = 0;
     }
-    interrupts();
+    portEXIT_CRITICAL(&mux);
 
     return (int8_t)raw;
 }

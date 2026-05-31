@@ -275,7 +275,6 @@ void RTClock::_copyToState(const DateTime& dt) {
     gState.now.min   = dt.minute();
     gState.now.sec   = dt.second();
     gState.now.dow   = dt.dayOfTheWeek();
-    gState.now.unix  = dt.unixtime();
 }
 
 // Retorna true se a hora (UTC) cai no período de horário de verão europeu
