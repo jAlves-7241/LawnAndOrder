@@ -36,6 +36,7 @@
 #define NVS_VERSION 4   // increment when key schema changes
 
 struct __attribute__((packed)) RecoveryState {
+    uint8_t version;
     bool active;
     uint32_t start_unix_time;
     uint8_t queuePos;
@@ -96,7 +97,7 @@ public:
     void saveRecoveryState(const RecoveryState& rs);
 
     // Export current state as a 68-character hexadecimal string
-    void exportConfigHex(char* hexOut);
+    void exportConfigHex(char* hexOut, size_t maxLen);
 
     // Import a 68-character hexadecimal string, validate and save to NVS
     bool importConfigHex(const char* hexIn);

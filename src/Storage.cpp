@@ -94,7 +94,7 @@ void Storage::save() {
     }
 
     // Read current to avoid unnecessary write
-    AppConfigBlob current;
+    AppConfigBlob current = {};
     if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) != sizeof(current) ||
         memcmp(&blob, &current, sizeof(blob)) != 0) {
         
@@ -129,16 +129,20 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount)
 bool Storage::loadRecoveryState(RecoveryState& rs) {
     if (!_ready) return false;
     size_t readBytes = prefs.getBytes("recv", &rs, sizeof(rs));
-    return (readBytes == sizeof(rs));
+    if (readBytes != sizeof(rs)) return false;
+    if (rs.version != NVS_VERSION) return false;
+    return true;
 }
 
 void Storage::saveRecoveryState(const RecoveryState& rs) {
     if (!_ready) return;
-    prefs.putBytes("recv", &rs, sizeof(rs));
+    RecoveryState copy = rs;
+    copy.version = NVS_VERSION;
+    prefs.putBytes("recv", &copy, sizeof(copy));
 }
 
 // ─────────────────────────────────────────────────────────
-void Storage::exportConfigHex(char* hexOut) {
+void Storage::exportConfigHex(char* hexOut, size_t maxLen) {
     AppConfigBlob blob = {};
     blob.version = NVS_VERSION;
     blob.mode    = (uint8_t)gState.mode;
@@ -162,11 +166,11 @@ void Storage::exportConfigHex(char* hexOut) {
     }
 
     // Convert to hex string
+    if (maxLen < sizeof(AppConfigBlob) * 2 + 1) return;
     uint8_t* ptr = (uint8_t*)&blob;
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
-        sprintf(hexOut + (i * 2), "%02X", ptr[i]);
+        snprintf(hexOut + (i * 2), maxLen - (i * 2), "%02X", ptr[i]);
     }
-    hexOut[sizeof(AppConfigBlob) * 2] = '\0';
 }
 
 // ─────────────────────────────────────────────────────────

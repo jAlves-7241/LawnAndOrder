@@ -139,7 +139,8 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                 uint8_t m = (e.month <= 12) ? e.month : 0;
                 snprintf(lbuf, sizeof(lbuf), "%02d%s %02d:%02d %s",
                          e.day, MON[m], e.hour, e.min,
-                         e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL");
+                         e.trigger == WaterTrigger::AUTO ? "AUTO" :
+                         (e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL"));
 
                 char l1[LCD_COLS+1], l2[LCD_COLS+1];
                 snprintf(l1, sizeof(l1), "Z1:%dmin  Z2:%dmin", e.zone_dur[0], e.zone_dur[1]);

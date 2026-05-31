@@ -218,7 +218,7 @@ void ScreenDateEdit::setup(MenuID backMenu) {
     _deDay   = gState.rtc_valid ? gState.now.day : 1;
     _deMonth = gState.rtc_valid ? gState.now.month : 1;
     _deYear  = gState.rtc_valid ? gState.now.year : 2026;
-    _deField = 0; // comeÃ§ar no dia
+    _deField = 0; // começar no dia
     _backMenu = backMenu;
 }
 

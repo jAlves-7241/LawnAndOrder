@@ -25,8 +25,8 @@ WateringController::WateringController()
 
 void WateringController::begin() {
     for (int i = 0; i < NUM_ZONES; i++) {
-        digitalWrite(_relayPins[i], RELAY_OFF);
         pinMode(_relayPins[i], OUTPUT);
+        digitalWrite(_relayPins[i], RELAY_OFF);
     }
     _syncState();
 
