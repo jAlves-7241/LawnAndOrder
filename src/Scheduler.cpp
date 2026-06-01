@@ -250,8 +250,8 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                 uint32_t diff = ref_day - start_day_1970;
                 dayOffset = diff % sched.interval_days;
             }
-            limit = dayOffset + sched.interval_days;
         }
+        limit = dayOffset + sched.interval_days;
     }
 
     while (dayOffset <= limit) {
@@ -306,8 +306,11 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
                 if (writeBack) {
                     gState.custom_ref_day = candidate_day_1970;
                     LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
+                    ref_day = candidate_day_1970;
+                } else {
+                    DateTime current(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
+                    ref_day = current.unixtime() / 86400UL;
                 }
-                ref_day = candidate_day_1970;
             }
             uint32_t diff = (candidate_day_1970 >= ref_day) ? (candidate_day_1970 - ref_day) : (ref_day - candidate_day_1970);
             if (sched.interval_days == 0) return true;  // guard: treat 0 as daily

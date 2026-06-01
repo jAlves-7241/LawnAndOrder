@@ -189,7 +189,7 @@ void WateringController::update() {
     }
 
     if (_isRelayDeadTimeWaiting) {
-        if (millis() - _relayWaitStartMs >= 20) {
+        if (millis() - _relayWaitStartMs >= RELAY_DEADTIME_MS) {
             _isRelayDeadTimeWaiting = false;
             if (_zoneIdx < NUM_ZONES) {
                 digitalWrite(_relayPins[_zoneIdx], RELAY_ON);

@@ -86,6 +86,7 @@
 #define DISPLAY_OFF_DELAY_MS 20000UL // turn off pixels 20s after backlight
 
 // ── Otimizações e Segurança ───────────────────────────────
+#define RELAY_DEADTIME_MS 20UL // Tempo de espera (dead time) de relés em ms
 #define WDT_TIMEOUT_S 8        // Watchdog timeout em segundos
 #define SUSPEND_DEFAULT_DAYS 3 // Dias padrão para suspensão de rega
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
