@@ -2,6 +2,8 @@
 #include "../UI.h"
 #include "../AppState.h"
 #include <stdio.h>
+#include "../Scheduler.h"
+#include <RTClib.h>
 
 void ScreenIdle::onEnter(UI& ui) {
     _lastWateringActive = false;
@@ -88,7 +90,25 @@ void ScreenIdle::fullRender(UI& ui) {
             ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, "Rega Desativada"), "");
         } else {
             char nxstr[LCD_COLS+1];
-            snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
+            uint32_t nextDay1970 = 0;
+            uint8_t h = 0, m = 0;
+            if (scheduler.computeNext(gState.mode, gState.now, h, m, &nextDay1970, false)) {
+                DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
+                uint32_t currentDay1970 = localDate.unixtime() / 86400UL;
+                const char* dayStr = "";
+                if (nextDay1970 == currentDay1970) {
+                    dayStr = "Hoje";
+                } else if (nextDay1970 == currentDay1970 + 1) {
+                    dayStr = "Amanha";
+                } else {
+                    static const char* DOW_NAMES[] = {"Domingo", "Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado"};
+                    uint8_t dow = (nextDay1970 + 4) % 7;
+                    dayStr = DOW_NAMES[dow];
+                }
+                snprintf(nxstr, sizeof(nxstr), "%s as %02d:%02d", dayStr, gState.next_hour, gState.next_min);
+            } else {
+                snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
+            }
             ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, nxstr));
         }
     }
