@@ -10,7 +10,9 @@ Scheduler scheduler;
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
     : _triggered(false), _lastMin(0xFF)
-{}
+{
+    memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+}
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::begin() {
@@ -74,7 +76,18 @@ void Scheduler::update() {
     for (uint8_t i = 0; i < sched.slot_count; i++) {
         if (t.hour == sched.slots[i].hour &&
             t.min  == sched.slots[i].minute) {
+            // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
+            // 2 hours ago (UTC), this is a duplicate from the repeated hour.
+            // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
+            if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
+                (t.unix - _lastTriggerUnix[i]) < 7200) {
+                LOG_W("SCHED", "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d",
+                      sched.slots[i].hour, sched.slots[i].minute);
+                _triggered = true;
+                return;
+            }
             _triggered = true;
+            _lastTriggerUnix[i] = t.unix;
             LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
                           t.hour, t.min);
             wateringCtrl.startGeneral(WaterTrigger::AUTO);
@@ -86,6 +99,7 @@ void Scheduler::update() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged() {
     _triggered = false;
+    memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
     if (!gState.rtc_valid) {
         // RTC not ready - seed next_* from the first slot of the new mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
