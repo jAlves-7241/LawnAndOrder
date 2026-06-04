@@ -44,7 +44,7 @@ bool Storage::load() {
     gState.custom_ref_day       = blob.custom_ref_day;
     gState.auto_dst             = !!blob.auto_dst;
     gState.setup_done           = !!blob.setup_done;
-    gState.suspended            = (gState.suspended_until > gState.now.unix);
+    gState.suspended            = (gState.suspended_until > 0);
 
     for (int i = 0; i < NUM_ZONES; i++) {
         gState.zones[i].enabled = !!blob.zones[i].enabled;
@@ -222,7 +222,7 @@ bool Storage::importConfigHex(const char* hexIn) {
     gState.custom_ref_day       = blob.custom_ref_day;
     gState.auto_dst             = !!blob.auto_dst;
     gState.setup_done           = !!blob.setup_done;
-    gState.suspended            = (gState.suspended_until > gState.now.unix);
+    gState.suspended            = (gState.suspended_until > 0);
 
     for (int i = 0; i < NUM_ZONES; i++) {
         gState.zones[i].enabled = !!blob.zones[i].enabled;
