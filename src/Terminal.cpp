@@ -112,6 +112,8 @@ void Terminal::_processCommand(char *cmd) {
     _cmdExportConfig();
   } else if (strcmp(trimmed, "import_config") == 0) {
     _cmdImportConfig(args);
+  } else if (strcmp(trimmed, "export_history") == 0) {
+    _cmdExportHistory();
   } else if (strcmp(trimmed, "clear_history") == 0) {
     _cmdClearHistory();
   } else if (strcmp(trimmed, "reboot") == 0) {
@@ -142,6 +144,7 @@ void Terminal::_cmdHelp() {
                  "atual (Hex Blob)");
   Serial.println("  import_config <68_hex>       - Importa configuracoes a "
                  "partir do Hex Blob");
+  Serial.println("  export_history               - Exporta o historico de regas por Serial");
   Serial.println("  clear_history                - Apaga completamente o "
                  "historico de regas do sistema");
   Serial.println(
@@ -336,4 +339,9 @@ void Terminal::_cmdReboot() {
   Serial.flush();
   delay(100);
   ESP.restart();
+}
+
+void Terminal::_cmdExportHistory() {
+  Serial.println("A iniciar exportacao do historico...");
+  history.startExport();
 }
