@@ -104,6 +104,9 @@ public:
 
 private:
     bool _ready = false;  // true after begin() succeeds
+
+    void _stateToBlob(AppConfigBlob& blob);
+    bool _blobToState(const AppConfigBlob& blob);
 };
 
 extern Storage storage;

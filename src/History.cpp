@@ -16,6 +16,7 @@ static const size_t LINE_BUF = 52;
 
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
+    _log_suspended = false;
     _ready = LittleFS.begin(formatOnFail);
     if (!_ready) {
         LOG_E("HIST", "Falha ao montar LittleFS");
@@ -187,6 +188,10 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     // "YYYY-MM-DDTHH:MM,C,d0,..."
     if (sscanf(line, "%4d-%2d-%2dT%2d:%2d,%c",
                &yr, &mo, &dy, &hh, &mm, &tc) != 6) return false;
+
+    // Rejeitar valores cronológicos impossíveis
+    if (yr < 2020 || yr > 2099 || mo < 1 || mo > 12 ||
+        dy < 1 || dy > 31 || hh > 23 || mm > 59) return false;
 
     out.year  = (uint16_t)yr;
     out.month = (uint8_t)mo;

@@ -105,7 +105,7 @@ void ScreenIdle::fullRender(UI& ui) {
                     uint8_t dow = (nextDay1970 + 4) % 7;
                     dayStr = DOW_NAMES[dow];
                 }
-                snprintf(nxstr, sizeof(nxstr), "%s as %02d:%02d", dayStr, gState.next_hour, gState.next_min);
+                snprintf(nxstr, sizeof(nxstr), "%s as %02d:%02d", dayStr, h, m);
             } else {
                 snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
             }
