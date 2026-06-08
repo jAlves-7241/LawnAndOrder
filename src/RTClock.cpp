@@ -270,7 +270,15 @@ void RTClock::_incrementSoftwareClock() {
         anchorUnix = currentUnix;
     }
     
-    currentUnix = anchorUnix + ((millis() - anchorMs) / 1000);
+    // Avançar a âncora a cada segundo para evitar o overflow de 49.7 dias do millis()
+    uint32_t elapsedMs = millis() - anchorMs;
+    if (elapsedMs >= 1000) {
+        uint32_t elapsedSec = elapsedMs / 1000;
+        anchorUnix += elapsedSec;
+        anchorMs += elapsedSec * 1000;
+    }
+    
+    currentUnix = anchorUnix;
     if (currentUnix == gState.now.unix) return; // Sem avanço
 
     DateTime utcDt(currentUnix);
