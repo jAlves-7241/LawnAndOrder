@@ -51,6 +51,8 @@ void Scheduler::update() {
     // Don't trigger while a cycle is already running
     if (gState.watering.active) return;
 
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
+
     // On minute rollover, reset trigger guard and recompute next_*
     if (t.min != _lastMin) {
         _triggered = false;
@@ -189,6 +191,7 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
 bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_time, uint32_t remaining_duration_sec) {
     // 1. Hard Limits
     uint32_t current_unix = current_time.unix;
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return true;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     uint32_t max_allowed_duration = (sched.slot_count <= 1) ? 43200UL : 28800UL; // 12h or 8h
     if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
@@ -236,6 +239,10 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
 // ─────────────────────────────────────────────────────────
 bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                              uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970, bool writeBack) {
+    if ((uint8_t)mode >= (uint8_t)AppMode::_COUNT) {
+        out_hour = 0; out_min = 0;
+        return false;
+    }
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)mode];
 
     if (sched.slot_count == 0) {

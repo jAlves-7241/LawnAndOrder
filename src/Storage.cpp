@@ -32,36 +32,7 @@ bool Storage::load() {
         return false;
     }
 
-    if (blob.mode < (uint8_t)AppMode::_COUNT)
-        gState.mode = (AppMode)blob.mode;
-
-    if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER && blob.backlight_timeout_ms < 30000UL) {
-        gState.backlight_timeout_ms = 120000UL; // Fallback para 2 minutos
-    } else {
-        gState.backlight_timeout_ms = blob.backlight_timeout_ms;
-    }
-    gState.suspended_until      = blob.suspended_until;
-    gState.custom_ref_day       = blob.custom_ref_day;
-    gState.auto_dst             = !!blob.auto_dst;
-    gState.setup_done           = !!blob.setup_done;
-    gState.suspended            = (gState.suspended_until > 0);
-
-    for (int i = 0; i < NUM_ZONES; i++) {
-        gState.zones[i].enabled = !!blob.zones[i].enabled;
-        gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : gState.zones[i].duration_min;
-    }
-
-    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-    cs.interval_days = blob.custom_interval_days;
-    if (cs.interval_days == 0 || cs.interval_days > 14) cs.interval_days = 1;
-    
-    cs.slot_count = blob.custom_slot_count;
-    if (cs.slot_count == 0 || cs.slot_count > MAX_SLOTS_PER_MODE) cs.slot_count = 1;
-
-    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
-        cs.slots[i].hour   = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
-        cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
-    }
+    _blobToState(blob);
 
     LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
     return true;
@@ -72,26 +43,7 @@ void Storage::save() {
     if (!_ready) return;
 
     AppConfigBlob blob = {};
-    blob.version = NVS_VERSION;
-    blob.mode    = (uint8_t)gState.mode;
-    blob.backlight_timeout_ms = gState.backlight_timeout_ms;
-    blob.suspended_until      = gState.suspended_until;
-    blob.custom_ref_day       = gState.custom_ref_day;
-    blob.auto_dst             = gState.auto_dst;
-    blob.setup_done           = gState.setup_done;
-
-    for (int i = 0; i < NUM_ZONES; i++) {
-        blob.zones[i].enabled      = gState.zones[i].enabled;
-        blob.zones[i].duration_min = gState.zones[i].duration_min;
-    }
-
-    const ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-    blob.custom_interval_days = cs.interval_days;
-    blob.custom_slot_count    = cs.slot_count;
-    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
-        blob.custom_slots[i].hour   = cs.slots[i].hour;
-        blob.custom_slots[i].minute = cs.slots[i].minute;
-    }
+    _stateToBlob(blob);
 
     // Read current to avoid unnecessary write
     AppConfigBlob current = {};
@@ -144,26 +96,7 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
 // ─────────────────────────────────────────────────────────
 void Storage::exportConfigHex(char* hexOut, size_t maxLen) {
     AppConfigBlob blob = {};
-    blob.version = NVS_VERSION;
-    blob.mode    = (uint8_t)gState.mode;
-    blob.backlight_timeout_ms = gState.backlight_timeout_ms;
-    blob.suspended_until      = gState.suspended_until;
-    blob.custom_ref_day       = gState.custom_ref_day;
-    blob.auto_dst             = gState.auto_dst;
-    blob.setup_done           = gState.setup_done;
-
-    for (int i = 0; i < NUM_ZONES; i++) {
-        blob.zones[i].enabled      = gState.zones[i].enabled;
-        blob.zones[i].duration_min = gState.zones[i].duration_min;
-    }
-
-    const ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-    blob.custom_interval_days = cs.interval_days;
-    blob.custom_slot_count    = cs.slot_count;
-    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
-        blob.custom_slots[i].hour   = cs.slots[i].hour;
-        blob.custom_slots[i].minute = cs.slots[i].minute;
-    }
+    _stateToBlob(blob);
 
     // Convert to hex string
     if (maxLen < sizeof(AppConfigBlob) * 2 + 1) return;
@@ -205,12 +138,47 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
-    // Aplicar e validar limites de segurança
+    if (!_blobToState(blob)) {
+        return false;
+    }
+
+    LOG_I("NVS", "Configuracoes importadas com sucesso via Hex String.");
+    save(); // Grava no NVS flash com memcmp de segurança incorporado
+    return true;
+}
+
+
+// ─────────────────────────────────────────────────────────
+void Storage::_stateToBlob(AppConfigBlob& blob) {
+    blob.version = NVS_VERSION;
+    blob.mode    = (uint8_t)gState.mode;
+    blob.backlight_timeout_ms = gState.backlight_timeout_ms;
+    blob.suspended_until      = gState.suspended_until;
+    blob.custom_ref_day       = gState.custom_ref_day;
+    blob.auto_dst             = gState.auto_dst;
+    blob.setup_done           = gState.setup_done;
+
+    for (int i = 0; i < NUM_ZONES; i++) {
+        blob.zones[i].enabled      = gState.zones[i].enabled;
+        blob.zones[i].duration_min = gState.zones[i].duration_min;
+    }
+
+    const ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    blob.custom_interval_days = cs.interval_days;
+    blob.custom_slot_count    = cs.slot_count;
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        blob.custom_slots[i].hour   = cs.slots[i].hour;
+        blob.custom_slots[i].minute = cs.slots[i].minute;
+    }
+}
+
+bool Storage::_blobToState(const AppConfigBlob& blob) {
+    bool valid = true;
     if (blob.mode < (uint8_t)AppMode::_COUNT) {
         gState.mode = (AppMode)blob.mode;
     } else {
         LOG_W("NVS", "Importacao falhou: modo invalido (%d)", blob.mode);
-        return false;
+        valid = false;
     }
 
     if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER && blob.backlight_timeout_ms < 30000UL) {
@@ -240,9 +208,6 @@ bool Storage::importConfigHex(const char* hexIn) {
         cs.slots[i].hour   = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
         cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
     }
-
-    LOG_I("NVS", "Configuracoes importadas com sucesso via Hex String.");
-    save(); // Grava no NVS flash com memcmp de segurança incorporado
-    return true;
+    
+    return valid;
 }
-

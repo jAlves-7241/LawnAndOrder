@@ -178,7 +178,7 @@ void Terminal::_cmdStatus() {
     Serial.printf("  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\n",
                   gState.now.year, gState.now.month, gState.now.day,
                   gState.now.hour, gState.now.min, gState.now.sec);
-    Serial.printf("  Epoch UTC:   %u (segundos desde 1970)\n", gState.now.unix);
+    Serial.printf("  Epoch UTC:   %lu (segundos desde 1970)\n", (unsigned long)gState.now.unix);
     Serial.println("  Hardware RTC: Ligado e Valido [OK]");
   } else {
     Serial.printf(

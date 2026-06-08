@@ -119,6 +119,22 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _isWaiting  = false;
     _isRelayDeadTimeWaiting = false;
     
+    // Gravação inicial do recovery state (única vez por ciclo)
+    if (_runTrigger != WaterTrigger::TEST) {
+        RecoveryState rs = {};
+        rs.active = true;
+        rs.start_unix_time = _cycleStart.unix;
+        rs.queuePos = _queuePos;
+        rs.queueLen = _queueLen;
+        rs.trigger = _runTrigger;
+        for (uint8_t i = 0; i < _queueLen; i++) {
+            rs.queue[i].zone_idx = _queue[i].zone_idx;
+            rs.queue[i].duration_ms = _queue[i].duration_ms;
+        }
+        memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
+        storage.saveRecoveryState(rs);
+    }
+
     LOG_I("REGA", "Iniciar rega geral");
     _startNextZone();
 }
@@ -274,19 +290,10 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _active     = true;
     _isWaiting  = false;
     _isRelayDeadTimeWaiting = false;
-    return true;
-}
 
-void WateringController::_startNextZone() {
-    _zoneIdx        = _queue[_queuePos].zone_idx;
-    _zoneDurationMs = _queue[_queuePos].duration_ms;
-    _activateRelay();
-    gState.watering.progress_pct = 0;
-    _syncState();
-
-    // Gravar estado de recuperação na NVS a cada transição
+    // Gravação inicial do recovery state (única vez por ciclo)
     if (_runTrigger != WaterTrigger::TEST) {
-        RecoveryState rs;
+        RecoveryState rs = {};
         rs.active = true;
         rs.start_unix_time = _cycleStart.unix;
         rs.queuePos = _queuePos;
@@ -299,6 +306,15 @@ void WateringController::_startNextZone() {
         memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
         storage.saveRecoveryState(rs);
     }
+    return true;
+}
+
+void WateringController::_startNextZone() {
+    _zoneIdx        = _queue[_queuePos].zone_idx;
+    _zoneDurationMs = _queue[_queuePos].duration_ms;
+    _activateRelay();
+    gState.watering.progress_pct = 0;
+    _syncState();
 
     if (_zoneDurationMs % 60000UL == 0) {
         LOG_I("REGA", "Zona %d (%s) activa - dur=%lu min",

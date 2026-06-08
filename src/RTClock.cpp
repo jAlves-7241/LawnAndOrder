@@ -251,12 +251,28 @@ void RTClock::setTime(uint8_t hour, uint8_t minute) {
 }
 
 void RTClock::_incrementSoftwareClock() {
+    // Ancorar ao millis() para não perder segundos durante stalls do loop
+    static uint32_t anchorMs   = millis();
+    static uint32_t anchorUnix = gState.now.unix;
+    static uint32_t lastKnownUnix = gState.now.unix;
+    
+    // Recalibrar âncora se o unix foi alterado externamente (ex: set())
+    if (gState.now.unix != lastKnownUnix) {
+        anchorMs   = millis();
+        anchorUnix = gState.now.unix;
+        lastKnownUnix = gState.now.unix;
+    }
+
     uint32_t currentUnix = gState.now.unix;
     if (currentUnix < 1577836800UL) { // Menor que 2020-01-01
         currentUnix = 1767225600UL;   // 2026-01-01 00:00:00 UTC
+        anchorMs   = millis();
+        anchorUnix = currentUnix;
     }
     
-    currentUnix += 1;
+    currentUnix = anchorUnix + ((millis() - anchorMs) / 1000);
+    if (currentUnix == gState.now.unix) return; // Sem avanço
+
     DateTime utcDt(currentUnix);
     DateTime localDt = utcDt;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
@@ -264,6 +280,7 @@ void RTClock::_incrementSoftwareClock() {
     }
     _copyToState(localDt);
     gState.now.unix = currentUnix;
+    lastKnownUnix = currentUnix;
 }
 
 // ─────────────────────────────────────────────────────────

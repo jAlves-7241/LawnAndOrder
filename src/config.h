@@ -9,6 +9,8 @@
 #define LOG_LEVEL LVL_INFO
 
 // ── LCD ───────────────────────────────────────────────────
+#define PIN_SDA 21
+#define PIN_SCL 22
 #define LCD_ADDR 0x27
 #define LCD_COLS 20
 #define LCD_ROWS 4

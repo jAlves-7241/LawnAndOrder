@@ -49,7 +49,7 @@ void Display::displayOff() {
 
 void Display::_invalidateShadow() {
     // Fill shadow with an impossible value so every row gets rewritten
-    memset(_shadow, 0x01, sizeof(_shadow));
+    memset(_shadow, 0xFF, sizeof(_shadow));
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
 }
 

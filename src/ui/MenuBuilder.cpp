@@ -124,6 +124,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::HISTORICO: {
+        static_assert(NUM_ZONES == 4, "History display hardcodes 4 zones");
         HistoryEntry entries[HISTORY_DISPLAY];
         uint8_t n = history.readLast(HISTORY_DISPLAY, entries);
 
