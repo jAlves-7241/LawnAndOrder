@@ -58,6 +58,9 @@ private:
     uint8_t      _cacheCount = 0;
     
     bool         _pendingCacheSave = false;   // NVS save diferido (rotação async)
+    
+    HistoryEntry _deferredEntry;
+    bool         _hasDeferred = false;
 
     // ── Export via Serial (async) ──
     enum class ExportState : uint8_t { IDLE, SENDING, FOOTER };

@@ -183,6 +183,10 @@ void RTClock::update() {
 // ─────────────────────────────────────────────────────────
 void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                   uint8_t  hour, uint8_t minute, uint8_t second) {
+    
+    // Filtro contra underflow do epoch (corrupção por dados manuais ou software)
+    if (year < 2020 || year > 2099) return;
+
     // Preservar a suspensão mantendo a diferença de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
 
@@ -233,7 +237,9 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
         int64_t newUntil = (int64_t)gState.suspended_until + delta;
         // Se a nova hora ultrapassou a meta de suspensão, ou overflow negativo
-        if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
+        if (newUntil > UINT32_MAX) {
+            gState.suspended_until = UINT32_MAX;
+        } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
             gState.suspended = false;
             gState.suspended_until = 0;
         } else {

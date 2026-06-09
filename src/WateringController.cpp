@@ -347,10 +347,12 @@ void WateringController::_finishCycle() {
         history.record(entry);
     }
 
-    // Limpar estado de recuperação na NVS
-    RecoveryState rs = {};
-    rs.active = false;
-    storage.saveRecoveryState(rs);
+    // Limpar estado de recuperação na NVS (apenas se não for teste)
+    if (_runTrigger != WaterTrigger::TEST) {
+        RecoveryState rs = {};
+        rs.active = false;
+        storage.saveRecoveryState(rs);
+    }
 }
 
 void WateringController::_activateRelay() {

@@ -25,15 +25,17 @@ void Terminal::update() {
   // 1. Salvaguarda crítica: se a exportação de histórico estiver ativa,
   // silenciar o terminal
   if (history.isExporting()) {
-    while (Serial.available() > 0) {
+    uint8_t max_bytes_drop = 64;
+    while (Serial.available() > 0 && max_bytes_drop-- > 0) {
       Serial.read(); // Descartar inputs
     }
     _bufLen = 0;
     return;
   }
 
-  // 2. Leitura não bloqueante de caracteres
-  while (Serial.available() > 0) {
+  // 2. Leitura não bloqueante de caracteres com limite
+  uint8_t max_bytes_proc = 64;
+  while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
 
     // Se for fim de linha (LF ou CR)

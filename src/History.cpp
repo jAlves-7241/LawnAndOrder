@@ -74,19 +74,10 @@ void History::record(const HistoryEntry& entry) {
     }
 
     if (_exportState != ExportState::IDLE) {
-        LOG_W("HIST", "Exportacao pendente, forçar conclusao sincrona...");
-        uint32_t bailMs = millis();
-        while (_exportState != ExportState::IDLE) {
-            esp_task_wdt_reset();
-            update();
-            if (millis() - bailMs > 5000) {
-                LOG_E("HIST", "Export stuck, aborting");
-                if (_exportFile) _exportFile.close();
-                _exportState = ExportState::IDLE;
-                _log_suspended = false;
-                break;
-            }
-        }
+        LOG_W("HIST", "Exportacao a decorrer, registo deferido para mais tarde.");
+        _deferredEntry = entry;
+        _hasDeferred = true;
+        return;
     }
 
     char line[LINE_BUF];
@@ -482,6 +473,11 @@ void History::update() {
         _log_suspended = false;
         LOG_I("HIST", "Exportacao concluida: %d registos", _exportSent);
         _exportState = ExportState::IDLE;
+        
+        if (_hasDeferred) {
+            _hasDeferred = false;
+            record(_deferredEntry);
+        }
     }
 }
 

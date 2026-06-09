@@ -60,7 +60,7 @@ void ScreenDurPick::handleClick(UI& ui) {
         gState.zones[_durZoneIdx].duration_min = _durValue;
 
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        if (cs.slot_count > 1) {
+        if (gState.mode == AppMode::PERSONALIZADO && cs.slot_count > 1) {
             uint16_t total_dur = ui.getTotalZoneDuration();
             uint8_t enCount = 0;
             for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
