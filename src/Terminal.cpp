@@ -35,8 +35,20 @@ void Terminal::update() {
 
   // 2. Leitura não bloqueante de caracteres com limite
   uint8_t max_bytes_proc = 64;
+  static bool in_ansi = false;
   while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
+
+    if (c == 27) {
+      in_ansi = true;
+      continue;
+    }
+    if (in_ansi) {
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
+        in_ansi = false;
+      }
+      continue;
+    }
 
     // Se for fim de linha (LF ou CR)
     if (c == '\n' || c == '\r') {
