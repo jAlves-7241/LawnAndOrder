@@ -174,7 +174,9 @@ void WateringController::stop() {
                 ran_min = (raw_min > 255) ? 255 : (uint8_t)raw_min;
             }
             if (_runTrigger != WaterTrigger::TEST) {
-                _zoneDurMin[_zoneIdx] = ran_min;
+                if (_zoneIdx < NUM_ZONES) {
+                    _zoneDurMin[_zoneIdx] = ran_min;
+                }
             }
             LOG_I("REGA", "Zona %d (%s) desactivada (interrompida)", _zoneIdx + 1, gState.zones[_zoneIdx].name);
         }
@@ -230,8 +232,11 @@ void WateringController::update() {
         uint32_t raw_min = _zoneDurationMs / 60000UL;
         if (raw_min < 1) raw_min = 1;
         uint8_t ran_min = (raw_min > 255) ? 255 : (uint8_t)raw_min;
-        if (_runTrigger != WaterTrigger::TEST)
-            _zoneDurMin[_zoneIdx] = ran_min;
+        if (_runTrigger != WaterTrigger::TEST) {
+            if (_zoneIdx < NUM_ZONES) {
+                _zoneDurMin[_zoneIdx] = ran_min;
+            }
+        }
 
         _deactivateAll();
         LOG_I("REGA", "Zona %d (%s) desactivada", _zoneIdx + 1, gState.zones[_zoneIdx].name);

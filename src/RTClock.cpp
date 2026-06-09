@@ -233,7 +233,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     gState.now.unix = utcDt.unixtime();
 
     // Forçar releitura para gState
-    _lastReadMs = 0;
+    _lastReadMs = millis() - 30000UL;
 
     // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)
     if (gState.suspended && gState.suspended_until > 0 && oldUnixUTC > 0) {

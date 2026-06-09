@@ -107,7 +107,11 @@ void ScreenIdle::fullRender(UI& ui) {
                 }
                 snprintf(nxstr, sizeof(nxstr), "%s as %02d:%02d", dayStr, h, m);
             } else {
-                snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
+                if (gState.next_hour == 255) {
+                    snprintf(nxstr, sizeof(nxstr), "Proxima: --:--");
+                } else {
+                    snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
+                }
             }
             ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, nxstr));
         }

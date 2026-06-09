@@ -12,7 +12,7 @@ History history;
 // Flag global para suspensão temporária de logs durante exportação Serial
 bool _log_suspended = false;
 
-static const size_t LINE_BUF = 52;
+static const size_t LINE_BUF = 128;
 
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
@@ -25,7 +25,9 @@ bool History::begin(bool formatOnFail) {
     } else {
         LittleFS.remove("/hist_tmp.csv"); // Clean up orphaned temp file from a crash
         // Tenta carregar da NVS primeiro
-        if (storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount)) {
+        bool nvsOk = storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount);
+        uint16_t actualLines = _countLines();
+        if (nvsOk && _lineCount == actualLines) {
             // Cache e total recuperados instantaneamente da NVS!
             // Compactar cache para eliminar possíveis lacunas/gaps resultantes de corrupção
             uint8_t validCount = 0;
@@ -57,20 +59,10 @@ void History::record(const HistoryEntry& entry) {
     if (!gState.rtc_valid)                    return;
 
     if (_rotState != RotState::IDLE) {
-        LOG_W("HIST", "Rotacao pendente, forçar conclusao sincrona...");
-        uint32_t bailMs = millis();
-        while (_rotState != RotState::IDLE) {
-            esp_task_wdt_reset();
-            update();
-            if (millis() - bailMs > 5000) {
-                LOG_E("HIST", "Rotation stuck, aborting");
-                if (_rotSrc) _rotSrc.close();
-                if (_rotDst) _rotDst.close();
-                LittleFS.remove("/hist_tmp.csv");
-                _rotState = RotState::IDLE;
-                break;
-            }
-        }
+        LOG_W("HIST", "Rotacao a decorrer, registo deferido para mais tarde.");
+        _deferredEntry = entry;
+        _hasDeferred = true;
+        return;
     }
 
     if (_exportState != ExportState::IDLE) {
@@ -163,12 +155,13 @@ uint16_t History::entryCount() const { return _lineCount; }
 // CSV: "YYYY-MM-DDTHH:MM,<trigger_char>,d0,d1,d2,d3"
 void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
     char tc = (char)e.trigger;   // 'A', 'M', 'C' - already encoded in enum value
-    snprintf(buf, len, "%04d-%02d-%02dT%02d:%02d,%c",
-             e.year, e.month, e.day, e.hour, e.min, tc);
+    int pos = snprintf(buf, len, "%04d-%02d-%02dT%02d:%02d,%c",
+                       e.year, e.month, e.day, e.hour, e.min, tc);
+    if (pos < 0 || (size_t)pos >= len) return;
     for (int i = 0; i < NUM_ZONES; i++) {
-        char tmp[5];
-        snprintf(tmp, sizeof(tmp), ",%d", e.zone_dur[i]);
-        strlcat(buf, tmp, len);
+        int n = snprintf(buf + pos, len - pos, ",%d", e.zone_dur[i]);
+        if (n > 0 && (size_t)n < len - pos) pos += n;
+        else break;
     }
 }
 
@@ -251,8 +244,9 @@ void History::_populateCache() {
 
     // Otimização O(1): se o ficheiro for longo, saltar para o fim
     uint32_t fsize = f.size();
-    if (fsize > 512) {
-        f.seek(fsize - 512, SeekSet);
+    uint32_t tailSize = HISTORY_DISPLAY * LINE_BUF + 128;
+    if (fsize > tailSize) {
+        f.seek(fsize - tailSize, SeekSet);
         // Descartar a primeira linha que possivelmente está cortada a meio
         while (f.available()) {
             if (f.read() == '\n') break;
@@ -434,6 +428,10 @@ void History::update() {
             _pendingCacheSave = false;
         }
         _rotState = RotState::IDLE;
+        if (_hasDeferred) {
+            _hasDeferred = false;
+            record(_deferredEntry);
+        }
     }
 
     // ── Export via Serial (async) ──
