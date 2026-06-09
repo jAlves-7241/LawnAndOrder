@@ -90,7 +90,12 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
     if (!_ready) return;
     RecoveryState copy = rs;
     copy.version = NVS_VERSION;
-    prefs.putBytes("recv", &copy, sizeof(copy));
+    
+    RecoveryState current = {};
+    if (prefs.getBytes("recv", &current, sizeof(current)) != sizeof(current) ||
+        memcmp(&copy, &current, sizeof(copy)) != 0) {
+        prefs.putBytes("recv", &copy, sizeof(copy));
+    }
 }
 
 // ─────────────────────────────────────────────────────────

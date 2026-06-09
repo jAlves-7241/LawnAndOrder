@@ -249,6 +249,16 @@ void History::_populateCache() {
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return;
 
+    // Otimização O(1): se o ficheiro for longo, saltar para o fim
+    uint32_t fsize = f.size();
+    if (fsize > 512) {
+        f.seek(fsize - 512, SeekSet);
+        // Descartar a primeira linha que possivelmente está cortada a meio
+        while (f.available()) {
+            if (f.read() == '\n') break;
+        }
+    }
+
     char chunk[256];
     char line[LINE_BUF];
     size_t linePos = 0;
