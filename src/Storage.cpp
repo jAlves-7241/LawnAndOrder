@@ -178,13 +178,12 @@ void Storage::_stateToBlob(AppConfigBlob& blob) {
 }
 
 bool Storage::_blobToState(const AppConfigBlob& blob) {
-    bool valid = true;
-    if (blob.mode < (uint8_t)AppMode::_COUNT) {
-        gState.mode = (AppMode)blob.mode;
-    } else {
+    if (blob.mode >= (uint8_t)AppMode::_COUNT) {
         LOG_W("NVS", "Importacao falhou: modo invalido (%d)", blob.mode);
-        valid = false;
+        return false;
     }
+
+    gState.mode = (AppMode)blob.mode;
 
     if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER && blob.backlight_timeout_ms < 30000UL) {
         gState.backlight_timeout_ms = 120000UL; // Fallback para 2 minutos
@@ -214,5 +213,5 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
     }
     
-    return valid;
+    return true;
 }
