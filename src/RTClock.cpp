@@ -70,7 +70,7 @@ bool RTClock::begin() {
 // ─────────────────────────────────────────────────────────
 void RTClock::update() {
     uint32_t nowMs = millis();
-    if ((nowMs - _lastReadMs) < 1000UL) return;
+    if ((nowMs - _lastReadMs) < 30000UL) return; // 30s (ajustado de 1s para reduzir jitter no bus I2C)
     _lastReadMs = nowMs;
 
     if (!_found) {
