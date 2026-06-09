@@ -120,15 +120,6 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
-    // Validação de caracteres hexadecimais
-    for (size_t i = 0; i < len; i++) {
-        char c = hexIn[i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-            LOG_W("NVS", "Importacao falhou: caracter invalido encontrado (%c)", c);
-            return false;
-        }
-    }
-
     AppConfigBlob blob = {};
     uint8_t* ptr = (uint8_t*)&blob;
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {

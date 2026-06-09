@@ -370,12 +370,12 @@ void UI::dispatchAction(const char* action) {
         char buf[80];
         strncpy(buf, action + 5, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
-        char* saveptr;
-        char* t0 = strtok_r(buf, "|", &saveptr);
-        char* t1 = strtok_r(NULL, "|", &saveptr);
-        char* t2 = strtok_r(NULL, "|", &saveptr);
-        char* t3 = strtok_r(NULL, "|", &saveptr);
-        char* back = strtok_r(NULL, "|", &saveptr);
+        char* saveptr = buf;
+        char* t0 = strsep(&saveptr, "|");
+        char* t1 = strsep(&saveptr, "|");
+        char* t2 = strsep(&saveptr, "|");
+        char* t3 = strsep(&saveptr, "|");
+        char* back = strsep(&saveptr, "|");
         if (t0 && t1 && t2 && t3 && back) {
             _screenInfo.setup(t0, t1, t2, t3, MenuBuilder::parseMenuID(back));
             changeScreen(&_screenInfo);
@@ -387,11 +387,11 @@ void UI::dispatchAction(const char* action) {
         char buf[80];
         strncpy(buf, action + 8, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
-        char* saveptr;
-        char* t1 = strtok_r(buf, "|", &saveptr);
-        char* t2 = strtok_r(NULL, "|", &saveptr);
-        char* back = strtok_r(NULL, "|", &saveptr);
-        char* tag = strtok_r(NULL, "|", &saveptr);
+        char* saveptr = buf;
+        char* t1 = strsep(&saveptr, "|");
+        char* t2 = strsep(&saveptr, "|");
+        char* back = strsep(&saveptr, "|");
+        char* tag = strsep(&saveptr, "|");
         if (t1 && t2 && back && tag) {
             _screenConfirm.setup(t1, t2, MenuBuilder::parseMenuID(back), tag);
             changeScreen(&_screenConfirm);

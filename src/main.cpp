@@ -45,7 +45,7 @@ void recoverI2C() {
     digitalWrite(PIN_SDA, HIGH); // Transição LOW -> HIGH com SCL HIGH = STOP
     delay(10);
     
-    Wire.begin();
+    Wire.begin(PIN_SDA, PIN_SCL);
     rtclock.begin();
     esp_task_wdt_reset();
     display.begin();
@@ -54,10 +54,10 @@ void recoverI2C() {
 
 void setup() {
     // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else
-    pinMode(PIN_RELAY_1, OUTPUT); digitalWrite(PIN_RELAY_1, RELAY_OFF);
-    pinMode(PIN_RELAY_2, OUTPUT); digitalWrite(PIN_RELAY_2, RELAY_OFF);
-    pinMode(PIN_RELAY_3, OUTPUT); digitalWrite(PIN_RELAY_3, RELAY_OFF);
-    pinMode(PIN_RELAY_4, OUTPUT); digitalWrite(PIN_RELAY_4, RELAY_OFF);
+    digitalWrite(PIN_RELAY_1, RELAY_OFF); pinMode(PIN_RELAY_1, OUTPUT);
+    digitalWrite(PIN_RELAY_2, RELAY_OFF); pinMode(PIN_RELAY_2, OUTPUT);
+    digitalWrite(PIN_RELAY_3, RELAY_OFF); pinMode(PIN_RELAY_3, OUTPUT);
+    digitalWrite(PIN_RELAY_4, RELAY_OFF); pinMode(PIN_RELAY_4, OUTPUT);
 
     Serial.begin(115200);
     LOG_I("SYS", "A iniciar sistema...");
