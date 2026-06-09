@@ -10,7 +10,9 @@ Scheduler scheduler;
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
     : _triggered(false), _lastMin(0xFF)
-{}
+{
+    memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+}
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::begin() {
@@ -49,6 +51,8 @@ void Scheduler::update() {
     // Don't trigger while a cycle is already running
     if (gState.watering.active) return;
 
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
+
     // On minute rollover, reset trigger guard and recompute next_*
     if (t.min != _lastMin) {
         _triggered = false;
@@ -74,7 +78,18 @@ void Scheduler::update() {
     for (uint8_t i = 0; i < sched.slot_count; i++) {
         if (t.hour == sched.slots[i].hour &&
             t.min  == sched.slots[i].minute) {
+            // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
+            // 2 hours ago (UTC), this is a duplicate from the repeated hour.
+            // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
+            if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
+                (t.unix - _lastTriggerUnix[i]) < 7200) {
+                LOG_W("SCHED", "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d",
+                      sched.slots[i].hour, sched.slots[i].minute);
+                _triggered = true;
+                return;
+            }
             _triggered = true;
+            _lastTriggerUnix[i] = t.unix;
             LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
                           t.hour, t.min);
             wateringCtrl.startGeneral(WaterTrigger::AUTO);
@@ -86,6 +101,7 @@ void Scheduler::update() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged() {
     _triggered = false;
+    memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
     if (!gState.rtc_valid) {
         // RTC not ready - seed next_* from the first slot of the new mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
@@ -175,6 +191,7 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
 bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_time, uint32_t remaining_duration_sec) {
     // 1. Hard Limits
     uint32_t current_unix = current_time.unix;
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return true;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     uint32_t max_allowed_duration = (sched.slot_count <= 1) ? 43200UL : 28800UL; // 12h or 8h
     if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
@@ -222,6 +239,10 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
 // ─────────────────────────────────────────────────────────
 bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                              uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970, bool writeBack) {
+    if ((uint8_t)mode >= (uint8_t)AppMode::_COUNT) {
+        out_hour = 0; out_min = 0;
+        return false;
+    }
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)mode];
 
     if (sched.slot_count == 0) {
@@ -250,8 +271,8 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                 uint32_t diff = ref_day - start_day_1970;
                 dayOffset = diff % sched.interval_days;
             }
-            limit = dayOffset + sched.interval_days;
         }
+        limit = dayOffset + sched.interval_days;
     }
 
     while (dayOffset <= limit) {
@@ -306,8 +327,11 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
                 if (writeBack) {
                     gState.custom_ref_day = candidate_day_1970;
                     LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
+                    ref_day = candidate_day_1970;
+                } else {
+                    DateTime current(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
+                    ref_day = current.unixtime() / 86400UL;
                 }
-                ref_day = candidate_day_1970;
             }
             uint32_t diff = (candidate_day_1970 >= ref_day) ? (candidate_day_1970 - ref_day) : (ref_day - candidate_day_1970);
             if (sched.interval_days == 0) return true;  // guard: treat 0 as daily

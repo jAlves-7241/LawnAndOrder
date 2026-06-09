@@ -102,7 +102,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled)
-                snprintf(lbuf, sizeof(lbuf), "[ON] Z%d %-6s %2dmin", i+1, z.name, z.duration_min);
+                snprintf(lbuf, sizeof(lbuf), "[ON] Z%d %-6.6s %2dmin", i+1, z.name, z.duration_min);
             else
                 snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
@@ -124,6 +124,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::HISTORICO: {
+        static_assert(NUM_ZONES == 4, "History display hardcodes 4 zones");
         HistoryEntry entries[HISTORY_DISPLAY];
         uint8_t n = history.readLast(HISTORY_DISPLAY, entries);
 
@@ -179,7 +180,6 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         }
         add_item(blLabel,           "go:blsel");
         add_item("Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
-        add_item("Exportar Historico", "export_hist");
         add_item("Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
         add_item("<- Voltar",       "go:def");
         break;
@@ -289,13 +289,14 @@ void MenuBuilder::modeHours(uint8_t m, char* dest, size_t maxLen) {
         return;
     }
 
-    dest[0] = '\0';
+    size_t pos = 0;
     for (uint8_t i = 0; i < sched.slot_count; i++) {
-        char tbuf[8];
-        snprintf(tbuf, sizeof(tbuf), "%02d:%02d", 
-                 sched.slots[i].hour, sched.slots[i].minute);
-        
-        if (i > 0) strncat(dest, "+", maxLen - strlen(dest) - 1);
-        strncat(dest, tbuf, maxLen - strlen(dest) - 1);
+        if (i > 0) {
+            int n = snprintf(dest + pos, maxLen - pos, "+");
+            if (n > 0 && pos + n < maxLen) pos += n;
+        }
+        int n = snprintf(dest + pos, maxLen - pos, "%02d:%02d", 
+                         sched.slots[i].hour, sched.slots[i].minute);
+        if (n > 0 && pos + n < maxLen) pos += n;
     }
 }

@@ -24,25 +24,25 @@ void recoverI2C() {
     LOG_W("SYS", "A iniciar recuperacao do barramento I2C preso...");
     Wire.end();
     
-    pinMode(21, INPUT_PULLUP); // SDA como entrada com pull-up
-    pinMode(22, OUTPUT);       // SCL como saída manual
+    pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
+    pinMode(PIN_SCL, OUTPUT);       // SCL como saída manual
     
     // Toggle SCL até 9 vezes enquanto SDA estiver preso em LOW
     for (int i = 0; i < 9; i++) {
         esp_task_wdt_reset();
-        if (digitalRead(21) == HIGH) break; // Escravo libertou SDA
-        digitalWrite(22, LOW);
+        if (digitalRead(PIN_SDA) == HIGH) break; // Escravo libertou SDA
+        digitalWrite(PIN_SCL, LOW);
         delayMicroseconds(5);
-        digitalWrite(22, HIGH);
+        digitalWrite(PIN_SCL, HIGH);
         delayMicroseconds(5);
     }
     
     // Gerar uma condição de STOP manual (SCL HIGH, depois SDA HIGH)
-    pinMode(21, OUTPUT);
-    digitalWrite(21, LOW);
-    digitalWrite(22, HIGH);
+    pinMode(PIN_SDA, OUTPUT);
+    digitalWrite(PIN_SDA, LOW);
+    digitalWrite(PIN_SCL, HIGH);
     delayMicroseconds(5);
-    digitalWrite(21, HIGH); // Transição LOW -> HIGH com SCL HIGH = STOP
+    digitalWrite(PIN_SDA, HIGH); // Transição LOW -> HIGH com SCL HIGH = STOP
     delay(10);
     
     Wire.begin();
@@ -69,11 +69,18 @@ void setup() {
         .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
         .trigger_panic = true
     };
-    esp_task_wdt_init(&wdt_config);
+    esp_err_t wdt_err = esp_task_wdt_init(&wdt_config);
 #else
-    esp_task_wdt_init(WDT_TIMEOUT_S, true);
+    esp_err_t wdt_err = esp_task_wdt_init(WDT_TIMEOUT_S, true);
 #endif
-    esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
+    if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
+        LOG_E("SYS", "WDT init falhou: %d", wdt_err);
+    }
+
+    wdt_err = esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
+    if (wdt_err != ESP_OK) {
+        LOG_E("SYS", "WDT add falhou: %d", wdt_err);
+    }
 
     initAppState();       // load firmware defaults into RAM
 
@@ -92,14 +99,18 @@ void setup() {
 
     wateringCtrl.begin();
 
-    // BUG-5 fix: clear stale suspension from NVS if already expired.
-    // Between storage.load() and the first scheduler.update(), suspended
-    // could be true with a past timestamp, causing a brief "Rega Suspensa".
-    if (gState.suspended && gState.rtc_valid && gState.now.unix >= gState.suspended_until) {
+    // Evaluate active suspension against the real RTC time
+    if (gState.suspended_until > 0) {
+        if (gState.rtc_valid && gState.now.unix >= gState.suspended_until) {
+            gState.suspended = false;
+            gState.suspended_until = 0;
+            storage.save();
+            LOG_I("SYS", "Suspensao expirada durante reboot - limpa");
+        } else {
+            gState.suspended = true;
+        }
+    } else {
         gState.suspended = false;
-        gState.suspended_until = 0;
-        storage.save();
-        LOG_I("SYS", "Suspensao expirada durante reboot - limpa");
     }
 
     scheduler.begin();    // computes next_hour/min from live RTC + current mode

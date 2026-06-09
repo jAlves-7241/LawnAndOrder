@@ -37,7 +37,7 @@ A interface física no LCD 2004 é implementada através de um padrão polimórf
   - `ScreenDurPick`: Seletor interativo para escolher valores numéricos (duração de zona 0–20 min, dias de suspensão, frequência).
   - `ScreenDateEdit`: Introdução sequencial do dia/mês/ano com validação de limites temporais.
   - `ScreenTimeEdit`: Seletor interativo para horas/minutos dos ciclos de rega automática.
-- `ui/ScreenExport.h / .cpp`: Ecrã gráfico contendo uma barra de progresso que reporta a percentagem de envio de histórico CSV via terminal série.
+
 - `ui/ScreenIdle.h / .cpp`: Ecrã principal passivo (idle). Mostra a hora atual e as informações de agendamento automático, progresso ativo da rega por zona ou estado de suspensão.
 - `ui/ScreenMenu.h / .cpp`: Renders e controla menus scrolláveis gerados a partir do `MenuBuilder`.
 - `ui/ScreenSetup.h / .cpp`: Controla o assistente interativo de primeiro arranque (**Setup Wizard**).

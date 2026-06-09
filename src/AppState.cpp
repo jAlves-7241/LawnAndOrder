@@ -61,10 +61,14 @@ void initAppState() {
     const uint8_t durs[NUM_ZONES]    = { ZONE1_DUR, ZONE2_DUR, ZONE3_DUR, ZONE4_DUR };
 
     for (int i = 0; i < NUM_ZONES; i++) {
-        strncpy(gState.zones[i].name, names[i], sizeof(gState.zones[i].name) - 1);
+        if (i < 4 && names[i] != nullptr) {
+            strncpy(gState.zones[i].name, names[i], sizeof(gState.zones[i].name) - 1);
+        } else {
+            snprintf(gState.zones[i].name, sizeof(gState.zones[i].name), "Zona %d", i + 1);
+        }
         gState.zones[i].name[sizeof(gState.zones[i].name) - 1] = '\0';
-        gState.zones[i].enabled      = enabled[i];
-        gState.zones[i].duration_min = durs[i];
+        gState.zones[i].enabled      = (i < 4) ? enabled[i] : true;
+        gState.zones[i].duration_min = (i < 4) ? durs[i] : 10;
     }
 
     // ── Mode & schedule ──────────────────────────────────

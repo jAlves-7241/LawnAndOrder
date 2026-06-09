@@ -16,6 +16,7 @@ static const size_t LINE_BUF = 52;
 
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
+    _log_suspended = false;
     _ready = LittleFS.begin(formatOnFail);
     if (!_ready) {
         LOG_E("HIST", "Falha ao montar LittleFS");
@@ -73,19 +74,10 @@ void History::record(const HistoryEntry& entry) {
     }
 
     if (_exportState != ExportState::IDLE) {
-        LOG_W("HIST", "Exportacao pendente, forçar conclusao sincrona...");
-        uint32_t bailMs = millis();
-        while (_exportState != ExportState::IDLE) {
-            esp_task_wdt_reset();
-            update();
-            if (millis() - bailMs > 5000) {
-                LOG_E("HIST", "Export stuck, aborting");
-                if (_exportFile) _exportFile.close();
-                _exportState = ExportState::IDLE;
-                _log_suspended = false;
-                break;
-            }
-        }
+        LOG_W("HIST", "Exportacao a decorrer, registo deferido para mais tarde.");
+        _deferredEntry = entry;
+        _hasDeferred = true;
+        return;
     }
 
     char line[LINE_BUF];
@@ -188,6 +180,10 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     if (sscanf(line, "%4d-%2d-%2dT%2d:%2d,%c",
                &yr, &mo, &dy, &hh, &mm, &tc) != 6) return false;
 
+    // Rejeitar valores cronológicos impossíveis
+    if (yr < 2020 || yr > 2099 || mo < 1 || mo > 12 ||
+        dy < 1 || dy > 31 || hh > 23 || mm > 59) return false;
+
     out.year  = (uint16_t)yr;
     out.month = (uint8_t)mo;
     out.day   = (uint8_t)dy;
@@ -252,6 +248,16 @@ void History::_populateCache() {
 
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return;
+
+    // Otimização O(1): se o ficheiro for longo, saltar para o fim
+    uint32_t fsize = f.size();
+    if (fsize > 512) {
+        f.seek(fsize - 512, SeekSet);
+        // Descartar a primeira linha que possivelmente está cortada a meio
+        while (f.available()) {
+            if (f.read() == '\n') break;
+        }
+    }
 
     char chunk[256];
     char line[LINE_BUF];
@@ -477,6 +483,11 @@ void History::update() {
         _log_suspended = false;
         LOG_I("HIST", "Exportacao concluida: %d registos", _exportSent);
         _exportState = ExportState::IDLE;
+        
+        if (_hasDeferred) {
+            _hasDeferred = false;
+            record(_deferredEntry);
+        }
     }
 }
 

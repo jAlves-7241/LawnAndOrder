@@ -85,7 +85,7 @@ void UI::update() {
         _lastActivity = millis();
         if (_currentScreen) {
             if (rot != 0) _currentScreen->handleRotation(*this, rot);
-            if (click) _currentScreen->handleClick(*this);
+            else if (click) _currentScreen->handleClick(*this);
         }
     }
 
@@ -282,18 +282,6 @@ void UI::dispatchAction(const char* action) {
             int ci = atoi(type+1);
             _screenTimeEdit.setup(TimeEditContext::CUSTOM_CYCLE, ci, _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
             changeScreen(&_screenTimeEdit);
-        }
-        return;
-    }
-
-    if (!strcmp(action, "export_hist")) {
-        if (history.entryCount() == 0) {
-            _screenInfo.setup("! AVISO !", "Historico vazio.", "Nada para exportar.", "", MenuID::DEF_AVANCADO);
-            changeScreen(&_screenInfo);
-        } else {
-            history.startExport();
-            _screenExport.setup(MenuID::DEF_AVANCADO);
-            changeScreen(&_screenExport);
         }
         return;
     }

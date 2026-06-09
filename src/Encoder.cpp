@@ -23,6 +23,11 @@ void Encoder::begin() {
 //   DT == HIGH → counter-cw (-1)
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
+    static uint32_t last_isr_ms = 0;
+    uint32_t now = millis();
+    if (now - last_isr_ms < 2) return;
+    last_isr_ms = now;
+
     int16_t d = (digitalRead(_inst->_dt) == LOW) ? 1 : -1;
     portENTER_CRITICAL_ISR(&mux);
     if (d > 0) {

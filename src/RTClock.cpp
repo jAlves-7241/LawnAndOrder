@@ -70,7 +70,10 @@ bool RTClock::begin() {
 // ─────────────────────────────────────────────────────────
 void RTClock::update() {
     uint32_t nowMs = millis();
-    if ((nowMs - _lastReadMs) < 1000UL) return;
+    if ((nowMs - _lastReadMs) < 30000UL) {
+        _incrementSoftwareClock();
+        return; // 30s (ajustado de 1s para reduzir jitter no bus I2C)
+    }
     _lastReadMs = nowMs;
 
     if (!_found) {
@@ -183,6 +186,10 @@ void RTClock::update() {
 // ─────────────────────────────────────────────────────────
 void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                   uint8_t  hour, uint8_t minute, uint8_t second) {
+    
+    // Filtro contra underflow do epoch (corrupção por dados manuais ou software)
+    if (year < 2020 || year > 2099) return;
+
     // Preservar a suspensão mantendo a diferença de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
 
@@ -233,7 +240,9 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
         int64_t newUntil = (int64_t)gState.suspended_until + delta;
         // Se a nova hora ultrapassou a meta de suspensão, ou overflow negativo
-        if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
+        if (newUntil > UINT32_MAX) {
+            gState.suspended_until = UINT32_MAX;
+        } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
             gState.suspended = false;
             gState.suspended_until = 0;
         } else {
@@ -251,12 +260,36 @@ void RTClock::setTime(uint8_t hour, uint8_t minute) {
 }
 
 void RTClock::_incrementSoftwareClock() {
+    // Ancorar ao millis() para não perder segundos durante stalls do loop
+    static uint32_t anchorMs   = millis();
+    static uint32_t anchorUnix = gState.now.unix;
+    static uint32_t lastKnownUnix = gState.now.unix;
+    
+    // Recalibrar âncora se o unix foi alterado externamente (ex: set())
+    if (gState.now.unix != lastKnownUnix) {
+        anchorMs   = millis();
+        anchorUnix = gState.now.unix;
+        lastKnownUnix = gState.now.unix;
+    }
+
     uint32_t currentUnix = gState.now.unix;
     if (currentUnix < 1577836800UL) { // Menor que 2020-01-01
         currentUnix = 1767225600UL;   // 2026-01-01 00:00:00 UTC
+        anchorMs   = millis();
+        anchorUnix = currentUnix;
     }
     
-    currentUnix += 1;
+    // Avançar a âncora a cada segundo para evitar o overflow de 49.7 dias do millis()
+    uint32_t elapsedMs = millis() - anchorMs;
+    if (elapsedMs >= 1000) {
+        uint32_t elapsedSec = elapsedMs / 1000;
+        anchorUnix += elapsedSec;
+        anchorMs += elapsedSec * 1000;
+    }
+    
+    currentUnix = anchorUnix;
+    if (currentUnix == gState.now.unix) return; // Sem avanço
+
     DateTime utcDt(currentUnix);
     DateTime localDt = utcDt;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
@@ -264,6 +297,7 @@ void RTClock::_incrementSoftwareClock() {
     }
     _copyToState(localDt);
     gState.now.unix = currentUnix;
+    lastKnownUnix = currentUnix;
 }
 
 // ─────────────────────────────────────────────────────────

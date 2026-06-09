@@ -25,16 +25,30 @@ void Terminal::update() {
   // 1. Salvaguarda crítica: se a exportação de histórico estiver ativa,
   // silenciar o terminal
   if (history.isExporting()) {
-    while (Serial.available() > 0) {
+    uint8_t max_bytes_drop = 64;
+    while (Serial.available() > 0 && max_bytes_drop-- > 0) {
       Serial.read(); // Descartar inputs
     }
     _bufLen = 0;
     return;
   }
 
-  // 2. Leitura não bloqueante de caracteres
-  while (Serial.available() > 0) {
+  // 2. Leitura não bloqueante de caracteres com limite
+  uint8_t max_bytes_proc = 64;
+  static bool in_ansi = false;
+  while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
+
+    if (c == 27) {
+      in_ansi = true;
+      continue;
+    }
+    if (in_ansi) {
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
+        in_ansi = false;
+      }
+      continue;
+    }
 
     // Se for fim de linha (LF ou CR)
     if (c == '\n' || c == '\r') {
@@ -112,6 +126,8 @@ void Terminal::_processCommand(char *cmd) {
     _cmdExportConfig();
   } else if (strcmp(trimmed, "import_config") == 0) {
     _cmdImportConfig(args);
+  } else if (strcmp(trimmed, "export_history") == 0) {
+    _cmdExportHistory();
   } else if (strcmp(trimmed, "clear_history") == 0) {
     _cmdClearHistory();
   } else if (strcmp(trimmed, "reboot") == 0) {
@@ -142,6 +158,7 @@ void Terminal::_cmdHelp() {
                  "atual (Hex Blob)");
   Serial.println("  import_config <68_hex>       - Importa configuracoes a "
                  "partir do Hex Blob");
+  Serial.println("  export_history               - Exporta o historico de regas por Serial");
   Serial.println("  clear_history                - Apaga completamente o "
                  "historico de regas do sistema");
   Serial.println(
@@ -175,7 +192,7 @@ void Terminal::_cmdStatus() {
     Serial.printf("  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\n",
                   gState.now.year, gState.now.month, gState.now.day,
                   gState.now.hour, gState.now.min, gState.now.sec);
-    Serial.printf("  Epoch UTC:   %u (segundos desde 1970)\n", gState.now.unix);
+    Serial.printf("  Epoch UTC:   %lu (segundos desde 1970)\n", (unsigned long)gState.now.unix);
     Serial.println("  Hardware RTC: Ligado e Valido [OK]");
   } else {
     Serial.printf(
@@ -336,4 +353,9 @@ void Terminal::_cmdReboot() {
   Serial.flush();
   delay(100);
   ESP.restart();
+}
+
+void Terminal::_cmdExportHistory() {
+  Serial.println("A iniciar exportacao do historico...");
+  history.startExport();
 }
