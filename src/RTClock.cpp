@@ -1,5 +1,6 @@
 #include "RTClock.h"
 #include "log.h"
+#include "i18n.h"
 
 RTClock rtclock;
 

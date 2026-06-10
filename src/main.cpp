@@ -14,6 +14,7 @@
 #include "WateringController.h"
 #include "log.h"
 #include "Terminal.h"
+#include "i18n.h"
 
 Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
