@@ -102,6 +102,6 @@ void initAppState() {
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].hour = SCHED_CUSTOM_SLOT0_H;
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].minute = SCHED_CUSTOM_SLOT0_M;
 
-    LOG_I("APP", "Defaults carregados - Modo: %d, Zonas: %d",
+    LOG_I("APP", "Predefinicoes carregadas - Modo: %d, Zonas: %d",
           (uint8_t)gState.mode, NUM_ZONES);
 }

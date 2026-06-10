@@ -28,12 +28,12 @@ bool Storage::load() {
     AppConfigBlob blob = {};
     size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
     if (readBytes != sizeof(blob) || blob.version != NVS_VERSION) {
-        LOG_W("NVS", "Blob invalido ou versao incorreta (%d). A usar defaults.", blob.version);
+        LOG_W("NVS", "Blob invalido ou versao incorreta (%d). A usar predefinicoes.", blob.version);
         return false;
     }
 
     if (!_blobToState(blob)) {
-        LOG_W("NVS", "Validacao falhou apos leitura. A usar defaults.");
+        LOG_W("NVS", "Validacao falhou apos leitura. A usar predefinicoes.");
         return false;
     }
 
@@ -54,7 +54,7 @@ void Storage::save() {
         memcmp(&blob, &current, sizeof(blob)) != 0) {
         
         prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
-        LOG_I("NVS", "Dados actualizados");
+        LOG_I("NVS", "Dados atualizados");
     }
 }
 

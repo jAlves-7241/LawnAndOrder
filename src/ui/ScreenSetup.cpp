@@ -22,7 +22,7 @@ void ScreenSetupWelcome::handleRotation(UI& ui, int8_t dir) {
 
 void ScreenSetupWelcome::handleClick(UI& ui) {
     if (_isComplete) {
-        LOG_I("UI", "Setup Wizard concluido");
+        LOG_I("UI", "Configuracao inicial concluida");
         ui.setInSetup(false);
         gState.setup_done = true;
         storage.save();

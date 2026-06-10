@@ -198,7 +198,7 @@ static const char *getModeStr(AppMode mode) {
 }
 
 void Terminal::_cmdStatus() {
-  Serial.println("================== STATUS DO SISTEMA ==================");
+  Serial.println("================== ESTADO DO SISTEMA ==================");
 
   // 1. Relógio / RTC
   if (gState.rtc_valid) {

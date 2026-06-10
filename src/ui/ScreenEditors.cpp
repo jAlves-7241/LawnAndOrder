@@ -356,7 +356,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
         char saved[LCD_COLS + 1];
         snprintf(saved, sizeof(saved), "Hora: %02d:%02d", _teHour, _teMin);
-        ui.getScreenDone().setup(saved, "RTC actualizado!");
+        ui.getScreenDone().setup(saved, "RTC atualizado!");
         ui.getScreenDone().setBackMenu(MenuID::DEF);
         ui.changeScreen(&ui.getScreenDone());
     } else {
