@@ -14,7 +14,7 @@
 Terminal terminal;
 extern UI ui;
 
-Terminal::Terminal() : _bufLen(0) { memset(_buffer, 0, sizeof(_buffer)); }
+Terminal::Terminal() : _bufLen(0), _pendingClearHistory(false) { memset(_buffer, 0, sizeof(_buffer)); }
 
 void Terminal::begin() {
   _bufLen = 0;
@@ -108,6 +108,16 @@ void Terminal::_processCommand(char *cmd) {
 
   char *trimmed = trimWhitespace(cmd);
   if (!trimmed || *trimmed == '\0') {
+    return;
+  }
+
+  if (_pendingClearHistory) {
+    if (strcmp(trimmed, "yes") == 0 || strcmp(trimmed, "y") == 0 || strcmp(trimmed, "sim") == 0 || strcmp(trimmed, "s") == 0) {
+      _cmdClearHistory();
+    } else {
+      Serial.println("Operacao cancelada.");
+    }
+    _pendingClearHistory = false;
     return;
   }
 
@@ -343,6 +353,12 @@ void Terminal::_cmdImportConfig(char *hexStr) {
 }
 
 void Terminal::_cmdClearHistory() {
+  if (!_pendingClearHistory) {
+    Serial.println("AVISO: Tem a certeza que deseja apagar permanentemente o historico?");
+    Serial.println("Escreva 'yes' para confirmar ou qualquer outra coisa para cancelar.");
+    _pendingClearHistory = true;
+    return;
+  }
   Serial.println("A limpar o historico de regas...");
   history.clear();
   // Reposicionar ecra fisico para Idle para refletir o historico limpo

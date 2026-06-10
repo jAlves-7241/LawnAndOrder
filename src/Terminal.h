@@ -10,6 +10,7 @@ public:
 private:
     char _buffer[256];
     uint16_t _bufLen;
+    bool _pendingClearHistory;
 
     void _processCommand(char* cmd);
     void _cmdHelp();
