@@ -7,10 +7,10 @@
 // ─────────────────────────────────────────────────────────
 void ScreenInfo::setup(const char* l0, const char* l1, const char* l2, const char* l3, MenuID backMenu) {
     char buf[LCD_COLS + 1];
-    strncpy(_rows[0], Display::cx(buf, l0), LCD_COLS + 1);
-    strncpy(_rows[1], Display::fx(buf, l1), LCD_COLS + 1);
-    strncpy(_rows[2], Display::fx(buf, l2), LCD_COLS + 1);
-    strncpy(_rows[3], Display::fx(buf, l3), LCD_COLS + 1);
+    snprintf(_rows[0], sizeof(_rows[0]), "%s", Display::cx(buf, l0));
+    snprintf(_rows[1], sizeof(_rows[1]), "%s", Display::fx(buf, l1));
+    snprintf(_rows[2], sizeof(_rows[2]), "%s", Display::fx(buf, l2));
+    snprintf(_rows[3], sizeof(_rows[3]), "%s", Display::fx(buf, l3));
     _backMenu = backMenu;
 }
 
@@ -35,9 +35,9 @@ void ScreenInfo::render(UI& ui) {
 // ─────────────────────────────────────────────────────────
 void ScreenConfirm::setup(const char* l1, const char* l2, MenuID backMenu, const char* tag) {
     char buf[LCD_COLS + 1];
-    strncpy(_rows[0], Display::cx(buf, "-- CONFIRMAR? --"), LCD_COLS + 1);
-    strncpy(_rows[1], Display::fx(buf, l1), LCD_COLS + 1);
-    strncpy(_rows[2], Display::fx(buf, l2), LCD_COLS + 1);
+    snprintf(_rows[0], sizeof(_rows[0]), "%s", Display::cx(buf, "-- CONFIRMAR? --"));
+    snprintf(_rows[1], sizeof(_rows[1]), "%s", Display::fx(buf, l1));
+    snprintf(_rows[2], sizeof(_rows[2]), "%s", Display::fx(buf, l2));
     strncpy(_tag, tag, sizeof(_tag) - 1);
     _tag[sizeof(_tag) - 1] = '\0';
     _backMenu = backMenu;
@@ -84,10 +84,10 @@ void ScreenConfirm::render(UI& ui) {
 // ─────────────────────────────────────────────────────────
 void ScreenDone::setup(const char* l1, const char* l2, MenuID back) {
     char buf[LCD_COLS + 1];
-    strncpy(_rows[0], Display::cx(buf, "-- EXECUTADO --"), LCD_COLS + 1);
-    strncpy(_rows[1], Display::fx(buf, l1), LCD_COLS + 1);
-    strncpy(_rows[2], Display::fx(buf, l2), LCD_COLS + 1);
-    strncpy(_rows[3], Display::cx(buf, "Click p/ voltar"), LCD_COLS + 1);
+    snprintf(_rows[0], sizeof(_rows[0]), "%s", Display::cx(buf, "-- EXECUTADO --"));
+    snprintf(_rows[1], sizeof(_rows[1]), "%s", Display::fx(buf, l1));
+    snprintf(_rows[2], sizeof(_rows[2]), "%s", Display::fx(buf, l2));
+    snprintf(_rows[3], sizeof(_rows[3]), "%s", Display::cx(buf, "Click p/ voltar"));
     _backMenu = back;
 }
 

@@ -36,15 +36,18 @@ void Terminal::update() {
   // 2. Leitura não bloqueante de caracteres com limite
   uint8_t max_bytes_proc = 64;
   static bool in_ansi = false;
+  static uint8_t ansi_bytes = 0;
   while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
 
     if (c == 27) {
       in_ansi = true;
+      ansi_bytes = 0;
       continue;
     }
     if (in_ansi) {
-      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
+      ansi_bytes++;
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~' || ansi_bytes > 10) {
         in_ansi = false;
       }
       continue;

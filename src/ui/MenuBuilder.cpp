@@ -290,13 +290,15 @@ void MenuBuilder::modeHours(uint8_t m, char* dest, size_t maxLen) {
     }
 
     size_t pos = 0;
-    for (uint8_t i = 0; i < sched.slot_count; i++) {
+    for (uint8_t i = 0; i < sched.slot_count && pos < maxLen - 1; i++) {
         if (i > 0) {
             int n = snprintf(dest + pos, maxLen - pos, "+");
-            if (n > 0 && pos + n < maxLen) pos += n;
+            if (n > 0) pos += ((size_t)n < maxLen - pos) ? n : (maxLen - pos - 1);
         }
-        int n = snprintf(dest + pos, maxLen - pos, "%02d:%02d", 
-                         sched.slots[i].hour, sched.slots[i].minute);
-        if (n > 0 && pos + n < maxLen) pos += n;
+        if (pos < maxLen - 1) {
+            int n = snprintf(dest + pos, maxLen - pos, "%02d:%02d", 
+                             sched.slots[i].hour, sched.slots[i].minute);
+            if (n > 0) pos += ((size_t)n < maxLen - pos) ? n : (maxLen - pos - 1);
+        }
     }
 }

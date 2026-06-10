@@ -120,15 +120,6 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
-    // Validação de caracteres hexadecimais
-    for (size_t i = 0; i < len; i++) {
-        char c = hexIn[i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-            LOG_W("NVS", "Importacao falhou: caracter invalido encontrado (%c)", c);
-            return false;
-        }
-    }
-
     AppConfigBlob blob = {};
     uint8_t* ptr = (uint8_t*)&blob;
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
@@ -211,6 +202,19 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
     for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
         cs.slots[i].hour   = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
         cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
+    }
+    
+    // Garantir que os slots ativos estão sempre ordenados cronologicamente (Bubble Sort simples)
+    for (int i = 0; i < cs.slot_count - 1; i++) {
+        for (int j = i + 1; j < cs.slot_count; j++) {
+            uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
+            uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
+            if (mins_j < mins_i) {
+                auto temp = cs.slots[i];
+                cs.slots[i] = cs.slots[j];
+                cs.slots[j] = temp;
+            }
+        }
     }
     
     return true;
