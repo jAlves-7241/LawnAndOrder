@@ -1,3 +1,4 @@
+#include "../i18n.h"
 #include "ScreenSetup.h"
 #include "../UI.h"
 #include "../AppState.h"
@@ -22,7 +23,7 @@ void ScreenSetupWelcome::handleRotation(UI& ui, int8_t dir) {
 
 void ScreenSetupWelcome::handleClick(UI& ui) {
     if (_isComplete) {
-        LOG_I("UI", "Configuracao inicial concluida");
+        LOG_I("UI", TXT_SETUP_DONE_LOG);
         ui.setInSetup(false);
         gState.setup_done = true;
         storage.save();
@@ -36,7 +37,7 @@ void ScreenSetupWelcome::handleClick(UI& ui) {
 void ScreenSetupWelcome::render(UI& ui) {
     char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
     if (_isComplete) {
-        ui.getDisplay().cx(b0, "Config. concluida!");
+        ui.getDisplay().cx(b0, TXT_CONFIG_DONE);
         ui.getDisplay().cx(b1, "");
         ui.getDisplay().cx(b2, "Sistema pronto.");
         ui.getDisplay().cx(b3, "Clique p/ iniciar");

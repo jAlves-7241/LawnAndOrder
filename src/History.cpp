@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "History.h"
 #include <LittleFS.h>
 #include <esp_task_wdt.h>
@@ -465,7 +466,7 @@ void History::update() {
         _exportFile.close();
         Serial.printf("--- FIM: %d registos ---\n", _exportSent);
         _log_suspended = false;
-        LOG_I("HIST", "Exportacao concluida: %d registos", _exportSent);
+        LOG_I("HIST", TXT_LOG_EXPORT_DONE, _exportSent);
         _exportState = ExportState::IDLE;
         
         if (_hasDeferred) {
@@ -483,7 +484,7 @@ void History::startExport() {
     if (!_ready || _lineCount == 0) return;
     if (_exportState != ExportState::IDLE) return;
     if (_rotState != RotState::IDLE) {
-        LOG_W("HIST", "Nao e possivel exportar durante a rotacao de historico");
+        LOG_W("HIST", TXT_LOG_NO_EXPORT_ROT);
         return;
     }
 

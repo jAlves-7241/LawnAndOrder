@@ -1,3 +1,4 @@
+#include "../i18n.h"
 #include "ScreenIdle.h"
 #include "../UI.h"
 #include "../AppState.h"
@@ -108,7 +109,7 @@ void ScreenIdle::fullRender(UI& ui) {
                 snprintf(nxstr, sizeof(nxstr), "%s as %02d:%02d", dayStr, h, m);
             } else {
                 if (gState.next_hour == 255) {
-                    snprintf(nxstr, sizeof(nxstr), "Proxima: --:--");
+                    snprintf(nxstr, sizeof(nxstr), TXT_NEXT_NONE);
                 } else {
                     snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
                 }

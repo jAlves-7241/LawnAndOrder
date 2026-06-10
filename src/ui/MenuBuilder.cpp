@@ -1,3 +1,4 @@
+#include "../i18n.h"
 #include "MenuBuilder.h"
 #include "../AppState.h"
 #include "../History.h"
@@ -30,16 +31,16 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 
     switch (mid) {
     case MenuID::MAIN:
-        add_item("Rega Manual",       "go:manual");
-        add_item("Programacao",       "go:prog");
+        add_item(TXT_MANUAL_WATERING,       "go:manual");
+        add_item(TXT_PROG,       "go:prog");
         add_item("Definicoes",        "go:def");
-        add_item("<- Voltar",         "go:idle");
+        add_item(TXT_BACK,         "go:idle");
         break;
 
     case MenuID::MANUAL:
         add_item("Rega Geral",    "confirm:Iniciar rega com|params. atuais?|main|general");
-        add_item("Personalizado", "go:czonas");
-        add_item("<- Voltar",     "go:main");
+        add_item(TXT_CUSTOM, "go:czonas");
+        add_item(TXT_BACK,     "go:main");
         break;
 
     case MenuID::PROG:
@@ -48,12 +49,12 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         if (gState.mode == AppMode::PERSONALIZADO) {
             add_item("Personalizar", "go:ccustom");
         }
-        add_item("Configurar Zonas", "go:cfgz");
+        add_item(TXT_CONFIG_ZONES, "go:cfgz");
         if (gState.suspended)
             add_item("Retomar Rega", "cancel_susp");
         else
             add_item("Suspender Rega", "dur_pick:suspend");
-        add_item("<- Voltar",        "go:main");
+        add_item(TXT_BACK,        "go:main");
         break;
 
     case MenuID::CFG_CUSTOM: {
@@ -68,7 +69,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             snprintf(act, sizeof(act), "time_edit:c%d", i);
             add_item(lbuf, act);
         }
-        add_item("<- Terminar", "go:prog");
+        add_item(TXT_FINISH_BACK, "go:prog");
         break;
     }
 
@@ -85,7 +86,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             add_item(lbuf, act);
         }
         add_item("Avancar >", "setup_advance");
-        add_item("<- Voltar", "setup_back");
+        add_item(TXT_BACK, "setup_back");
         break;
     }
 
@@ -95,7 +96,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         snprintf(lbuf, sizeof(lbuf), "%s Fraco",         mc(2)); add_item(lbuf, "sel:2");
         snprintf(lbuf, sizeof(lbuf), "%s Desativado",    mc(3)); add_item(lbuf, "sel:3");
         snprintf(lbuf, sizeof(lbuf), "%s Personalizado", mc(4)); add_item(lbuf, "sel:4");
-        add_item("<- Voltar", "go:prog");
+        add_item(TXT_BACK, "go:prog");
         break;
 
     case MenuID::CFG_ZONAS:
@@ -108,7 +109,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
             add_item(lbuf, act);
         }
-        add_item("<- Voltar", "go:prog");
+        add_item(TXT_BACK, "go:prog");
         break;
 
     case MenuID::CUSTOM_ZONAS:
@@ -119,8 +120,8 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             char act[8]; snprintf(act, sizeof(act), "cz:%d", i);
             add_item(lbuf, act);
         }
-        add_item("-> Definir duracao", "dur_pick:custom");
-        add_item("<- Voltar",          "go:manual");
+        add_item(TXT_SET_DURATION, "dur_pick:custom");
+        add_item(TXT_BACK,          "go:manual");
         break;
 
     case MenuID::HISTORICO: {
@@ -129,7 +130,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         uint8_t n = history.readLast(HISTORY_DISPLAY, entries);
 
         if (n == 0) {
-            add_item("Sem registos", "");
+            add_item(TXT_NO_RECORDS, "");
         } else {
             for (int8_t i = (int8_t)n - 1; i >= 0; i--) {
                 const HistoryEntry& e = entries[i];
@@ -154,39 +155,39 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                 add_item(lbuf, act);
             }
         }
-        add_item("<- Voltar", "go:def");
+        add_item(TXT_BACK, "go:def");
         break;
     }
 
     case MenuID::DEF: {
-        add_item("Testar Zonas",    "go:testes");
-        add_item("Historico",       "go:hist");
-        add_item("Data/Hora",       "date_edit:rtc");
-        add_item("Def. Avancadas",  "go:def_avancado");
-        add_item("<- Voltar",       "go:main");
+        add_item(TXT_TEST_ZONES,    "go:testes");
+        add_item(TXT_HISTORY,       "go:hist");
+        add_item(TXT_DATETIME,       "date_edit:rtc");
+        add_item(TXT_ADVANCED_SETTINGS,  "go:def_avancado");
+        add_item(TXT_BACK,       "go:main");
         break;
     }
 
     case MenuID::DEF_AVANCADO: {
-        add_item(gState.auto_dst ? "Fuso Horario: Auto" : "Fuso Horario: Fixo", "toggle_dst");
+        add_item(gState.auto_dst ? TXT_TZ_AUTO : TXT_TZ_FIXED, "toggle_dst");
         const char* blLabel;
         switch (gState.backlight_timeout_ms) {
-            case 30000UL:              blLabel = "Ecra: 30 seg"; break;
-            case 60000UL:              blLabel = "Ecra:  1 min"; break;
-            case 120000UL:             blLabel = "Ecra:  2 min"; break;
-            case 300000UL:             blLabel = "Ecra:  5 min"; break;
-            case BACKLIGHT_TIMEOUT_NEVER: blLabel = "Ecra: sempre"; break;
-            default:                   blLabel = "Ecra: 2 min";  break;
+            case 30000UL:              blLabel = TXT_BL_30S; break;
+            case 60000UL:              blLabel = TXT_BL_1M; break;
+            case 120000UL:             blLabel = TXT_BL_2M; break;
+            case 300000UL:             blLabel = TXT_BL_5M; break;
+            case BACKLIGHT_TIMEOUT_NEVER: blLabel = TXT_BL_ALWAYS; break;
+            default:                   blLabel = TXT_BL_2M_DEF;  break;
         }
         add_item(blLabel,           "go:blsel");
-        add_item("Versao Firmware", "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
-        add_item("Reset Fabrica",   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
-        add_item("<- Voltar",       "go:def");
+        add_item(TXT_FIRMWARE_VER, "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
+        add_item(TXT_FACTORY_RESET,   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
+        add_item(TXT_BACK,       "go:def");
         break;
     }
 
     case MenuID::TESTES:
-        add_item("Testar Todas (5s)", "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
+        add_item(TXT_TEST_ALL_5S, "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
         for (int i = 0; i < NUM_ZONES; i++) {
             snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, gState.zones[i].name);
             char act[80];
@@ -195,16 +196,16 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                      i+1, gState.zones[i].name, i);
             add_item(lbuf, act);
         }
-        add_item("<- Voltar", "go:def");
+        add_item(TXT_BACK, "go:def");
         break;
 
     case MenuID::SETUP_MODE:
-        add_item("Intenso",       "sel:0");
-        add_item("Medio",         "sel:1");
-        add_item("Fraco",         "sel:2");
-        add_item("Personalizado", "sel:4");
-        add_item("Saltar >",      "setup_advance");
-        add_item("<- Voltar",     "setup_back");
+        add_item(TXT_INTENSE,       "sel:0");
+        add_item(TXT_MEDIUM,         "sel:1");
+        add_item(TXT_WEAK,         "sel:2");
+        add_item(TXT_CUSTOM, "sel:4");
+        add_item(TXT_SKIP,      "setup_advance");
+        add_item(TXT_BACK,     "setup_back");
         break;
 
     case MenuID::SETUP_ZONES:
@@ -217,8 +218,8 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
             add_item(lbuf, act);
         }
-        add_item("Terminar >",  "setup_advance");
-        add_item("<- Voltar",   "setup_back");
+        add_item(TXT_FINISH,  "setup_advance");
+        add_item(TXT_BACK,   "setup_back");
         break;
 
     case MenuID::BLSEL: {
@@ -235,12 +236,12 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         add_item(lbuf, "bl:300000");
         snprintf(lbuf, sizeof(lbuf), "%s  Sempre",     blmc(BACKLIGHT_TIMEOUT_NEVER));
         add_item(lbuf, "bl:4294967295");
-        add_item("<- Voltar", "go:def_avancado");
+        add_item(TXT_BACK, "go:def_avancado");
         break;
     }
 
     default:
-        add_item("<- Voltar", "go:main");
+        add_item(TXT_BACK, "go:main");
         break;
     }
 
@@ -268,11 +269,11 @@ MenuID MenuBuilder::parseMenuID(const char* s) {
 
 const char* MenuBuilder::modeName(uint8_t m) {
     switch ((AppMode)m) {
-        case AppMode::INTENSO:       return "Intenso";
-        case AppMode::MEDIO:         return "Medio";
-        case AppMode::FRACO:         return "Fraco";
-        case AppMode::DESATIVADO:    return "Desativado";
-        case AppMode::PERSONALIZADO: return "Personalizado";
+        case AppMode::INTENSO:       return TXT_INTENSE;
+        case AppMode::MEDIO:         return TXT_MEDIUM;
+        case AppMode::FRACO:         return TXT_WEAK;
+        case AppMode::DESATIVADO:    return TXT_DISABLED;
+        case AppMode::PERSONALIZADO: return TXT_CUSTOM;
         default:                     return "?";
     }
 }

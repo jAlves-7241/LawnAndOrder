@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "Scheduler.h"
 #include "WateringController.h"
 #include "Storage.h"
@@ -21,7 +22,7 @@ void Scheduler::begin() {
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", "Proxima rega: %02d:%02d",
+    LOG_I("SCHED", TXT_NEXT_WATERING,
                   gState.next_hour, gState.next_min);
 }
 

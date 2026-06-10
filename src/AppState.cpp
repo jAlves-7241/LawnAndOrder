@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "AppState.h"
 #include <string.h>
 #include "log.h"
@@ -102,6 +103,6 @@ void initAppState() {
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].hour = SCHED_CUSTOM_SLOT0_H;
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].minute = SCHED_CUSTOM_SLOT0_M;
 
-    LOG_I("APP", "Predefinicoes carregadas - Modo: %d, Zonas: %d",
+    LOG_I("APP", TXT_LOG_DEFAULTS_LOADED,
           (uint8_t)gState.mode, NUM_ZONES);
 }

@@ -1,3 +1,4 @@
+#include "../i18n.h"
 #include "ScreenEditors.h"
 #include "../UI.h"
 #include "../AppState.h"
@@ -145,7 +146,7 @@ void ScreenDurPick::handleClick(UI& ui) {
 
     if (_durContext == DurContext::SUSPEND) {
         if (!gState.rtc_valid) {
-            ui.getScreenInfo().setup("! SEM RTC !", "Sem hora valida -", "nao e possivel", "suspender rega.", MenuID::PROG);
+            ui.getScreenInfo().setup("! SEM RTC !", TXT_NO_VALID_TIME, "nao e possivel", "suspender rega.", MenuID::PROG);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
@@ -197,7 +198,7 @@ void ScreenDurPick::render(UI& ui) {
         case DurContext::SUSPEND: title = "Dias de Pausa"; unit = "dias"; break;
         case DurContext::FREQ_DAYS: title = "Intervalo"; unit = "dias"; break;
         case DurContext::NUM_CYCLES: title = "Ciclos Diarios"; unit = "ciclos"; break;
-        default: title = "Rega Manual"; break;
+        default: title = TXT_MANUAL_WATERING; break;
     }
 
     ui.getDisplay().hdr(hbuf, title);
@@ -278,7 +279,7 @@ void ScreenDateEdit::handleClick(UI& ui) {
 
 void ScreenDateEdit::render(UI& ui) {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
-    ui.getDisplay().hdr(hbuf, "Data/Hora");
+    ui.getDisplay().hdr(hbuf, TXT_DATETIME);
 
     char vstr[21];
     if (_deField == 0) snprintf(vstr, sizeof(vstr), "[%02d] / %02d / %04d", _deDay, _deMonth, _deYear);
@@ -356,7 +357,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
         char saved[LCD_COLS + 1];
         snprintf(saved, sizeof(saved), "Hora: %02d:%02d", _teHour, _teMin);
-        ui.getScreenDone().setup(saved, "RTC atualizado!");
+        ui.getScreenDone().setup(saved, TXT_RTC_UPDATED);
         ui.getScreenDone().setBackMenu(MenuID::DEF);
         ui.changeScreen(&ui.getScreenDone());
     } else {
@@ -416,7 +417,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
 void ScreenTimeEdit::render(UI& ui) {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], fbuf[LCD_COLS + 1], hintbuf[LCD_COLS + 1];
-    const char* title = "Data/Hora";
+    const char* title = TXT_DATETIME;
     char cbuf[21];
 
     if (_teContext == TimeEditContext::CUSTOM_CYCLE) {

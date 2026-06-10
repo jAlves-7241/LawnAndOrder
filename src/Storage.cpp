@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "Storage.h"
 #include <Preferences.h>
 #include "log.h"
@@ -62,7 +63,7 @@ void Storage::save() {
 void Storage::clear() {
     if (!_ready) return;
     prefs.clear();   // erases all keys in the namespace
-    LOG_I("NVS", "Memoria limpa (Reset)");
+    LOG_I("NVS", TXT_LOG_MEM_CLEARED);
 }
 
 // ─────────────────────────────────────────────────────────

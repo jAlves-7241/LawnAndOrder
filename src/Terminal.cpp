@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "Terminal.h"
 #include "AppState.h"
 #include "History.h"
@@ -198,7 +199,7 @@ static const char *getModeStr(AppMode mode) {
 }
 
 void Terminal::_cmdStatus() {
-  Serial.println("================== ESTADO DO SISTEMA ==================");
+  Serial.println(TXT_SYS_STATUS_HDR);
 
   // 1. Relógio / RTC
   if (gState.rtc_valid) {
@@ -245,10 +246,10 @@ void Terminal::_cmdStatus() {
   Serial.print("  Rega Ativa:  ");
   if (gState.watering.active) {
     if (gState.watering.is_waiting) {
-      Serial.printf("A aguardar transicao de zona (atualmente Zona %d)\n",
+      Serial.printf(TXT_LOG_WAIT_ZONE_TRANS,
                     gState.watering.zone_idx + 1);
     } else {
-      Serial.printf("A regar Zona %d - Progresso: %d%%\n",
+      Serial.printf(TXT_LOG_WATERING_PROG,
                     gState.watering.zone_idx + 1, gState.watering.progress_pct);
     }
   } else {
@@ -375,6 +376,6 @@ void Terminal::_cmdReboot() {
 }
 
 void Terminal::_cmdExportHistory() {
-  Serial.println("A iniciar exportacao do historico...");
+  Serial.println(TXT_LOG_START_EXPORT);
   history.startExport();
 }

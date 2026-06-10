@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "WateringController.h"
 #include "Scheduler.h"
 #include "Storage.h"
@@ -77,12 +78,12 @@ void WateringController::begin() {
                 _cycleStart.sec = startDT.second();
                 _cycleStart.unix = utcDT.unixtime();
 
-                LOG_I("REGA", "A retomar ciclo da zona %d", _queue[_queuePos].zone_idx + 1);
+                LOG_I("REGA", TXT_LOG_RESUME_ZONE, _queue[_queuePos].zone_idx + 1);
                 _startNextZone();
                 return; // Impede _syncState de limpar tudo
             }
         } else {
-             LOG_W("REGA", "RTC invalido. Nao e possivel validar o tempo de retoma.");
+             LOG_W("REGA", TXT_LOG_RTC_INVALID_RESUME);
         }
         // Se chegou aqui, não é válido retomar, limpa NVS
         rs.active = false;
@@ -135,7 +136,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
         storage.saveRecoveryState(rs);
     }
 
-    LOG_I("REGA", "Iniciar rega geral");
+    LOG_I("REGA", TXT_START_GEN_WATERING);
     _startNextZone();
 }
 
@@ -178,7 +179,7 @@ void WateringController::stop() {
                     _zoneDurMin[_zoneIdx] = ran_min;
                 }
             }
-            LOG_I("REGA", "Zona %d (%s) desativada (interrompida)", _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A");
+            LOG_I("REGA", TXT_LOG_ZONE_DEACTIVATED_INT, _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A");
         }
         _active = false;
         _isWaiting = false;
@@ -239,7 +240,7 @@ void WateringController::update() {
         }
 
         _deactivateAll();
-        LOG_I("REGA", "Zona %d (%s) desativada", _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A");
+        LOG_I("REGA", TXT_LOG_ZONE_DEACTIVATED, _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A");
         _queuePos++;
 
         if (_queuePos < _queueLen) {
@@ -322,10 +323,10 @@ void WateringController::_startNextZone() {
     _syncState();
 
     if (_zoneDurationMs % 60000UL == 0) {
-        LOG_I("REGA", "Zona %d (%s) ativa - dur=%lu min",
+        LOG_I("REGA", TXT_LOG_ZONE_ACTIVE_MIN,
                       _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A", _zoneDurationMs / 60000UL);
     } else {
-        LOG_I("REGA", "Zona %d (%s) ativa - dur=%lu s",
+        LOG_I("REGA", TXT_LOG_ZONE_ACTIVE_SEC,
                       _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A", _zoneDurationMs / 1000UL);
     }
 }

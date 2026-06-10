@@ -1,3 +1,4 @@
+#include "../i18n.h"
 #include "ScreenMenu.h"
 #include "../UI.h"
 #include <string.h>
@@ -46,22 +47,22 @@ void ScreenMenu::render(UI& ui) {
 
     auto menuTitle = [](MenuID m) -> const char* {
         switch (m) {
-            case MenuID::MAIN:         return "Menu Principal";
-            case MenuID::MANUAL:       return "Rega Manual";
-            case MenuID::PROG:         return "Programacao";
+            case MenuID::MAIN:         return TXT_MENU_MAIN;
+            case MenuID::MANUAL:       return TXT_MANUAL_WATERING;
+            case MenuID::PROG:         return TXT_PROG;
             case MenuID::MODOS:        return "Alterar Modo";
-            case MenuID::CFG_ZONAS:    return "Configurar Zonas";
-            case MenuID::CUSTOM_ZONAS: return "Escolher Zonas";
+            case MenuID::CFG_ZONAS:    return TXT_CONFIG_ZONES;
+            case MenuID::CUSTOM_ZONAS: return TXT_CHOOSE_ZONES;
             case MenuID::CFG_CUSTOM:   return "Personalizar";
-            case MenuID::HISTORICO:    return "Historico";
+            case MenuID::HISTORICO:    return TXT_HISTORY;
             case MenuID::DEF:          return "Definicoes";
-            case MenuID::DEF_AVANCADO: return "Def. Avancadas";
-            case MenuID::TESTES:       return "Testar Zonas";
+            case MenuID::DEF_AVANCADO: return TXT_ADVANCED_SETTINGS;
+            case MenuID::TESTES:       return TXT_TEST_ZONES;
             case MenuID::BLSEL:        return "Tempo Ecra";
-            case MenuID::SETUP_MODE:   return "Modo de Rega";
-            case MenuID::SETUP_ZONES:  return "Config. Zonas";
-            case MenuID::SETUP_CUSTOM: return "Modo Pers.";
-            default:                   return "Menu";
+            case MenuID::SETUP_MODE:   return TXT_WATERING_MODE;
+            case MenuID::SETUP_ZONES:  return TXT_CONFIG_ZONES_SHORT;
+            case MenuID::SETUP_CUSTOM: return TXT_MODE_CUSTOM_SHORT;
+            default:                   return TXT_MENU;
         }
     };
 

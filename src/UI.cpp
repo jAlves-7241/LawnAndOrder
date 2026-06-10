@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "UI.h"
 #include "WateringController.h"
 #include "RTClock.h"
@@ -174,7 +175,7 @@ bool UI::executeConfirmed(const char* tag) {
             if (gState.zones[i].enabled) any = true;
         }
         if (!any) {
-            _screenInfo.setup("! ERRO !", "Nenhuma zona ativa.", "Ative as zonas na", "programacao.", MenuID::MANUAL);
+            _screenInfo.setup("! ERRO !", TXT_NO_ACTIVE_ZONES, "Ative as zonas na", "programacao.", MenuID::MANUAL);
             changeScreen(&_screenInfo);
             return true;
         }
