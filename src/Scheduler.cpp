@@ -159,7 +159,7 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
     DateTime dt(nextDay1970 * 86400UL);
     DateTime nextLocal(dt.year(), dt.month(), dt.day(), nextH, nextM, 0);
     uint32_t nextLocalUnix = nextLocal.unixtime();
-    uint32_t nextUTCUnix = nextLocalUnix;
+    uint32_t nextUTCUnix = nextLocalUnix - (TIMEZONE_OFFSET * 3600);
     
     if (gState.auto_dst) {
         // Fast heuristic for Local -> UTC DST check

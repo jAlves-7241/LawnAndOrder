@@ -226,6 +226,7 @@ uint16_t History::_countLines() const {
     uint16_t n = 0;
     uint8_t buf[256];
     while (f.available()) {
+        esp_task_wdt_reset();
         int len = f.read(buf, sizeof(buf));
         for (int i = 0; i < len; i++) {
             if (buf[i] == '\n') n++;
@@ -306,22 +307,7 @@ void History::_populateCache() {
 }
 
 void History::_rotateAndAppend(const char* newLine) {
-    if (_rotState != RotState::IDLE) {
-        LOG_W("HIST", "Rotacao forçada sincrona!");
-        uint32_t bailMs = millis();
-        while (_rotState != RotState::IDLE) {
-            esp_task_wdt_reset();
-            update();
-            if (millis() - bailMs > 5000) {
-                LOG_E("HIST", "Rotation stuck, aborting");
-                if (_rotSrc) _rotSrc.close();
-                if (_rotDst) _rotDst.close();
-                LittleFS.remove("/hist_tmp.csv");
-                _rotState = RotState::IDLE;
-                break;
-            }
-        }
-    }
+    // Bloqueio forçado síncrono removido (código morto) - _rotState é garantido ser IDLE aqui.
 
     _rotDiscard = HISTORY_MAX_ENTRIES / 10;
     if (_rotDiscard == 0) _rotDiscard = 1;

@@ -73,8 +73,22 @@ bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount) {
 
 void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount) {
     if (!_ready) return;
-    prefs.putUShort("hcnt", lineCount);
-    prefs.putBytes("hcache", src, size);
+    
+    uint16_t currentCnt = prefs.getUShort("hcnt", 0);
+    if (currentCnt != lineCount) {
+        prefs.putUShort("hcnt", lineCount);
+    }
+
+    uint8_t* currentCache = (uint8_t*)malloc(size);
+    if (currentCache) {
+        size_t readBytes = prefs.getBytes("hcache", currentCache, size);
+        if (readBytes != size || memcmp(src, currentCache, size) != 0) {
+            prefs.putBytes("hcache", src, size);
+        }
+        free(currentCache);
+    } else {
+        prefs.putBytes("hcache", src, size);
+    }
 }
 
 // ─────────────────────────────────────────────────────────

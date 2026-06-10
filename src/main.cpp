@@ -46,6 +46,7 @@ void recoverI2C() {
     delay(10);
     
     Wire.begin(PIN_SDA, PIN_SCL);
+    Wire.setTimeOut(150);
     rtclock.begin();
     esp_task_wdt_reset();
     display.begin();
@@ -89,6 +90,8 @@ void setup() {
 
     history.begin();      // mount LittleFS, open/create history file
 
+    Wire.begin(PIN_SDA, PIN_SCL);
+    Wire.setTimeOut(150);
     display.begin();
     encoder.begin();
 

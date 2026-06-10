@@ -167,7 +167,10 @@ void ScreenDurPick::handleClick(UI& ui) {
         for (int i = 0; i < NUM_ZONES; i++) {
             if (gState.custom_sel[i]) {
                 char zid[4]; snprintf(zid, sizeof(zid), "Z%d ", i + 1);
-                strncat(zstr, zid, LCD_COLS - strlen(zstr));
+                size_t len = strlen(zstr);
+                if (len < sizeof(zstr) - 1) {
+                    strncat(zstr, zid, sizeof(zstr) - len - 1);
+                }
                 any = true;
             }
         }
