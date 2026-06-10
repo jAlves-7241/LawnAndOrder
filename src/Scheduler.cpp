@@ -22,7 +22,7 @@ void Scheduler::begin() {
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", TXT_NEXT_WATERING,
+    LOG_I("SCHED", TXT_LOG_NEXT_WATERING,
                   gState.next_hour, gState.next_min);
 }
 

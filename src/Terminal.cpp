@@ -78,6 +78,9 @@ void Terminal::update() {
         _buffer[_bufLen++] = c;
         // Eco do caracter digitado
         Serial.write(c);
+      } else {
+        Serial.println("\n[ERRO: Comando excedeu limite de caracteres. Buffer limpo.]");
+        _bufLen = 0;
       }
     }
   }

@@ -76,19 +76,19 @@ void ScreenIdle::fullRender(UI& ui) {
         uint8_t zi = gState.watering.zone_idx;
         char zrow[LCD_COLS+1], pb[LCD_COLS+1];
         if (zi >= NUM_ZONES) {
-            snprintf(zrow, sizeof(zrow), "Erro: Zona %d", zi + 1);
+            snprintf(zrow, sizeof(zrow), TXT_IDLE_ERR_ZONE, zi + 1);
         } else {
             snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
         }
         ui.getDisplay().pbar(pb, _lastProgress);
-        ui.getDisplay().setRows(b0, "A regar agora...", zrow, pb);
+        ui.getDisplay().setRows(b0, TXT_IDLE_WATERING, zrow, pb);
     } else {
         if (!gState.rtc_valid) {
-            ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, "! Acertar hora !"));
+            ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, TXT_IDLE_SET_TIME));
         } else if (gState.suspended) {
-            ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, "Rega Suspensa"), "");
+            ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, TXT_IDLE_SUSPENDED), "");
         } else if (gState.mode == AppMode::DESATIVADO) {
-            ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, "Rega Desativada"), "");
+            ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, TXT_IDLE_DISABLED), "");
         } else {
             char nxstr[LCD_COLS+1];
             uint32_t nextDay1970 = 0;
@@ -98,20 +98,20 @@ void ScreenIdle::fullRender(UI& ui) {
                 uint32_t currentDay1970 = localDate.unixtime() / 86400UL;
                 const char* dayStr = "";
                 if (nextDay1970 == currentDay1970) {
-                    dayStr = "Hoje";
+                    dayStr = TXT_TODAY;
                 } else if (nextDay1970 == currentDay1970 + 1) {
-                    dayStr = "Amanha";
+                    dayStr = TXT_TOMORROW;
                 } else {
-                    static const char* DOW_NAMES[] = {"Domingo", "Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado"};
+                    static const char* DOW_NAMES[] = {TXT_DOW_SUN, TXT_DOW_MON, TXT_DOW_TUE, TXT_DOW_WED, TXT_DOW_THU, TXT_DOW_FRI, TXT_DOW_SAT};
                     uint8_t dow = (nextDay1970 + 4) % 7;
                     dayStr = DOW_NAMES[dow];
                 }
-                snprintf(nxstr, sizeof(nxstr), "%s as %02d:%02d", dayStr, h, m);
+                snprintf(nxstr, sizeof(nxstr), TXT_NEXT_DAY_TIME, dayStr, h, m);
             } else {
                 if (gState.next_hour == 255) {
                     snprintf(nxstr, sizeof(nxstr), TXT_NEXT_NONE);
                 } else {
-                    snprintf(nxstr, sizeof(nxstr), "Proxima: %02d:%02d", gState.next_hour, gState.next_min);
+                    snprintf(nxstr, sizeof(nxstr), TXT_NEXT_TIME, gState.next_hour, gState.next_min);
                 }
             }
             ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, nxstr));
