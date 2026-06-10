@@ -59,7 +59,10 @@ void Display::setRows(const char* r0, const char* r1,
     static uint32_t lastFullRefresh = 0;
     uint32_t now = millis();
     if (now - lastFullRefresh >= 60000UL) {
-        _invalidateShadow();
+        for (int r = 0; r < LCD_ROWS; r++) {
+            _lcd.setCursor(0, r);
+            _lcd.print(_shadow[r]);
+        }
         lastFullRefresh = now;
     }
 

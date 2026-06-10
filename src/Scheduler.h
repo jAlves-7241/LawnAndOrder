@@ -62,7 +62,7 @@ private:
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
 
     // True while we're inside the trigger minute to prevent double-fire.
-    bool _triggered;
+
 
     // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;

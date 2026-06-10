@@ -100,8 +100,13 @@ void initAppState() {
     // Reset custom mode to defaults to avoid tainted schedules
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slot_count = SCHED_CUSTOM_SLOTS;
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].interval_days = SCHED_CUSTOM_INTERVAL;
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].day_pattern = DayPattern::EVERY_X_DAYS;
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].hour = SCHED_CUSTOM_SLOT0_H;
     MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].minute = SCHED_CUSTOM_SLOT0_M;
+    for(int i = 1; i < MAX_SLOTS_PER_MODE; i++) {
+        MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[i].hour = 0;
+        MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[i].minute = 0;
+    }
 
     LOG_I("APP", TXT_LOG_DEFAULTS_LOADED,
           (uint8_t)gState.mode, NUM_ZONES);

@@ -25,10 +25,7 @@ WateringController::WateringController()
 }
 
 void WateringController::begin() {
-    for (int i = 0; i < NUM_ZONES; i++) {
-        digitalWrite(_relayPins[i], RELAY_OFF);
-        pinMode(_relayPins[i], OUTPUT);
-    }
+    // Pinos já inicializados no main.cpp (Hardware Safety)
     _syncState();
 
     // Tentar resgatar ciclo interrompido por blackout
@@ -79,7 +76,13 @@ void WateringController::begin() {
                 _cycleStart.unix = utcDT.unixtime();
 
                 LOG_I("REGA", TXT_LOG_RESUME_ZONE, _queue[_queuePos].zone_idx + 1);
-                _startNextZone();
+                if (_queuePos > 0) {
+                    _isWaiting = true;
+                    _waitStartMs = millis();
+                    _syncState();
+                } else {
+                    _startNextZone();
+                }
                 return; // Impede _syncState de limpar tudo
             }
         } else {

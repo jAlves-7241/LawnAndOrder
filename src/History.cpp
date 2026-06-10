@@ -13,8 +13,6 @@ History history;
 // Flag global para suspensão temporária de logs durante exportação Serial
 bool _log_suspended = false;
 
-static const size_t LINE_BUF = 128;
-
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
     _log_suspended = false;
@@ -59,17 +57,15 @@ void History::record(const HistoryEntry& entry) {
     if (entry.trigger == WaterTrigger::TEST)  return;
     if (!gState.rtc_valid)                    return;
 
-    if (_rotState != RotState::IDLE) {
-        LOG_W("HIST", "Rotacao a decorrer, registo deferido para mais tarde.");
-        _deferredEntry = entry;
-        _hasDeferred = true;
-        return;
-    }
-
-    if (_exportState != ExportState::IDLE) {
-        LOG_W("HIST", "Exportacao a decorrer, registo deferido para mais tarde.");
-        _deferredEntry = entry;
-        _hasDeferred = true;
+    if (_rotState != RotState::IDLE || _exportState != ExportState::IDLE) {
+        LOG_W("HIST", "Disco ocupado, registo deferido para mais tarde.");
+        uint8_t nextHead = (_defHead + 1) % 4;
+        if (nextHead != _defTail) {
+            _deferredQueue[_defHead] = entry;
+            _defHead = nextHead;
+        } else {
+            LOG_E("HIST", "Fila de deferidos cheia, registo perdido!");
+        }
         return;
     }
 
@@ -413,11 +409,14 @@ void History::update() {
             LOG_E("HIST", "rename falhou - manter original");
             LittleFS.remove("/hist_tmp.csv");
             _pendingCacheSave = false;
+            File f = LittleFS.open(HISTORY_FILE, "a");
+            if (f) { f.println(_rotPendingLine); f.close(); }
         }
         _rotState = RotState::IDLE;
-        if (_hasDeferred) {
-            _hasDeferred = false;
-            record(_deferredEntry);
+        while (_defHead != _defTail) {
+            HistoryEntry e = _deferredQueue[_defTail];
+            _defTail = (_defTail + 1) % 4;
+            record(e);
         }
     }
 
@@ -469,9 +468,10 @@ void History::update() {
         LOG_I("HIST", TXT_LOG_EXPORT_DONE, _exportSent);
         _exportState = ExportState::IDLE;
         
-        if (_hasDeferred) {
-            _hasDeferred = false;
-            record(_deferredEntry);
+        while (_defHead != _defTail) {
+            HistoryEntry e = _deferredQueue[_defTail];
+            _defTail = (_defTail + 1) % 4;
+            record(e);
         }
     }
 }

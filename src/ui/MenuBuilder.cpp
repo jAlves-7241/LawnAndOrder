@@ -189,11 +189,15 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
     case MenuID::TESTES:
         add_item(TXT_TEST_ALL_5S, "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
         for (int i = 0; i < NUM_ZONES; i++) {
-            snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, gState.zones[i].name);
+            char safe_name[16];
+            strncpy(safe_name, gState.zones[i].name, sizeof(safe_name));
+            safe_name[sizeof(safe_name)-1] = '\0';
+            for (int k = 0; safe_name[k]; k++) if (safe_name[k] == '|') safe_name[k] = '/';
+            snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, safe_name);
             char act[80];
             snprintf(act, sizeof(act),
                      "confirm:Ativar Z%d %s|por 5 segundos?|testes|test_%d",
-                     i+1, gState.zones[i].name, i);
+                     i+1, safe_name, i);
             add_item(lbuf, act);
         }
         add_item(TXT_BACK, "go:def");

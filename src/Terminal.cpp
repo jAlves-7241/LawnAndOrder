@@ -38,6 +38,7 @@ void Terminal::update() {
   uint8_t max_bytes_proc = 64;
   static bool in_ansi = false;
   static uint8_t ansi_bytes = 0;
+  static bool ignore_rest = false;
   while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
 
@@ -56,11 +57,14 @@ void Terminal::update() {
 
     // Se for fim de linha (LF ou CR)
     if (c == '\n' || c == '\r') {
+      ignore_rest = false;
       if (_bufLen > 0) {
         _buffer[_bufLen] = '\0';
         _processCommand(_buffer);
         _bufLen = 0;
       }
+    } else if (ignore_rest) {
+      continue;
     }
     // Lidar com backspace/delete
     else if (c == '\b' || c == 127) {
@@ -81,6 +85,7 @@ void Terminal::update() {
       } else {
         Serial.println("\n[ERRO: Comando excedeu limite de caracteres. Buffer limpo.]");
         _bufLen = 0;
+        ignore_rest = true;
       }
     }
   }

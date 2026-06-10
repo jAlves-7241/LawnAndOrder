@@ -10,7 +10,7 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _triggered(false), _lastMin(0xFF)
+    : _lastMin(0xFF)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
 }
@@ -56,7 +56,6 @@ void Scheduler::update() {
 
     // On minute rollover, reset trigger guard and recompute next_*
     if (t.min != _lastMin) {
-        _triggered = false;
         _lastMin   = t.min;
         // Recompute so next_* is always fresh (catches mode changes too)
         uint32_t old_ref = gState.custom_ref_day;
@@ -80,10 +79,8 @@ void Scheduler::update() {
                             (t.unix - _lastTriggerUnix[i]) < 7200) {
                             LOG_W("SCHED", "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d",
                                   sched.slots[i].hour, sched.slots[i].minute);
-                            _triggered = true;
                             break;
                         }
-                        _triggered = true;
                         _lastTriggerUnix[i] = t.unix;
                         LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
                                       t.hour, t.min);
@@ -98,7 +95,6 @@ void Scheduler::update() {
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged() {
-    _triggered = false;
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
     if (!gState.rtc_valid) {
         // RTC not ready - seed next_* from the first slot of the new mode
@@ -175,7 +171,7 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
             if (month == 3) {
                 if (day > ls || (day == ls && hour >= (1 + TIMEZONE_OFFSET))) isDstLocal = true;
             } else {
-                if (day < ls || (day == ls && hour < (1 + TIMEZONE_OFFSET))) isDstLocal = true;
+                if (day < ls || (day == ls && hour < (2 + TIMEZONE_OFFSET))) isDstLocal = true;
             }
         }
         if (isDstLocal) {

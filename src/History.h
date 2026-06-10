@@ -4,6 +4,8 @@
 #include "AppState.h"   // WaterTrigger, HistoryEntry, NUM_ZONES
 #include "config.h"
 
+const size_t LINE_BUF = 128;
+
 // ─────────────────────────────────────────────────────────
 // History
 //
@@ -49,7 +51,7 @@ private:
     uint16_t _rotSkipped;
     uint16_t _rotCopied;
 
-    char _rotLineBuf[64];
+    char _rotLineBuf[LINE_BUF];
     size_t _rotLinePos;
     char _rotPendingLine[128];
 
@@ -59,8 +61,9 @@ private:
     
     bool         _pendingCacheSave = false;   // NVS save diferido (rotação async)
     
-    HistoryEntry _deferredEntry;
-    bool         _hasDeferred = false;
+    HistoryEntry _deferredQueue[4];
+    uint8_t      _defHead = 0;
+    uint8_t      _defTail = 0;
 
     // ── Export via Serial (async) ──
     enum class ExportState : uint8_t { IDLE, SENDING, FOOTER };
@@ -68,7 +71,7 @@ private:
     File        _exportFile;
     uint16_t    _exportSent;
     uint16_t    _exportTotal;
-    char        _exportLineBuf[64];
+    char        _exportLineBuf[LINE_BUF];
     size_t      _exportLinePos;
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);

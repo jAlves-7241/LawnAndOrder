@@ -105,11 +105,11 @@ void setup() {
 
     // Evaluate active suspension against the real RTC time
     if (gState.suspended_until > 0) {
-        if (gState.rtc_valid && gState.now.unix >= gState.suspended_until) {
+        if (!gState.rtc_valid || gState.now.unix >= gState.suspended_until) {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
-            LOG_I("SYS", "Suspensao expirada durante reboot - limpa");
+            LOG_I("SYS", "Suspensao expirada (ou RTC falhou) - limpa");
         } else {
             gState.suspended = true;
         }
