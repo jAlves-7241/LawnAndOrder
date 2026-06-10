@@ -96,6 +96,7 @@ void Scheduler::update() {
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged() {
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
     _lastMin = 0xFF; // Force schedule evaluation
     if (!gState.rtc_valid) {

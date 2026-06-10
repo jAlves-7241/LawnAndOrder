@@ -85,8 +85,9 @@ void UI::update() {
     if (hadInput) {
         _lastActivity = millis();
         if (_currentScreen) {
+            UIScreen* oldScreen = _currentScreen;
             if (rot != 0) _currentScreen->handleRotation(*this, rot);
-            if (click) _currentScreen->handleClick(*this);
+            if (click && _currentScreen == oldScreen) _currentScreen->handleClick(*this);
         }
     }
 

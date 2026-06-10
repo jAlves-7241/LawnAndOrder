@@ -138,6 +138,8 @@ void History::clear() {
     _lineCount = 0;
     _cacheCount = 0;
     _pendingCacheSave = false;
+    _defHead = 0;
+    _defTail = 0;
     memset(_cache, 0, sizeof(_cache));
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
     LOG_I("HIST", TXT_LOG_HIST_WIPED);

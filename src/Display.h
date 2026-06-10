@@ -31,19 +31,17 @@ public:
     bool isDisplayOn() const { return _displayOn; }
 
     // ── Formatting helpers (return into caller-supplied buf) ──
-    // Left-pad with spaces to LCD_COLS
-    static char* fx(char* buf, const char* s);
-
-    // Centre-align in LCD_COLS
-    static char* cx(char* buf, const char* s);
-
-    // "~~ TITLE ~~" header bar
-    static char* hdr(char* buf, const char* s);
-
-    // Progress bar: [#####--------]  42%
-    static char* pbar(char* buf, uint8_t pct);
+    // Helpers para formatação de texto. Usam templates para deduzir em segurança o tamanho do array de destino.
+    template<size_t N> static char* fx(char (&buf)[N], const char* s) { return _fx(buf, N, s); }
+    template<size_t N> static char* cx(char (&buf)[N], const char* s) { return _cx(buf, N, s); }
+    template<size_t N> static char* hdr(char (&buf)[N], const char* s) { return _hdr(buf, N, s); }
+    template<size_t N> static char* pbar(char (&buf)[N], uint8_t pct) { return _pbar(buf, N, pct); }
 
 private:
+    static char* _fx(char* buf, size_t n, const char* s);
+    static char* _cx(char* buf, size_t n, const char* s);
+    static char* _hdr(char* buf, size_t n, const char* s);
+    static char* _pbar(char* buf, size_t n, uint8_t pct);
     LiquidCrystal_I2C _lcd;
     bool _backlightOn;
     bool _displayOn;

@@ -1,11 +1,12 @@
 #include "Encoder.h"
 
-Encoder* Encoder::_inst = nullptr;
+Encoder* volatile Encoder::_inst = nullptr;
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-Encoder::Encoder(uint8_t clk, uint8_t dt, uint8_t sw)
-    : _clk(clk), _dt(dt), _sw(sw),
-      _delta(0), _btn_prev(false), _last_reading(false), _btn_last_ms(0)
+// ─────────────────────────────────────────────────────────
+Encoder::Encoder(uint8_t pin_clk, uint8_t pin_dt, uint8_t pin_sw)
+    : _clk(pin_clk), _dt(pin_dt), _sw(pin_sw), _delta(0), 
+      _btn_prev(HIGH), _last_reading(HIGH), _btn_last_ms(0)
 {
     _inst = this;
 }
@@ -14,22 +15,26 @@ void Encoder::begin() {
     pinMode(_clk, INPUT_PULLUP);
     pinMode(_dt,  INPUT_PULLUP);
     pinMode(_sw,  INPUT_PULLUP);
-    _btn_last_ms = millis();
-    attachInterrupt(digitalPinToInterrupt(_clk), _isr, RISING);
+
+    _btn_prev = digitalRead(_sw);
+    _last_reading = _btn_prev;
+
+    attachInterrupt(digitalPinToInterrupt(_clk), _isr, FALLING);
 }
 
-// On the rising edge of CLK, DT state encodes direction:
-//   DT == LOW  → clockwise  (+1)
-//   DT == HIGH → counter-cw (-1)
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
-    static uint32_t last_isr_ms = 0;
+    static volatile uint32_t last_isr_ms = 0;
+    
+    portENTER_CRITICAL_ISR(&mux);
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    if (now - last_isr_ms < 2) return;
+    if (now - last_isr_ms < 2) {
+        portEXIT_CRITICAL_ISR(&mux);
+        return;
+    }
     last_isr_ms = now;
 
     int16_t d = (((GPIO.in >> _inst->_dt) & 1) == 0) ? 1 : -1;
-    portENTER_CRITICAL_ISR(&mux);
     if (d > 0) {
         if (_inst->_delta < 32000) _inst->_delta += d;
     } else {

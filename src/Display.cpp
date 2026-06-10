@@ -55,6 +55,11 @@ void Display::_invalidateShadow() {
 
 void Display::setRows(const char* r0, const char* r1,
                       const char* r2, const char* r3) {
+    const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
+    for (int r = 0; r < LCD_ROWS; r++) {
+        if (rows[r]) _writeRow(r, rows[r]);
+    }
+
     // Forçar atualização total a cada 60 segundos para autocorrigir ruído no bus I2C (glitches físicos)
     static uint32_t lastFullRefresh = 0;
     uint32_t now = millis();
@@ -64,11 +69,6 @@ void Display::setRows(const char* r0, const char* r1,
             _lcd.print(_shadow[r]);
         }
         lastFullRefresh = now;
-    }
-
-    const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
-    for (int r = 0; r < LCD_ROWS; r++) {
-        if (rows[r]) _writeRow(r, rows[r]);
     }
 }
 
@@ -110,59 +110,77 @@ void Display::_writeRow(uint8_t row, const char* text) {
 // ── Static formatting helpers ──────────────────────────────
 
 // Left-aligned, space-padded to LCD_COLS
-char* Display::fx(char* buf, const char* s) {
+char* Display::_fx(char* buf, size_t n, const char* s) {
+    if (n == 0) return buf;
     int len = strlen(s);
     if (len > LCD_COLS) len = LCD_COLS;
+    if (len > (int)n - 1) len = n - 1;
     memcpy(buf, s, len);
-    memset(buf + len, ' ', LCD_COLS - len);
-    buf[LCD_COLS] = '\0';
+    int pad = LCD_COLS - len;
+    if (pad > (int)n - 1 - len) pad = n - 1 - len;
+    memset(buf + len, ' ', pad);
+    buf[len + pad] = '\0';
     return buf;
 }
 
 // Centred in LCD_COLS
-char* Display::cx(char* buf, const char* s) {
+char* Display::_cx(char* buf, size_t n, const char* s) {
+    if (n == 0) return buf;
     int len = strlen(s);
     if (len > LCD_COLS) len = LCD_COLS;
+    if (len > (int)n - 1) len = n - 1;
     int pad = LCD_COLS - len;
     int lpad = pad / 2;
+    if (lpad > (int)n - 1) lpad = n - 1;
     memset(buf, ' ', lpad);
     memcpy(buf + lpad, s, len);
-    memset(buf + lpad + len, ' ', pad - lpad);
-    buf[LCD_COLS] = '\0';
+    int rpad = pad - lpad;
+    if (rpad > (int)n - 1 - lpad - len) rpad = n - 1 - lpad - len;
+    memset(buf + lpad + len, ' ', rpad);
+    buf[lpad + len + rpad] = '\0';
     return buf;
 }
 
 // "~~ TITLE ~~" - fills full LCD_COLS with tildes around centred text
-char* Display::hdr(char* buf, const char* s) {
+char* Display::_hdr(char* buf, size_t n, const char* s) {
+    if (n == 0) return buf;
     int len = strlen(s);
     if (len > LCD_COLS - 2) len = LCD_COLS - 2;
+    if (len > (int)n - 3) len = n - 3;
     int total_tilde = LCD_COLS - len - 2;  // 2 for the spaces
     int lt = total_tilde / 2;
     int rt = total_tilde - lt;
     int pos = 0;
+    if (lt > (int)n - 1) lt = n - 1;
     memset(buf + pos, '~', lt); pos += lt;
-    buf[pos++] = ' ';
+    if (pos < (int)n - 1) buf[pos++] = ' ';
     memcpy(buf + pos, s, len); pos += len;
-    buf[pos++] = ' ';
+    if (pos < (int)n - 1) buf[pos++] = ' ';
+    if (rt > (int)n - 1 - pos) rt = n - 1 - pos;
     memset(buf + pos, '~', rt); pos += rt;
     buf[pos] = '\0';
     return buf;
 }
 
 // [#####--------] pct%  (total 20 chars)
-char* Display::pbar(char* buf, uint8_t pct) {
+char* Display::_pbar(char* buf, size_t n, uint8_t pct) {
+    if (n == 0) return buf;
     if (pct > 100) pct = 100;
     int barWidth = LCD_COLS - 7;
     if (barWidth < 0) barWidth = 0;
     int filled = (barWidth > 0) ? ((pct * barWidth) / 100) : 0;
     int pos = 0;
-    buf[pos++] = '[';
-    for (int i = 0; i < barWidth; i++) buf[pos++] = (i < filled) ? '#' : '-';
-    buf[pos++] = ']';
-    buf[pos++] = ' ';
+    if (pos < (int)n - 1) buf[pos++] = '[';
+    for (int i = 0; i < barWidth; i++) {
+        if (pos < (int)n - 1) buf[pos++] = (i < filled) ? '#' : '-';
+    }
+    if (pos < (int)n - 1) buf[pos++] = ']';
+    if (pos < (int)n - 1) buf[pos++] = ' ';
     char pct_str[6];
     snprintf(pct_str, sizeof(pct_str), "%3d%%", pct);
-    memcpy(buf + pos, pct_str, 4); pos += 4;
+    int pLen = strlen(pct_str);
+    if (pLen > (int)n - 1 - pos) pLen = n - 1 - pos;
+    memcpy(buf + pos, pct_str, pLen); pos += pLen;
     buf[pos] = '\0';
     return buf;
 }

@@ -28,5 +28,5 @@ private:
 
     // Static ISR trampoline - only one Encoder instance is supported.
     static void   IRAM_ATTR _isr();
-    static Encoder* _inst;
+    static Encoder* volatile _inst;
 };
