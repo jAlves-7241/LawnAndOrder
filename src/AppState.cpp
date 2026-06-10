@@ -95,6 +95,13 @@ void initAppState() {
     // ── Custom run defaults ──────────────────────────────
     for (int i = 0; i < NUM_ZONES; i++) gState.custom_sel[i] = false;
     gState.custom_dur_min = 10;
+    
+    // Reset custom mode to defaults to avoid tainted schedules
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slot_count = SCHED_CUSTOM_SLOTS;
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].interval_days = SCHED_CUSTOM_INTERVAL;
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].hour = SCHED_CUSTOM_SLOT0_H;
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].minute = SCHED_CUSTOM_SLOT0_M;
+
     LOG_I("APP", "Defaults carregados - Modo: %d, Zonas: %d",
           (uint8_t)gState.mode, NUM_ZONES);
 }

@@ -32,7 +32,10 @@ bool Storage::load() {
         return false;
     }
 
-    _blobToState(blob);
+    if (!_blobToState(blob)) {
+        LOG_W("NVS", "Validacao falhou apos leitura. A usar defaults.");
+        return false;
+    }
 
     LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
     return true;
@@ -102,7 +105,9 @@ bool Storage::loadRecoveryState(RecoveryState& rs) {
 
 void Storage::saveRecoveryState(const RecoveryState& rs) {
     if (!_ready) return;
-    RecoveryState copy = rs;
+    RecoveryState copy;
+    memset(&copy, 0, sizeof(RecoveryState));
+    copy = rs;
     copy.version = NVS_VERSION;
     
     RecoveryState current = {};

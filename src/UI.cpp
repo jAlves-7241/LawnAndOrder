@@ -98,7 +98,7 @@ void UI::update() {
         if (_d.isBacklightOn() && elapsed >= gState.backlight_timeout_ms) {
             _d.backlightOff();
         }
-        if (_d.isDisplayOn() && elapsed >= (gState.backlight_timeout_ms + DISPLAY_OFF_DELAY_MS)) {
+        if (_d.isDisplayOn() && elapsed > DISPLAY_OFF_DELAY_MS && (elapsed - DISPLAY_OFF_DELAY_MS) >= gState.backlight_timeout_ms) {
             _d.displayOff();
         }
     }

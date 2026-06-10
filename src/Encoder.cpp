@@ -24,7 +24,7 @@ void Encoder::begin() {
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
     static uint32_t last_isr_ms = 0;
-    uint32_t now = millis();
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
     if (now - last_isr_ms < 2) return;
     last_isr_ms = now;
 

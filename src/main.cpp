@@ -25,7 +25,8 @@ void recoverI2C() {
     Wire.end();
     
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
-    pinMode(PIN_SCL, OUTPUT);       // SCL como saída manual
+    pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN);
+    digitalWrite(PIN_SCL, HIGH);
     
     // Toggle SCL até 9 vezes enquanto SDA estiver preso em LOW
     for (int i = 0; i < 9; i++) {
@@ -38,7 +39,7 @@ void recoverI2C() {
     }
     
     // Gerar uma condição de STOP manual (SCL HIGH, depois SDA HIGH)
-    pinMode(PIN_SDA, OUTPUT);
+    pinMode(PIN_SDA, OUTPUT_OPEN_DRAIN);
     digitalWrite(PIN_SDA, LOW);
     digitalWrite(PIN_SCL, HIGH);
     delayMicroseconds(5);

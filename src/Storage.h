@@ -41,7 +41,7 @@ struct __attribute__((packed)) RecoveryState {
     uint32_t start_unix_time;
     uint8_t queuePos;
     uint8_t queueLen;
-    struct QueueEntry {
+    struct __attribute__((packed)) QueueEntry {
         uint8_t  zone_idx;
         uint32_t duration_ms;
     } queue[NUM_ZONES];

@@ -62,38 +62,35 @@ void Scheduler::update() {
         computeNext(gState.mode, t,
                     gState.next_hour, gState.next_min);
         if (gState.custom_ref_day != old_ref) storage.save();
-    }
 
-    // Check every slot of the active mode
-    if (_triggered) return;
+        const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
+        if (sched.slot_count > 0) {
+            DateTime localDate(t.year, t.month, t.day, 0, 0, 0);
+            uint32_t current_day_1970 = localDate.unixtime() / 86400UL;
 
-    const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
-    if (sched.slot_count == 0) return;
-
-    DateTime localDate(t.year, t.month, t.day, 0, 0, 0);
-    uint32_t current_day_1970 = localDate.unixtime() / 86400UL;
-
-    if (!_dayMatches(sched, current_day_1970)) return;
-
-    for (uint8_t i = 0; i < sched.slot_count; i++) {
-        if (t.hour == sched.slots[i].hour &&
-            t.min  == sched.slots[i].minute) {
-            // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
-            // 2 hours ago (UTC), this is a duplicate from the repeated hour.
-            // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
-            if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
-                (t.unix - _lastTriggerUnix[i]) < 7200) {
-                LOG_W("SCHED", "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d",
-                      sched.slots[i].hour, sched.slots[i].minute);
-                _triggered = true;
-                return;
+            if (_dayMatches(sched, current_day_1970)) {
+                for (uint8_t i = 0; i < sched.slot_count; i++) {
+                    if (t.hour == sched.slots[i].hour &&
+                        t.min  == sched.slots[i].minute) {
+                        // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
+                        // 2 hours ago (UTC), this is a duplicate from the repeated hour.
+                        // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
+                        if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
+                            (t.unix - _lastTriggerUnix[i]) < 7200) {
+                            LOG_W("SCHED", "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d",
+                                  sched.slots[i].hour, sched.slots[i].minute);
+                            _triggered = true;
+                            break;
+                        }
+                        _triggered = true;
+                        _lastTriggerUnix[i] = t.unix;
+                        LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
+                                      t.hour, t.min);
+                        wateringCtrl.startGeneral(WaterTrigger::AUTO);
+                        break;
+                    }
+                }
             }
-            _triggered = true;
-            _lastTriggerUnix[i] = t.unix;
-            LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
-                          t.hour, t.min);
-            wateringCtrl.startGeneral(WaterTrigger::AUTO);
-            return;
         }
     }
 }
@@ -175,9 +172,9 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
         else if (month == 3 || month == 10) {
             uint8_t ls = 31 - DateTime(year, month, 31, 0, 0, 0).dayOfTheWeek();
             if (month == 3) {
-                if (day > ls || (day == ls && hour >= 2)) isDstLocal = true;
+                if (day > ls || (day == ls && hour >= (1 + TIMEZONE_OFFSET))) isDstLocal = true;
             } else {
-                if (day < ls || (day == ls && hour < 2)) isDstLocal = true;
+                if (day < ls || (day == ls && hour < (1 + TIMEZONE_OFFSET))) isDstLocal = true;
             }
         }
         if (isDstLocal) {
