@@ -21,11 +21,11 @@
 #define PIN_SW 25
 
 // ── Relay pins (active-LOW - relay board pulls IN to GND to close) ───────────
-// Adjust to your wiring. GPIO 26-27-14-12 are free on a standard DevKit.
+// Adjust to your wiring. GPIO 26-27-14-13 are free on a standard DevKit.
 #define PIN_RELAY_1 26
 #define PIN_RELAY_2 27
 #define PIN_RELAY_3 14
-#define PIN_RELAY_4 12
+#define PIN_RELAY_4 13
 #define RELAY_ON LOW // change to HIGH if your board is active-HIGH
 #define RELAY_OFF HIGH
 
@@ -67,6 +67,7 @@
 
 // ── RTC / Tempo ───────────────────────────────────────────
 #define AUTO_DST_DEFAULT true // Ajuste automático de horário de verão (EU)
+#define TIMEZONE_OFFSET 0     // Fuso horário base em horas (0 para Portugal/UK, 1 para Europa Central)
 
 // ── History (LittleFS CSV) ────────────────────────────────
 #define HISTORY_FILE "/history.csv"

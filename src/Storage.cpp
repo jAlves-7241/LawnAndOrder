@@ -204,5 +204,18 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
     }
     
+    // Garantir que os slots ativos estão sempre ordenados cronologicamente (Bubble Sort simples)
+    for (int i = 0; i < cs.slot_count - 1; i++) {
+        for (int j = i + 1; j < cs.slot_count; j++) {
+            uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
+            uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
+            if (mins_j < mins_i) {
+                auto temp = cs.slots[i];
+                cs.slots[i] = cs.slots[j];
+                cs.slots[j] = temp;
+            }
+        }
+    }
+    
     return true;
 }
