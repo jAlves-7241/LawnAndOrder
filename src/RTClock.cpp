@@ -6,7 +6,7 @@ RTClock rtclock;
 
 
 static const char* DOW_NAMES[] = {
-    "Dom","Seg","Ter","Qua","Qui","Sex","Sab"
+    TXT_DOW_SUN_SHORT, TXT_DOW_MON_SHORT, TXT_DOW_TUE_SHORT, TXT_DOW_WED_SHORT, TXT_DOW_THU_SHORT, TXT_DOW_FRI_SHORT, TXT_DOW_SAT_SHORT
 };
 
 // ─────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ RTClock::RTClock()
 
 bool RTClock::begin() {
     if (!_rtc.begin()) {
-        LOG_E("RTC", "Modulo nao encontrado - verificar I2C");
+        LOG_E("RTC", TXT_LOG_RTC_NOT_FOUND);
         _found = false;
         gState.rtc_valid = false;
         return false;
@@ -36,7 +36,7 @@ bool RTClock::begin() {
     gState.rtc_valid = !_lostPower;
 
     if (_lostPower) {
-        LOG_W("RTC", "Bateria descarregada ou 1a utilizacao - acertar hora");
+        LOG_W("RTC", TXT_LOG_RTC_BAT_LOW);
         _rtc.adjust(DateTime(2026, 1, 1, 0, 0, 0));
     }
 #endif
@@ -45,7 +45,7 @@ bool RTClock::begin() {
     
     // Proteger o arranque contra barramento I2C preso ou corrompido
     if (utcDt.year() < 2020 || utcDt.year() > 2099) {
-        LOG_E("RTC", "Leitura de arranque corrompida (%04d-%02d-%02d)",
+        LOG_E("RTC", TXT_LOG_RTC_BOOT_CORRUPT,
               utcDt.year(), utcDt.month(), utcDt.day());
         _found = false;
         gState.rtc_valid = false;
@@ -60,7 +60,7 @@ bool RTClock::begin() {
     _copyToState(localDt);
     gState.now.unix = utcDt.unixtime();
 
-    LOG_I("RTC", "OK - %04d-%02d-%02d %02d:%02d:%02d (%s)",
+    LOG_I("RTC", TXT_LOG_RTC_OK,
           gState.now.year,  gState.now.month,  gState.now.day,
           gState.now.hour,  gState.now.min,    gState.now.sec,
           DOW_NAMES[gState.now.dow % 7]);
@@ -81,7 +81,7 @@ void RTClock::update() {
         static uint32_t lastRtcRetryMs = 0;
         if (nowMs - lastRtcRetryMs >= 10000UL) {
             lastRtcRetryMs = nowMs;
-            LOG_I("RTC", "A tentar detetar RTC a quente...");
+            LOG_I("RTC", TXT_LOG_RTC_HOT_DETECT);
             if (_rtc.begin()) {
                 _found = true;
                 #ifdef WOKWI_SIM
@@ -92,7 +92,7 @@ void RTClock::update() {
                     if (!gState.rtc_valid) gState.rtc_valid = !_lostPower;
                 #endif
                 
-                LOG_I("RTC", "Modulo detetado a quente (hotplug) com sucesso!");
+                LOG_I("RTC", TXT_LOG_RTC_HOT_FOUND);
                 
                 DateTime utcDt = _rtc.now();
                 if (utcDt.year() >= 2020 && utcDt.year() <= 2099 && !_lostPower) {
@@ -102,7 +102,7 @@ void RTClock::update() {
                     }
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
-                    LOG_I("RTC", "Sincronizado com o RTC a quente: %04d-%02d-%02d %02d:%02d:%02d",
+                    LOG_I("RTC", TXT_LOG_RTC_HOT_SYNC,
                           gState.now.year, gState.now.month, gState.now.day,
                           gState.now.hour, gState.now.min, gState.now.sec);
                 } else {
@@ -137,11 +137,11 @@ void RTClock::update() {
     // Re-check oscillator health - detects mid-run battery failure or EMI reset.
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
-            LOG_W("RTC", "Pilha falhou/Reset EMI detetado. A tentar restaurar RTC via RAM...");
+            LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
             set(gState.now.year, gState.now.month, gState.now.day,
                 gState.now.hour, gState.now.min, gState.now.sec);
         } else {
-            LOG_E("RTC", "Falha na bateria e hora da RAM invalida");
+            LOG_E("RTC", TXT_LOG_RTC_BAT_FAIL_RAM);
         }
     }
 #endif
@@ -154,7 +154,7 @@ void RTClock::update() {
     if (utcDt.year() < 2020 || utcDt.year() > 2099) {
         consecErrors++;
         if (consecErrors >= 3) {
-            LOG_E("RTC", "I2C com leituras corrompidas (%04d-%02d-%02d). A recuperar barramento...",
+            LOG_E("RTC", TXT_LOG_RTC_I2C_CORRUPT,
                   utcDt.year(), utcDt.month(), utcDt.day());
             if (_errorCb) {
                 _errorCb();
@@ -218,11 +218,11 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     if (_found) {
         _rtc.adjust(utcDt);
     } else {
-        LOG_I("RTC", "A tentar gravar hora no RTC...");
+        LOG_I("RTC", TXT_LOG_RTC_SAVE_ATTEMPT);
         if (_rtc.begin()) {
             _found = true;
             _rtc.adjust(utcDt);
-            LOG_I("RTC", "RTC ligado e hora gravada com sucesso!");
+            LOG_I("RTC", TXT_LOG_RTC_SAVE_OK);
         }
     }
 
@@ -251,7 +251,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         }
     }
 
-    LOG_I("RTC", "Hora (Local) definida: %04d-%02d-%02d %02d:%02d:%02d",
+    LOG_I("RTC", TXT_LOG_RTC_TIME_SET,
           year, month, day, hour, minute, second);
 }
 

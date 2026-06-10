@@ -42,15 +42,13 @@ void Scheduler::update() {
         if (t.unix >= gState.suspended_until) {
             gState.suspended = false;
             gState.suspended_until = 0;
+            _lastMin = 0xFF; // Force schedule evaluation to avoid skip if cleared on same minute
             storage.save();
             LOG_I("SCHED", "Suspensao expirada - rega reativada");
         } else {
             return; // Still suspended
         }
     }
-
-    // Don't trigger while a cycle is already running
-    if (gState.watering.active) return;
 
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
 
@@ -62,6 +60,9 @@ void Scheduler::update() {
         computeNext(gState.mode, t,
                     gState.next_hour, gState.next_min);
         if (gState.custom_ref_day != old_ref) storage.save();
+
+        // Don't trigger while a cycle is already running
+        if (gState.watering.active) return;
 
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
         if (sched.slot_count > 0) {
@@ -77,12 +78,12 @@ void Scheduler::update() {
                         // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
                         if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
                             (t.unix - _lastTriggerUnix[i]) < 7200) {
-                            LOG_W("SCHED", "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d",
+                            LOG_W("SCHED", TXT_LOG_SCHED_DUP_BLOCK,
                                   sched.slots[i].hour, sched.slots[i].minute);
                             break;
                         }
                         _lastTriggerUnix[i] = t.unix;
-                        LOG_I("SCHED", "Iniciar rega automatica %02d:%02d",
+                        LOG_I("SCHED", TXT_LOG_SCHED_AUTO_START,
                                       t.hour, t.min);
                         wateringCtrl.startGeneral(WaterTrigger::AUTO);
                         break;
@@ -96,6 +97,7 @@ void Scheduler::update() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged() {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+    _lastMin = 0xFF; // Force schedule evaluation
     if (!gState.rtc_valid) {
         // RTC not ready - seed next_* from the first slot of the new mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
@@ -112,7 +114,7 @@ void Scheduler::onModeChanged() {
     computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", "Modo alterado: Proxima rega %02d:%02d",
+    LOG_I("SCHED", TXT_LOG_SCHED_MODE_CHG,
                   gState.next_hour, gState.next_min);
 }
 
@@ -138,7 +140,7 @@ void Scheduler::onWateringDone() {
     computeNext(gState.mode, advanced,
                 gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", "Ciclo concluido: Proxima rega %02d:%02d",
+    LOG_I("SCHED", TXT_LOG_SCHED_CYCLE_DONE,
                   gState.next_hour, gState.next_min);
 }
 
@@ -189,7 +191,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     uint32_t max_allowed_duration = (sched.slot_count <= 1) ? 43200UL : 28800UL; // 12h or 8h
     if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
-        LOG_W("SCHED", "Recuperacao descartada: Hard limit excedido.");
+        LOG_W("SCHED", TXT_LOG_SCHED_REC_HLIMIT);
         return true;
     }
 
@@ -211,7 +213,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     
     uint32_t next_from_start = getNextCycleUnix(startST);
     if (next_from_start != 0xFFFFFFFF && next_from_start <= current_unix) {
-         LOG_W("SCHED", "Recuperacao descartada: Atropelado por ciclo fantasma.");
+         LOG_W("SCHED", TXT_LOG_SCHED_REC_GHOST);
          return true;
     }
     
@@ -320,7 +322,7 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
             if (ref_day == 0xFFFFFFFFUL) {
                 if (writeBack) {
                     gState.custom_ref_day = candidate_day_1970;
-                    LOG_D("SCHED", "custom_ref_day definido/redefinido: %lu", candidate_day_1970);
+                    LOG_D("SCHED", TXT_LOG_SCHED_CUSTOM_DAY, candidate_day_1970);
                     ref_day = candidate_day_1970;
                 } else {
                     DateTime current(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);

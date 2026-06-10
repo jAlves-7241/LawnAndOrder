@@ -18,7 +18,7 @@ bool History::begin(bool formatOnFail) {
     _log_suspended = false;
     _ready = LittleFS.begin(formatOnFail);
     if (!_ready) {
-        LOG_E("HIST", "Falha ao montar LittleFS");
+        LOG_E("HIST", TXT_LOG_HIST_MOUNT_FAIL);
         _lineCount = 0;
         _cacheCount = 0;
     } else {
@@ -38,14 +38,14 @@ bool History::begin(bool formatOnFail) {
             }
             memcpy(_cache, tempCache, sizeof(_cache));
             _cacheCount = validCount;
-            LOG_I("HIST", "Carregado via NVS - %d entradas", _lineCount);
+            LOG_I("HIST", TXT_LOG_HIST_NVS_LOAD, _lineCount);
         } else {
             // Fallback (apenas se NVS estiver vazio ou corrompido)
             _lineCount = _countLines();
             _populateCache();
             // Salva na NVS para o próximo boot
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
-            LOG_I("HIST", "Carregado via LittleFS (Fallback) - %d entradas", _lineCount);
+            LOG_I("HIST", TXT_LOG_HIST_FS_LOAD, _lineCount);
         }
     }
     return _ready;
@@ -58,13 +58,13 @@ void History::record(const HistoryEntry& entry) {
     if (!gState.rtc_valid)                    return;
 
     if (_rotState != RotState::IDLE || _exportState != ExportState::IDLE) {
-        LOG_W("HIST", "Disco ocupado, registo deferido para mais tarde.");
+        LOG_W("HIST", TXT_LOG_HIST_DISK_BUSY);
         uint8_t nextHead = (_defHead + 1) % 4;
         if (nextHead != _defTail) {
             _deferredQueue[_defHead] = entry;
             _defHead = nextHead;
         } else {
-            LOG_E("HIST", "Fila de deferidos cheia, registo perdido!");
+            LOG_E("HIST", TXT_LOG_HIST_Q_FULL);
         }
         return;
     }
@@ -83,13 +83,13 @@ void History::record(const HistoryEntry& entry) {
             for (int i = 0; i < HISTORY_DISPLAY - 1; i++) _cache[i] = _cache[i + 1];
             _cache[HISTORY_DISPLAY - 1] = entry;
         }
-        LOG_I("HIST", "Rotacao iniciada, NVS diferido");
+        LOG_I("HIST", TXT_LOG_HIST_ROT_START);
         return;   // <-- NÃO salvar NVS aqui
     }
 
     // Caminho síncrono: salvar ficheiro + NVS imediatamente (comportamento atual)
     File f = LittleFS.open(HISTORY_FILE, "a");
-    if (!f) { LOG_E("HIST", "Falha ao abrir ficheiro"); return; }
+    if (!f) { LOG_E("HIST", TXT_LOG_HIST_FILE_ERR); return; }
     f.println(line);
     f.close();
     _lineCount++;
@@ -102,7 +102,7 @@ void History::record(const HistoryEntry& entry) {
     }
 
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
-    LOG_I("HIST", "Registado: %s", line);
+    LOG_I("HIST", TXT_LOG_HIST_LOGGED, line);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ void History::clear() {
     _pendingCacheSave = false;
     memset(_cache, 0, sizeof(_cache));
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
-    LOG_I("HIST", "Historico apagado");
+    LOG_I("HIST", TXT_LOG_HIST_WIPED);
 }
 
 uint16_t History::entryCount() const { return _lineCount; }
@@ -321,6 +321,9 @@ void History::_rotateAndAppend(const char* newLine) {
     _rotDst = LittleFS.open("/hist_tmp.csv", "w");
     if (!_rotDst) {
         _rotSrc.close();
+        // Fallback: append directly if we can't create tmp file
+        File f = LittleFS.open(HISTORY_FILE, "a");
+        if (f) { f.println(newLine); f.close(); }
         return;
     }
 
@@ -358,7 +361,7 @@ void History::update() {
                                 }
                             }
                         } else {
-                            LOG_W("HIST", "Linha corrompida expurgada do disco.");
+                            LOG_W("HIST", TXT_LOG_HIST_ROT_CORRUPT);
                         }
                     }
                 } else if (c != '\r' && _rotLinePos < sizeof(_rotLineBuf) - 1) {
@@ -379,7 +382,7 @@ void History::update() {
                             _rotCopied++;
                         }
                     } else {
-                        LOG_W("HIST", "Linha corrompida expurgada do disco.");
+                        LOG_W("HIST", TXT_LOG_HIST_ROT_CORRUPT);
                     }
                 }
             }
@@ -400,20 +403,21 @@ void History::update() {
             if (_pendingCacheSave) {
                 _pendingCacheSave = false;
                 storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
-                LOG_I("HIST", "Rotacao concluida + NVS atualizado. Entradas: %d", _lineCount);
+                LOG_I("HIST", TXT_LOG_HIST_ROT_DONE_NVS, _lineCount);
             } else {
                 storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
-                LOG_I("HIST", "Rotacao concluida. Entradas: %d", _lineCount);
+                LOG_I("HIST", TXT_LOG_HIST_ROT_DONE, _lineCount);
             }
         } else {
-            LOG_E("HIST", "rename falhou - manter original");
+            LOG_E("HIST", TXT_LOG_HIST_RENAME_FAIL);
             LittleFS.remove("/hist_tmp.csv");
             _pendingCacheSave = false;
             File f = LittleFS.open(HISTORY_FILE, "a");
             if (f) { f.println(_rotPendingLine); f.close(); }
         }
         _rotState = RotState::IDLE;
-        while (_defHead != _defTail) {
+        uint8_t count = (_defHead >= _defTail) ? (_defHead - _defTail) : (4 - _defTail + _defHead);
+        for(uint8_t i = 0; i < count; i++) {
             HistoryEntry e = _deferredQueue[_defTail];
             _defTail = (_defTail + 1) % 4;
             record(e);
@@ -463,12 +467,13 @@ void History::update() {
 
     if (_exportState == ExportState::FOOTER) {
         _exportFile.close();
-        Serial.printf("--- FIM: %d registos ---\n", _exportSent);
+        Serial.printf(TXT_TERM_HIST_EXPORT_END, _exportSent);
         _log_suspended = false;
         LOG_I("HIST", TXT_LOG_EXPORT_DONE, _exportSent);
         _exportState = ExportState::IDLE;
         
-        while (_defHead != _defTail) {
+        uint8_t count = (_defHead >= _defTail) ? (_defHead - _defTail) : (4 - _defTail + _defHead);
+        for(uint8_t i = 0; i < count; i++) {
             HistoryEntry e = _deferredQueue[_defTail];
             _defTail = (_defTail + 1) % 4;
             record(e);
@@ -490,7 +495,7 @@ void History::startExport() {
 
     _exportFile = LittleFS.open(HISTORY_FILE, "r");
     if (!_exportFile) {
-        LOG_E("HIST", "Falha ao abrir ficheiro para exportacao");
+        LOG_E("HIST", TXT_LOG_HIST_EXPORT_FAIL);
         return;
     }
 
@@ -503,8 +508,8 @@ void History::startExport() {
 
     // Print CSV header
     Serial.println();
-    Serial.println("--- HISTORICO LAWN&ORDER ---");
-    Serial.println("Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)");
+    Serial.println(TXT_TERM_HIST_HDR);
+    Serial.println(TXT_TERM_HIST_CSV_HDR);
 
     _exportState = ExportState::SENDING;
 }

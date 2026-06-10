@@ -86,7 +86,7 @@ void UI::update() {
         _lastActivity = millis();
         if (_currentScreen) {
             if (rot != 0) _currentScreen->handleRotation(*this, rot);
-            else if (click) _currentScreen->handleClick(*this);
+            if (click) _currentScreen->handleClick(*this);
         }
     }
 
@@ -158,7 +158,7 @@ void UI::advanceSetup() {
 // Dispatch / Actions
 // ─────────────────────────────────────────────────────────
 bool UI::executeConfirmed(const char* tag) {
-    LOG_I("UI", "Confirmado tag: %s", tag);
+    LOG_I("UI", TXT_LOG_UI_CONFIRM_TAG, tag);
 
     if (!strcmp(tag, "reset")) {
         history.clear();
@@ -175,7 +175,7 @@ bool UI::executeConfirmed(const char* tag) {
             if (gState.zones[i].enabled) any = true;
         }
         if (!any) {
-            _screenInfo.setup("! ERRO !", TXT_NO_ACTIVE_ZONES, "Ative as zonas na", "programacao.", MenuID::MANUAL);
+            _screenInfo.setup(TXT_ERR_ACTIVE_ZONES, TXT_NO_ACTIVE_ZONES, TXT_ERR_ACTIVATE_ZONES, TXT_ERR_SCHEDULE, MenuID::MANUAL);
             changeScreen(&_screenInfo);
             return true;
         }
@@ -309,7 +309,7 @@ void UI::dispatchAction(const char* action) {
         gState.suspended = false;
         gState.suspended_until = 0;
         _configChanged = true;
-        _screenDone.setup("Pausa cancelada", "");
+        _screenDone.setup(TXT_PAUSE_CANCELED, "");
         _screenDone.setBackMenu(MenuID::MAIN);
         changeScreen(&_screenDone);
         return;
@@ -318,10 +318,10 @@ void UI::dispatchAction(const char* action) {
     if (!strcmp(action, "horarios")) {
         char l1[LCD_COLS+1], l2[LCD_COLS+1], l3[LCD_COLS+1];
 
-        snprintf(l1, sizeof(l1), "Modo: %s", MenuBuilder::modeName((uint8_t)gState.mode));
+        snprintf(l1, sizeof(l1), TXT_PROG_MODE, MenuBuilder::modeName((uint8_t)gState.mode));
 
         if (gState.mode == AppMode::DESATIVADO) {
-            snprintf(l2, sizeof(l2), "Rega desligada");
+            snprintf(l2, sizeof(l2), "%s", TXT_PROG_OFF);
             l3[0] = '\0';
 
         } else if (gState.mode == AppMode::PERSONALIZADO) {
@@ -332,7 +332,7 @@ void UI::dispatchAction(const char* action) {
                 char hbuf[32];
                 MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
                 snprintf(l2, sizeof(l2), "H: %s", hbuf);
-                snprintf(l3, sizeof(l3), "F: a cada %d dias", cs.interval_days);
+                snprintf(l3, sizeof(l3), TXT_PROG_EVERY_DAYS, cs.interval_days);
             } else {
                 // 3 ou 4 ciclos: dividir em duas linhas de horas
                 // Linha horas A: ciclos 0 e 1
@@ -356,10 +356,10 @@ void UI::dispatchAction(const char* action) {
             char hbuf[32];
             MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
             snprintf(l2, sizeof(l2), "H: %s", hbuf);
-            snprintf(l3, sizeof(l3), "F: Diaria");
+            snprintf(l3, sizeof(l3), "%s", TXT_PROG_DAILY);
         }
 
-        _screenInfo.setup("HORARIOS ATUAIS", l1, l2, l3, MenuID::PROG);
+        _screenInfo.setup(TXT_CURRENT_SCHED, l1, l2, l3, MenuID::PROG);
         // Para o caso de 4 ciclos, a linha l4 seria a 4ª linha do ScreenInfo
         // mas setup() só aceita 4 parâmetros de linha (l0..l3).
         // Com a estrutura atual, l3 fica como frequência ou último ciclo.

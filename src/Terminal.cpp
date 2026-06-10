@@ -245,7 +245,7 @@ void Terminal::_cmdStatus() {
   // 3. Zonas
   Serial.println("  Zonas de Rega:");
   for (int i = 0; i < NUM_ZONES; i++) {
-    Serial.printf("    Z%d: [%s] Duracao: %d min - Nome: %s\n", i + 1,
+    Serial.printf("    Z%d: [%s] Duracao: %d min - Nome: %.11s\n", i + 1,
                   gState.zones[i].enabled ? "ON" : "OFF",
                   gState.zones[i].duration_min, gState.zones[i].name);
   }
@@ -276,19 +276,18 @@ void Terminal::_cmdSetTime(char *args) {
 
   int yr, mo, dy, hh, mm, ss;
   if (sscanf(args, "%d-%d-%d %d:%d:%d", &yr, &mo, &dy, &hh, &mm, &ss) != 6) {
-    Serial.println("Erro: Formato de data/hora incorreto. Use: set_time "
-                   "AAAA-MM-DD HH:MM:SS");
+    Serial.println(TXT_TERM_ERR_FORMAT);
     return;
   }
 
   // Validações básicas de limites cronológicos
   if (yr < DATE_YEAR_MIN || yr > DATE_YEAR_MAX) {
-    Serial.printf("Erro: Ano fora do intervalo suportado [%d - %d].\n",
+    Serial.printf(TXT_TERM_ERR_YEAR,
                   DATE_YEAR_MIN, DATE_YEAR_MAX);
     return;
   }
   if (mo < 1 || mo > 12) {
-    Serial.println("Erro: Mes deve estar entre 1 e 12.");
+    Serial.println(TXT_TERM_ERR_MONTH);
     return;
   }
   // Validação avançada de dias por mês (incluindo ano bissexto)
@@ -301,21 +300,20 @@ void Terminal::_cmdSetTime(char *args) {
   }
 
   if (dy < 1 || dy > maxDays) {
-    Serial.printf("Erro: Dia invalido para o mes e ano especificados "
-                  "(%d/%d/%04d). O limite e %d dias.\n",
+    Serial.printf(TXT_TERM_ERR_DAY,
                   dy, mo, yr, maxDays);
     return;
   }
   if (hh < 0 || hh > 23) {
-    Serial.println("Erro: Hora deve estar entre 0 e 23.");
+    Serial.println(TXT_TERM_ERR_HOUR);
     return;
   }
   if (mm < 0 || mm > 59) {
-    Serial.println("Erro: Minuto deve estar entre 0 e 59.");
+    Serial.println(TXT_TERM_ERR_MIN);
     return;
   }
   if (ss < 0 || ss > 59) {
-    Serial.println("Erro: Segundo deve estar entre 0 e 59.");
+    Serial.println(TXT_TERM_ERR_SEC);
     return;
   }
 
@@ -327,7 +325,7 @@ void Terminal::_cmdSetTime(char *args) {
   scheduler.onModeChanged();
 
   Serial.printf(
-      "Hora definida com sucesso para: %04d-%02d-%02d %02d:%02d:%02d\n", yr, mo,
+      TXT_TERM_TIME_SET, yr, mo,
       dy, hh, mm, ss);
 }
 
@@ -335,16 +333,15 @@ void Terminal::_cmdExportConfig() {
   char hexStr[sizeof(AppConfigBlob) * 2 + 1];
   storage.exportConfigHex(hexStr, sizeof(hexStr));
 
-  Serial.println("=== EXPORTACAO DE CONFIGURACOES LAWN&ORDER ===");
-  Serial.println("Copie a linha abaixo para salvaguarda:");
+  Serial.println(TXT_TERM_EXPORT_HDR);
+  Serial.println(TXT_TERM_EXPORT_COPY);
   Serial.println(hexStr);
-  Serial.println("===============================================");
+  Serial.println(TXT_TERM_EXPORT_SEP);
 }
 
 void Terminal::_cmdImportConfig(char *hexStr) {
   if (!hexStr || *hexStr == '\0') {
-    Serial.println("Erro: Comando import_config requer a string hexadecimal "
-                   "correspondente.");
+    Serial.println(TXT_TERM_ERR_IMP_FMT);
     return;
   }
 
@@ -354,30 +351,29 @@ void Terminal::_cmdImportConfig(char *hexStr) {
     // Reposicionar ecrã físico para Idle para refletir as novas configurações
     // imediatamente
     ui.goIdle();
-    Serial.println("Configuracoes importadas e gravadas em NVS com sucesso!");
+    Serial.println(TXT_TERM_IMP_OK);
   } else {
-    Serial.println("Erro: Falha na importacao do Hex Blob. Verifique a "
-                   "integridade da string.");
+    Serial.println(TXT_TERM_ERR_IMP_BLOB);
   }
 }
 
 void Terminal::_cmdClearHistory() {
   if (!_pendingClearHistory) {
-    Serial.println("AVISO: Tem a certeza que deseja apagar permanentemente o historico?");
-    Serial.println("Escreva 'yes' para confirmar ou qualquer outra coisa para cancelar.");
+    Serial.println(TXT_TERM_WIPE_WARN);
+    Serial.println(TXT_TERM_WIPE_CONFIRM);
     _pendingClearHistory = true;
     return;
   }
-  Serial.println("A limpar o historico de regas...");
+  Serial.println(TXT_TERM_WIPING);
   history.clear();
   // Reposicionar ecra fisico para Idle para refletir o historico limpo
   // imediatamente
   ui.goIdle();
-  Serial.println("Historico de regas limpo com sucesso!");
+  Serial.println(TXT_TERM_WIPE_OK);
 }
 
 void Terminal::_cmdReboot() {
-  Serial.println("A reiniciar o controlador Lawn & Order...");
+  Serial.println(TXT_TERM_REBOOT);
   Serial.flush();
   delay(100);
   ESP.restart();

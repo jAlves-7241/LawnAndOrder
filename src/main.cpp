@@ -21,7 +21,7 @@ UI             ui(display, encoder);
 
 void recoverI2C() {
     esp_task_wdt_reset();
-    LOG_W("SYS", "A iniciar recuperacao do barramento I2C preso...");
+    LOG_W("SYS", TXT_LOG_I2C_REC_START);
     Wire.end();
     
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
@@ -44,14 +44,14 @@ void recoverI2C() {
     digitalWrite(PIN_SCL, HIGH);
     delayMicroseconds(5);
     digitalWrite(PIN_SDA, HIGH); // Transição LOW -> HIGH com SCL HIGH = STOP
-    delay(10);
+    delayMicroseconds(10000);
     
     Wire.begin(PIN_SDA, PIN_SCL);
     Wire.setTimeOut(150);
     rtclock.begin();
     esp_task_wdt_reset();
     display.begin();
-    LOG_I("SYS", "Recuperacao I2C concluida.");
+    LOG_I("SYS", TXT_LOG_I2C_REC_DONE);
 }
 
 void setup() {
@@ -62,7 +62,7 @@ void setup() {
     digitalWrite(PIN_RELAY_4, RELAY_OFF); pinMode(PIN_RELAY_4, OUTPUT);
 
     Serial.begin(115200);
-    LOG_I("SYS", "A iniciar sistema...");
+    LOG_I("SYS", TXT_LOG_SYS_BOOT);
 
     // Inicializar o Watchdog com timeout parametrizado e reset automático (compatível com ESP-IDF v4 e v5)
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -76,12 +76,12 @@ void setup() {
     esp_err_t wdt_err = esp_task_wdt_init(WDT_TIMEOUT_S, true);
 #endif
     if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
-        LOG_E("SYS", "WDT init falhou: %d", wdt_err);
+        LOG_E("SYS", TXT_LOG_WDT_INIT_FAIL, wdt_err);
     }
 
     wdt_err = esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
     if (wdt_err != ESP_OK) {
-        LOG_E("SYS", "WDT add falhou: %d", wdt_err);
+        LOG_E("SYS", TXT_LOG_WDT_ADD_FAIL, wdt_err);
     }
 
     initAppState();       // load firmware defaults into RAM
@@ -98,7 +98,7 @@ void setup() {
 
     rtclock.setErrorCallback(recoverI2C);
     if (!rtclock.begin()) {
-        LOG_E("SYS", "RTC nao disponivel");
+        LOG_E("SYS", TXT_LOG_RTC_UNAVAIL);
     }
 
     wateringCtrl.begin();
@@ -109,7 +109,7 @@ void setup() {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
-            LOG_I("SYS", "Suspensao expirada (ou RTC falhou) - limpa");
+            LOG_I("SYS", TXT_LOG_SUSP_EXP_CLR);
         } else {
             gState.suspended = true;
         }
@@ -121,7 +121,7 @@ void setup() {
     ui.begin();
     terminal.begin();
 
-    LOG_I("SYS", "Sistema pronto.");
+    LOG_I("SYS", TXT_LOG_SYS_READY);
 }
 
 // ─────────────────────────────────────────────────────────

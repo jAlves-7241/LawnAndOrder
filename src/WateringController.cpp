@@ -32,20 +32,20 @@ void WateringController::begin() {
     RecoveryState rs;
     if (storage.loadRecoveryState(rs) && rs.active) {
         if (rs.queueLen > NUM_ZONES || rs.queuePos >= rs.queueLen) {
-            LOG_W("REGA", "Recovery state invalid, discarding");
+            LOG_W("REGA", TXT_LOG_REC_STATE_INV);
             rs.active = false;
             storage.saveRecoveryState(rs);
             return;
         }
         for (uint8_t i = 0; i < rs.queueLen; i++) {
             if (rs.queue[i].zone_idx >= NUM_ZONES) {
-                LOG_W("REGA", "Recovery zone_idx invalid");
+                LOG_W("REGA", TXT_LOG_REC_ZONE_INV);
                 rs.active = false;
                 storage.saveRecoveryState(rs);
                 return;
             }
         }
-        LOG_I("REGA", "Encontrado ciclo interrompido! A avaliar retoma...");
+        LOG_I("REGA", TXT_LOG_INTERRUPT_FOUND);
         if (gState.rtc_valid) {
             uint32_t remaining_ms = 0;
             for (uint8_t i = rs.queuePos; i < rs.queueLen; i++) {
@@ -147,7 +147,7 @@ void WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
     if (_buildQueue(zones, dur_ms, WaterTrigger::CUSTOM)) {
-        LOG_I("REGA", "Iniciar rega personalizada - %d min", dur_min);
+        LOG_I("REGA", TXT_LOG_START_CUSTOM, dur_min);
         _startNextZone();
     }
 }
@@ -161,7 +161,7 @@ void WateringController::startTest(int8_t zone_idx) {
         for (int i = 0; i < NUM_ZONES; i++) zones[i] = (i == (int)zone_idx);
 
     if (_buildQueue(zones, dur_ms, WaterTrigger::TEST)) {
-        LOG_I("REGA", "Iniciar teste zona=%d", zone_idx);
+        LOG_I("REGA", TXT_LOG_START_TEST, zone_idx);
         _startNextZone();
     }
 }
@@ -187,7 +187,7 @@ void WateringController::stop() {
         _active = false;
         _isWaiting = false;
         _isRelayDeadTimeWaiting = false;
-        LOG_I("REGA", "Rega interrompida");
+        LOG_I("REGA", TXT_LOG_WATER_INT);
 
         _finishCycle();
     }
@@ -219,7 +219,7 @@ void WateringController::update() {
                 gState.watering.progress_pct = 0;
                 _syncState();
             } else {
-                LOG_E("REGA", "zona %d fora dos limites!", _zoneIdx);
+                LOG_E("REGA", TXT_LOG_ZONE_OOB, _zoneIdx);
             }
         }
         return;
@@ -228,7 +228,7 @@ void WateringController::update() {
     uint32_t elapsed = millis() - _zoneStartMs;
 
     if (_zoneDurationMs > 0) {
-        uint8_t pct = (uint8_t)min(100UL, (elapsed * 100UL) / _zoneDurationMs);
+        uint8_t pct = (uint8_t)min(100ULL, (elapsed * 100ULL) / _zoneDurationMs);
         gState.watering.progress_pct = pct;
     }
 
@@ -249,7 +249,7 @@ void WateringController::update() {
         if (_queuePos < _queueLen) {
             _isWaiting = true;
             _waitStartMs = millis();
-            LOG_D("REGA", "Zona %d concluida - aguardar %lu s", _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
+            LOG_D("REGA", TXT_LOG_ZONE_DONE_WAIT, _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
             _syncState();
             
             if (_runTrigger != WaterTrigger::TEST) {
@@ -271,7 +271,7 @@ void WateringController::update() {
             _queueLen = 0;
             _syncState();
             _finishCycle();
-            LOG_I("REGA", "Ciclo concluido");
+            LOG_I("REGA", TXT_LOG_CYCLE_DONE);
         }
     }
 }
@@ -343,7 +343,7 @@ void WateringController::_finishCycle() {
     }
 
     if (!anyRun) {
-        LOG_I("REGA", "Ciclo sem duracao efetiva. Ignorar historico.");
+        LOG_I("REGA", TXT_LOG_CYCLE_NO_DUR);
     } else {
         HistoryEntry entry;
         entry.year    = _cycleStart.year;

@@ -45,7 +45,7 @@ void ScreenSetupWelcome::render(UI& ui) {
         ui.getDisplay().cx(b0, "Bem-vindo!");
         ui.getDisplay().cx(b1, "");
         ui.getDisplay().cx(b2, "Clique p/ iniciar");
-        ui.getDisplay().cx(b3, "a config. inicial");
+        ui.getDisplay().cx(b3, TXT_SETUP_INITIAL);
     }
     ui.getDisplay().setRows(b0, b1, b2, b3);
 }

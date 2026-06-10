@@ -14,9 +14,9 @@ void Storage::begin() {
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
     if (!_ready) {
-        LOG_E("NVS", "Falha ao abrir namespace");
+        LOG_E("NVS", TXT_LOG_NVS_NS_FAIL);
     } else {
-        LOG_I("NVS", "Pronto");
+        LOG_I("NVS", TXT_LOG_NVS_READY);
     }
 }
 
@@ -29,16 +29,16 @@ bool Storage::load() {
     AppConfigBlob blob = {};
     size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
     if (readBytes != sizeof(blob) || blob.version != NVS_VERSION) {
-        LOG_W("NVS", "Blob invalido ou versao incorreta (%d). A usar predefinicoes.", blob.version);
+        LOG_W("NVS", TXT_LOG_NVS_BLOB_INV, blob.version);
         return false;
     }
 
     if (!_blobToState(blob)) {
-        LOG_W("NVS", "Validacao falhou apos leitura. A usar predefinicoes.");
+        LOG_W("NVS", TXT_LOG_NVS_VAL_FAIL);
         return false;
     }
 
-    LOG_I("NVS", "Dados carregados (Modo: %d, Susp: %d)", (uint8_t)gState.mode, gState.suspended);
+    LOG_I("NVS", TXT_LOG_NVS_LOADED, (uint8_t)gState.mode, gState.suspended);
     return true;
 }
 
@@ -55,7 +55,7 @@ void Storage::save() {
         memcmp(&blob, &current, sizeof(blob)) != 0) {
         
         prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
-        LOG_I("NVS", "Dados atualizados");
+        LOG_I("NVS", TXT_LOG_NVS_UPDATED);
     }
 }
 
@@ -83,13 +83,12 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount)
         prefs.putUShort("hcnt", lineCount);
     }
 
-    uint8_t* currentCache = (uint8_t*)malloc(size);
-    if (currentCache) {
+    uint8_t currentCache[128];
+    if (size <= sizeof(currentCache)) {
         size_t readBytes = prefs.getBytes("hcache", currentCache, size);
         if (readBytes != size || memcmp(src, currentCache, size) != 0) {
             prefs.putBytes("hcache", src, size);
         }
-        free(currentCache);
     } else {
         prefs.putBytes("hcache", src, size);
     }
@@ -136,7 +135,7 @@ bool Storage::importConfigHex(const char* hexIn) {
     if (!hexIn) return false;
     size_t len = strlen(hexIn);
     if (len != sizeof(AppConfigBlob) * 2) {
-        LOG_W("NVS", "Importacao falhou: comprimento de string invalido (%d vs %d)", len, sizeof(AppConfigBlob) * 2);
+        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_LEN, len, sizeof(AppConfigBlob) * 2);
         return false;
     }
 
@@ -150,7 +149,7 @@ bool Storage::importConfigHex(const char* hexIn) {
     }
 
     if (blob.version != NVS_VERSION) {
-        LOG_W("NVS", "Importacao falhou: versao incompativel (%d vs %d)", blob.version, NVS_VERSION);
+        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_VER, blob.version, NVS_VERSION);
         return false;
     }
 
@@ -158,7 +157,7 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
-    LOG_I("NVS", "Configuracoes importadas com sucesso via Hex String.");
+    LOG_I("NVS", TXT_LOG_NVS_IMP_OK);
     save(); // Grava no NVS flash com memcmp de segurança incorporado
     return true;
 }
@@ -190,7 +189,7 @@ void Storage::_stateToBlob(AppConfigBlob& blob) {
 
 bool Storage::_blobToState(const AppConfigBlob& blob) {
     if (blob.mode >= (uint8_t)AppMode::_COUNT) {
-        LOG_W("NVS", "Importacao falhou: modo invalido (%d)", blob.mode);
+        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_MODE, blob.mode);
         return false;
     }
 
