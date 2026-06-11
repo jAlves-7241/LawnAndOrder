@@ -178,7 +178,7 @@ O Lawn & Order dispõe de um terminal de comandos interativo acessível através
 | Relé Zona 1 - Jardim | 26 |
 | Relé Zona 2 - Horta | 27 |
 | Relé Zona 3 - Relvado | 14 |
-| Relé Zona 4 - Sebe | 12 |
+| Relé Zona 4 - Sebe | 13 |
 
 > **I2C partilhado:** LCD (0x27) e DS3231 (0x68) coexistem nos mesmos dois fios SDA/SCL sem conflito - cada dispositivo responde apenas ao seu endereço.
 

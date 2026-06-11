@@ -58,7 +58,7 @@ void Terminal::update() {
     // Se for fim de linha (LF ou CR)
     if (c == '\n' || c == '\r') {
       ignore_rest = false;
-      if (_bufLen > 0) {
+      if (_bufLen > 0 || _pendingClearHistory) {
         _buffer[_bufLen] = '\0';
         _processCommand(_buffer);
         _bufLen = 0;
@@ -83,7 +83,7 @@ void Terminal::update() {
         // Eco do caracter digitado
         Serial.write(c);
       } else {
-        Serial.println("\n[ERRO: Comando excedeu limite de caracteres. Buffer limpo.]");
+        Serial.println(TXT_TERM_ERR_OVERFLOW);
         _bufLen = 0;
         ignore_rest = true;
       }
@@ -116,17 +116,19 @@ void Terminal::_processCommand(char *cmd) {
   Serial.println();
 
   char *trimmed = trimWhitespace(cmd);
-  if (!trimmed || *trimmed == '\0') {
+
+  if (_pendingClearHistory) {
+    if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 || 
+        strcasecmp(trimmed, "s") == 0 || strcasecmp(trimmed, "sim") == 0)) {
+      _cmdClearHistory();
+    } else {
+      Serial.println(TXT_TERM_CANCELLED);
+    }
+    _pendingClearHistory = false;
     return;
   }
 
-  if (_pendingClearHistory) {
-    if (strcmp(trimmed, "yes") == 0 || strcmp(trimmed, "y") == 0 || strcmp(trimmed, "sim") == 0 || strcmp(trimmed, "s") == 0) {
-      _cmdClearHistory();
-    } else {
-      Serial.println("Operacao cancelada.");
-    }
-    _pendingClearHistory = false;
+  if (!trimmed || *trimmed == '\0') {
     return;
   }
 
@@ -155,9 +157,7 @@ void Terminal::_processCommand(char *cmd) {
   } else if (strcmp(trimmed, "reboot") == 0) {
     _cmdReboot();
   } else {
-    Serial.printf("Comando desconhecido: '%s'. Digite 'help' ou '?' para ver a "
-                  "lista de comandos.\n",
-                  trimmed);
+    Serial.printf(TXT_TERM_UNKNOWN_CMD, trimmed);
   }
 }
 
@@ -168,23 +168,20 @@ void Terminal::_cmdHelp() {
       "                    LAWN & ORDER - SERVICO TERMINAL                  ");
   Serial.println(
       "======================================================================");
-  Serial.println("Comandos Disponiveis:");
-  Serial.println("  help, ?                      - Mostra este menu de ajuda");
+  Serial.println(TXT_TERM_HELP_TITLE);
+  Serial.println(TXT_TERM_HELP_1);
   Serial.println(
-      "  status                       - Relatorio em tempo real do sistema");
+      TXT_TERM_HELP_2);
   Serial.println(
-      "  set_time AAAA-MM-DD HH:MM:SS - Define a data e hora local do relogio");
+      TXT_TERM_HELP_3);
   Serial.println(
-      "                               Ex: set_time 2026-05-29 15:30:00");
-  Serial.println("  export_config                - Exporta a configuracao "
-                 "atual (Hex Blob)");
-  Serial.println("  import_config <68_hex>       - Importa configuracoes a "
-                 "partir do Hex Blob");
-  Serial.println("  export_history               - Exporta o historico de regas por Serial");
-  Serial.println("  clear_history                - Apaga completamente o "
-                 "historico de regas do sistema");
+      TXT_TERM_HELP_3_EX);
+  Serial.println(TXT_TERM_HELP_4);
+  Serial.println(TXT_TERM_HELP_5);
+  Serial.println(TXT_TERM_HELP_6);
+  Serial.println(TXT_TERM_HELP_7);
   Serial.println(
-      "  reboot                       - Reinicia o controlador ESP32");
+      TXT_TERM_HELP_8);
   Serial.println(
       "======================================================================");
 }
@@ -211,21 +208,21 @@ void Terminal::_cmdStatus() {
 
   // 1. Relógio / RTC
   if (gState.rtc_valid) {
-    Serial.printf("  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\n",
+    Serial.printf(TXT_TERM_STAT_LOCAL,
                   gState.now.year, gState.now.month, gState.now.day,
                   gState.now.hour, gState.now.min, gState.now.sec);
-    Serial.printf("  Epoch UTC:   %lu (segundos desde 1970)\n", (unsigned long)gState.now.unix);
-    Serial.println("  Hardware RTC: Ligado e Valido [OK]");
+    Serial.printf(TXT_TERM_STAT_UTC, (unsigned long)gState.now.unix);
+    Serial.println(TXT_TERM_STAT_RTC_OK);
   } else {
     Serial.printf(
-        "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n",
+        TXT_TERM_STAT_LOCAL_SW,
         gState.now.year, gState.now.month, gState.now.day, gState.now.hour,
         gState.now.min, gState.now.sec);
-    Serial.println("  Hardware RTC: Desconectado/Invalido [FALHA]");
+    Serial.println(TXT_TERM_STAT_RTC_ERR);
   }
 
   // 2. Estado Geral
-  Serial.printf("  Modo Ativo:  %s\n", getModeStr(gState.mode));
+  Serial.printf(TXT_TERM_STAT_MODE, getModeStr(gState.mode));
 
   if (gState.suspended) {
     uint32_t remaining = (gState.suspended_until > gState.now.unix)
@@ -233,25 +230,25 @@ void Terminal::_cmdStatus() {
                              : 0;
     uint32_t hours = remaining / 3600;
     uint32_t mins = (remaining % 3600) / 60;
-    Serial.printf("  Estado Rega: SUSPENSA (Resta %luh %lum)\n", hours, mins);
+    Serial.printf(TXT_TERM_STAT_SUSP, hours, mins);
   } else if (gState.mode == AppMode::DESATIVADO) {
-    Serial.println("  Estado Rega: INATIVA (Desativada no painel)");
+    Serial.println(TXT_TERM_STAT_INACTIVE);
   } else {
     Serial.printf(
-        "  Estado Rega: ATIVA (Proxima rega agendada para %02d:%02d)\n",
+        TXT_TERM_STAT_ACTIVE,
         gState.next_hour, gState.next_min);
   }
 
   // 3. Zonas
-  Serial.println("  Zonas de Rega:");
+  Serial.println(TXT_TERM_STAT_ZONES);
   for (int i = 0; i < NUM_ZONES; i++) {
-    Serial.printf("    Z%d: [%s] Duracao: %d min - Nome: %.11s\n", i + 1,
+    Serial.printf(TXT_TERM_STAT_Z_FMT, i + 1,
                   gState.zones[i].enabled ? "ON" : "OFF",
                   gState.zones[i].duration_min, gState.zones[i].name);
   }
 
   // 4. Rega em execução
-  Serial.print("  Rega Ativa:  ");
+  Serial.print(TXT_TERM_STAT_ACT);
   if (gState.watering.active) {
     if (gState.watering.is_waiting) {
       Serial.printf(TXT_LOG_WAIT_ZONE_TRANS,
@@ -261,16 +258,15 @@ void Terminal::_cmdStatus() {
                     gState.watering.zone_idx + 1, gState.watering.progress_pct);
     }
   } else {
-    Serial.println("Nao");
+    Serial.println(TXT_TERM_STAT_ACT_NO);
   }
 
-  Serial.println("=======================================================");
+  Serial.println(TXT_TERM_STAT_SEP);
 }
 
 void Terminal::_cmdSetTime(char *args) {
   if (!args || *args == '\0') {
-    Serial.println("Erro: Comando set_time requer argumentos: set_time "
-                   "AAAA-MM-DD HH:MM:SS");
+    Serial.println(TXT_TERM_ERR_SET_TIME_ARGS);
     return;
   }
 
@@ -360,7 +356,8 @@ void Terminal::_cmdImportConfig(char *hexStr) {
 void Terminal::_cmdClearHistory() {
   if (!_pendingClearHistory) {
     Serial.println(TXT_TERM_WIPE_WARN);
-    Serial.println(TXT_TERM_WIPE_CONFIRM);
+    Serial.print(TXT_TERM_WIPE_CONFIRM);
+    Serial.print(" ");
     _pendingClearHistory = true;
     return;
   }
