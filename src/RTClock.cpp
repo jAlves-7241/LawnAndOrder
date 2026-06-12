@@ -206,7 +206,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             uint8_t ls = 31 - DateTime(year, month, 31, 0, 0, 0).dayOfTheWeek();
             int8_t transHour = 1 + TIMEZONE_OFFSET; // Hora local standard em que ocorre a transição (01:00 UTC)
             if (month == 3) {
-                if (day > ls || (day == ls && hour > transHour)) isDstLocal = true;
+                if (day > ls || (day == ls && hour >= transHour)) isDstLocal = true;
             } else {
                 if (day < ls || (day == ls && hour < transHour + 1)) isDstLocal = true;
             }

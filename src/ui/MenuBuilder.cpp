@@ -38,7 +38,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::MANUAL:
-        add_item(TXT_MB_GEN_WATERING,    "confirm:Iniciar rega com|params. atuais?|main|general");
+        add_item(TXT_MB_GEN_WATERING,    TXT_ACT_CONFIRM_GEN_WATERING);
         add_item(TXT_CUSTOM, "go:czonas");
         add_item(TXT_BACK,     "go:main");
         break;
@@ -135,8 +135,8 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             for (int8_t i = (int8_t)n - 1; i >= 0; i--) {
                 const HistoryEntry& e = entries[i];
                 static const char* MON[] = {
-                    "","Jan","Fev","Mar","Abr","Mai","Jun",
-                    "Jul","Ago","Set","Out","Nov","Dez"
+                    "", TXT_MONTH_JAN, TXT_MONTH_FEB, TXT_MONTH_MAR, TXT_MONTH_APR, TXT_MONTH_MAY, TXT_MONTH_JUN,
+                    TXT_MONTH_JUL, TXT_MONTH_AUG, TXT_MONTH_SEP, TXT_MONTH_OCT, TXT_MONTH_NOV, TXT_MONTH_DEC
                 };
                 uint8_t m = (e.month <= 12) ? e.month : 0;
                 snprintf(lbuf, sizeof(lbuf), "%02d%s %02d:%02d %s",
@@ -181,13 +181,13 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         }
         add_item(blLabel,           "go:blsel");
         add_item(TXT_FIRMWARE_VER, "info:FIRMWARE|" FW_VERSION "|" FW_BUILD_DATE "|ESP32 rev1.0|def_avancado");
-        add_item(TXT_FACTORY_RESET,   "confirm:Apagar TODAS as|definicoes?|def_avancado|reset");
+        add_item(TXT_FACTORY_RESET,   TXT_ACT_CONFIRM_RESET);
         add_item(TXT_BACK,       "go:def");
         break;
     }
 
     case MenuID::TESTES:
-        add_item(TXT_TEST_ALL_5S, "confirm:Testar todas as|zonas, 5s cada?|testes|test_all");
+        add_item(TXT_TEST_ALL_5S, TXT_ACT_CONFIRM_TEST_ALL);
         for (int i = 0; i < NUM_ZONES; i++) {
             char safe_name[16];
             strncpy(safe_name, gState.zones[i].name, sizeof(safe_name));
@@ -196,7 +196,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
             snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, safe_name);
             char act[80];
             snprintf(act, sizeof(act),
-                     "confirm:Ativar Z%d %s|por 5 segundos?|testes|test_%d",
+                     TXT_ACT_CONFIRM_TEST_ZONE,
                      i+1, safe_name, i);
             add_item(lbuf, act);
         }
