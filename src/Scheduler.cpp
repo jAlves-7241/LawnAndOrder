@@ -44,7 +44,7 @@ void Scheduler::update() {
             gState.suspended_until = 0;
             _lastMin = 0xFF; // Force schedule evaluation to avoid skip if cleared on same minute
             storage.save();
-            LOG_I("SCHED", "Suspensao expirada - rega reativada");
+            LOG_I("SCHED", TXT_LOG_SCHED_SUSP_EXP);
         } else {
             return; // Still suspended
         }
@@ -178,7 +178,7 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
             }
         }
         if (isDstLocal) {
-            nextUTCUnix = nextLocalUnix - 3600;
+            nextUTCUnix = nextLocalUnix - (TIMEZONE_OFFSET * 3600) - 3600;
         }
     }
     return nextUTCUnix;
@@ -222,7 +222,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     if (next_cycle_unix != 0xFFFFFFFF) {
         uint32_t estimated_end = current_unix + remaining_duration_sec;
         if ((uint64_t)estimated_end + 7200ULL > (uint64_t)next_cycle_unix) {
-            LOG_W("SCHED", "Recuperacao descartada: Gap de segurança 2h desrespeitado.");
+            LOG_W("SCHED", TXT_LOG_SCHED_REC_GAP);
             return true;
         }
     }

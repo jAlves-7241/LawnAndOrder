@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "log.h"
+#include "i18n.h"
 
 Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false), _displayOn(false) {
     memset(_shadow, ' ', sizeof(_shadow));
@@ -17,7 +18,7 @@ void Display::begin() {
     _lcd.clear();
     delay(10); // Aguardar que o comando de limpeza termine no hardware real
     _invalidateShadow();
-    LOG_I("LCD", "Pronto");
+    LOG_I("LCD", TXT_LOG_LCD_READY);
 }
 
 void Display::backlightOn() {

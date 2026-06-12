@@ -333,7 +333,11 @@ void UI::dispatchAction(const char* action) {
                 char hbuf[32];
                 MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
                 snprintf(l2, sizeof(l2), "H: %s", hbuf);
-                snprintf(l3, sizeof(l3), TXT_PROG_EVERY_DAYS, cs.interval_days);
+                if (cs.interval_days == 1) {
+                    snprintf(l3, sizeof(l3), "%s", TXT_PROG_EVERY_1_DAY);
+                } else {
+                    snprintf(l3, sizeof(l3), TXT_PROG_EVERY_DAYS, cs.interval_days);
+                }
             } else {
                 // 3 ou 4 ciclos: dividir em duas linhas de horas
                 // Linha horas A: ciclos 0 e 1
@@ -425,6 +429,8 @@ void UI::dispatchAction(const char* action) {
         }
         return;
     }
+
+    LOG_W("UI", "dispatchAction: unknown '%s'", action);
 }
 
 uint16_t UI::getTotalZoneDuration() {

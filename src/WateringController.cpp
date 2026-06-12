@@ -182,7 +182,7 @@ void WateringController::stop() {
                     _zoneDurMin[_zoneIdx] = ran_min;
                 }
             }
-            LOG_I("REGA", TXT_LOG_ZONE_DEACTIVATED_INT, _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A");
+            LOG_I("REGA", TXT_LOG_ZONE_DEACTIVATED_INT, _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : TXT_NA);
         }
         _active = false;
         _isWaiting = false;
@@ -243,7 +243,7 @@ void WateringController::update() {
         }
 
         _deactivateAll();
-        LOG_I("REGA", TXT_LOG_ZONE_DEACTIVATED, _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A");
+        LOG_I("REGA", TXT_LOG_ZONE_DEACTIVATED, _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : TXT_NA);
         _queuePos++;
 
         if (_queuePos < _queueLen) {
@@ -327,20 +327,21 @@ void WateringController::_startNextZone() {
 
     if (_zoneDurationMs % 60000UL == 0) {
         LOG_I("REGA", TXT_LOG_ZONE_ACTIVE_MIN,
-                      _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A", _zoneDurationMs / 60000UL);
+                      _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : TXT_NA, _zoneDurationMs / 60000UL);
     } else {
         LOG_I("REGA", TXT_LOG_ZONE_ACTIVE_SEC,
-                      _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "N/A", _zoneDurationMs / 1000UL);
+                      _zoneIdx + 1, (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : TXT_NA, _zoneDurationMs / 1000UL);
     }
 }
 
 void WateringController::_finishCycle() {
-    scheduler.onWateringDone();
-
     bool anyRun = false;
     for (int i = 0; i < NUM_ZONES; i++) {
         if (_zoneDurMin[i] > 0) anyRun = true;
     }
+
+    if (anyRun && _runTrigger != WaterTrigger::TEST)
+        scheduler.onWateringDone();
 
     if (!anyRun) {
         LOG_I("REGA", TXT_LOG_CYCLE_NO_DUR);

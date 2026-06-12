@@ -81,8 +81,8 @@ void ScreenDurPick::handleClick(UI& ui) {
             if (overlap) {
                 gState.zones[_durZoneIdx].enabled      = old_en;
                 gState.zones[_durZoneIdx].duration_min = old_dur;
-                ui.getScreenInfo().setup("! SOBREPOSICAO !", "Duracao excessiva",
-                          "para ciclos pers.", "Reduza zonas/ciclos", _backMenu);
+                ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_DUR_EXCESS,
+                          TXT_ERR_FOR_CYCLES, TXT_ERR_REDUCE, _backMenu);
                 ui.changeScreen(&ui.getScreenInfo());
                 return;
             }
@@ -112,8 +112,8 @@ void ScreenDurPick::handleClick(UI& ui) {
         if (enCount > 1) total_dur += (enCount - 1);
         
         if ((uint32_t)_durValue * total_dur > 1440) {
-            ui.getScreenInfo().setup("! ERRO !", "Duracao total",
-                      "excede 24h.", "", _backMenu);
+            ui.getScreenInfo().setup(TXT_ERR_TITLE, TXT_ERR_TOTAL_DUR,
+                      TXT_ERR_EXCEEDS_24H, "", _backMenu);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
@@ -146,7 +146,7 @@ void ScreenDurPick::handleClick(UI& ui) {
 
     if (_durContext == DurContext::SUSPEND) {
         if (!gState.rtc_valid) {
-            ui.getScreenInfo().setup("! SEM RTC !", TXT_NO_VALID_TIME, "nao e possivel", "suspender rega.", MenuID::PROG);
+            ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_NO_VALID_TIME, TXT_ERR_NOT_POSSIBLE, TXT_ERR_SUSPEND, MenuID::PROG);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
@@ -154,8 +154,8 @@ void ScreenDurPick::handleClick(UI& ui) {
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
         ui.flagConfigChanged();
         char msg[21];
-        snprintf(msg, sizeof(msg), "Pausa: %d dias", _durValue);
-        ui.getScreenDone().setup("REGA SUSPENSA", msg);
+        snprintf(msg, sizeof(msg), TXT_PAUSE_DAYS, _durValue);
+        ui.getScreenDone().setup(TXT_SUSPENDED_TITLE, msg);
         ui.getScreenDone().setBackMenu(MenuID::MAIN);
         ui.changeScreen(&ui.getScreenDone());
         return;
@@ -163,7 +163,8 @@ void ScreenDurPick::handleClick(UI& ui) {
 
     if (_durContext == DurContext::CUSTOM_RUN) {
         gState.custom_dur_min = _durValue;
-        char zstr[LCD_COLS + 1] = "Zonas: ";
+        char zstr[LCD_COLS + 1];
+        snprintf(zstr, sizeof(zstr), "%s", TXT_ZONES_PREFIX);
         bool any = false;
         for (int i = 0; i < NUM_ZONES; i++) {
             if (gState.custom_sel[i]) {
@@ -176,12 +177,12 @@ void ScreenDurPick::handleClick(UI& ui) {
             }
         }
         if (!any) {
-            ui.getScreenInfo().setup("! ATENCAO !", "Seleciona pelo", "menos 1 zona.", "", MenuID::CUSTOM_ZONAS);
+            ui.getScreenInfo().setup(TXT_ATTENTION, TXT_SELECT_AT_LEAST, TXT_ONE_ZONE, "", MenuID::CUSTOM_ZONAS);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
         char dstr[LCD_COLS + 1];
-        snprintf(dstr, sizeof(dstr), "Duracao: %d min", _durValue);
+        snprintf(dstr, sizeof(dstr), TXT_DUR_MIN_FMT, _durValue);
         ui.getScreenConfirm().setup(zstr, dstr, MenuID::MANUAL, "custom");
         ui.changeScreen(&ui.getScreenConfirm());
         return;
@@ -190,14 +191,14 @@ void ScreenDurPick::handleClick(UI& ui) {
 
 void ScreenDurPick::render(UI& ui) {
     char hbuf[LCD_COLS + 1], vbuf[LCD_COLS + 1], h1[LCD_COLS + 1], h2[LCD_COLS + 1];
-    const char* title = "Definir Valor";
-    const char* unit  = "minutos";
+    const char* title = TXT_SET_VALUE;
+    const char* unit  = TXT_MINUTES;
 
     switch (_durContext) {
-        case DurContext::CFG_ZONE: title = "Duracao Zona"; break;
-        case DurContext::SUSPEND: title = "Dias de Pausa"; unit = "dias"; break;
-        case DurContext::FREQ_DAYS: title = "Intervalo"; unit = "dias"; break;
-        case DurContext::NUM_CYCLES: title = "Ciclos Diarios"; unit = "ciclos"; break;
+        case DurContext::CFG_ZONE: title = TXT_ZONE_DURATION; break;
+        case DurContext::SUSPEND: title = TXT_PAUSE_DAYS_TITLE; unit = TXT_DAYS; break;
+        case DurContext::FREQ_DAYS: title = TXT_INTERVAL; unit = TXT_DAYS; break;
+        case DurContext::NUM_CYCLES: title = TXT_DAILY_CYCLES; unit = TXT_CYCLES; break;
         default: title = TXT_MANUAL_WATERING; break;
     }
 
@@ -205,13 +206,13 @@ void ScreenDurPick::render(UI& ui) {
 
     char vstr[20];
     if (_durContext == DurContext::CFG_ZONE && _durValue == 0)
-        snprintf(vstr, sizeof(vstr), "Desativada");
+        snprintf(vstr, sizeof(vstr), TXT_DEACTIVATED);
     else
         snprintf(vstr, sizeof(vstr), "%d %s", _durValue, unit);
 
     ui.getDisplay().cx(vbuf, vstr);
-    ui.getDisplay().cx(h1, "Rode para alterar");
-    ui.getDisplay().cx(h2, "Clique para guardar");
+    ui.getDisplay().cx(h1, TXT_ROTATE_TO_CHANGE);
+    ui.getDisplay().cx(h2, TXT_CLICK_TO_SAVE);
     ui.getDisplay().setRows(hbuf, vbuf, h1, h2);
 }
 
@@ -287,13 +288,13 @@ void ScreenDateEdit::render(UI& ui) {
     else snprintf(vstr, sizeof(vstr), " %02d / %02d /[%04d]", _deDay, _deMonth, _deYear);
     ui.getDisplay().cx(vbuf, vstr);
 
-    if (_deField == 0) ui.getDisplay().cx(fbuf, "Escolher dia");
-    else if (_deField == 1) ui.getDisplay().cx(fbuf, "Escolher mes");
-    else ui.getDisplay().cx(fbuf, "Escolher ano");
+    if (_deField == 0) ui.getDisplay().cx(fbuf, TXT_CHOOSE_DAY);
+    else if (_deField == 1) ui.getDisplay().cx(fbuf, TXT_CHOOSE_MONTH);
+    else ui.getDisplay().cx(fbuf, TXT_CHOOSE_YEAR);
 
-    if (_deField == 0) ui.getDisplay().cx(hintbuf, "Clique p/ mes");
-    else if (_deField == 1) ui.getDisplay().cx(hintbuf, "Clique p/ ano");
-    else ui.getDisplay().cx(hintbuf, "Clique p/ hora");
+    if (_deField == 0) ui.getDisplay().cx(hintbuf, TXT_CLICK_FOR_MONTH);
+    else if (_deField == 1) ui.getDisplay().cx(hintbuf, TXT_CLICK_FOR_YEAR);
+    else ui.getDisplay().cx(hintbuf, TXT_CLICK_FOR_HOUR);
 
     ui.getDisplay().setRows(hbuf, vbuf, fbuf, hintbuf);
 }
@@ -344,7 +345,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
     if (_teContext == TimeEditContext::RTC) {
         if (!rtclock.isValid()) {
-            ui.getScreenInfo().setup("! SEM RTC !", "Modulo nao", "encontrado.", "", ui.inSetup() ? _backMenu : MenuID::DEF);
+            ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT, TXT_FOUND, "", ui.inSetup() ? _backMenu : MenuID::DEF);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
@@ -356,7 +357,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         }
 
         char saved[LCD_COLS + 1];
-        snprintf(saved, sizeof(saved), "Hora: %02d:%02d", _teHour, _teMin);
+        snprintf(saved, sizeof(saved), TXT_TIME_FMT, _teHour, _teMin);
         ui.getScreenDone().setup(saved, TXT_RTC_UPDATED);
         ui.getScreenDone().setBackMenu(MenuID::DEF);
         ui.changeScreen(&ui.getScreenDone());
@@ -391,7 +392,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
             // Reverter alteração
             cs.slots[_teCycleIdx].hour = old_h;
             cs.slots[_teCycleIdx].minute = old_m;
-            ui.getScreenInfo().setup("! SOBREPOSICAO !", "Ciclos muito proximos", "para a duracao atual", "Ajuste os horarios.", _backMenu);
+            ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_CYCLES_CLOSE, TXT_ERR_FOR_DUR, TXT_ERR_ADJUST_TIME, _backMenu);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
@@ -421,7 +422,7 @@ void ScreenTimeEdit::render(UI& ui) {
     char cbuf[21];
 
     if (_teContext == TimeEditContext::CUSTOM_CYCLE) {
-        snprintf(cbuf, sizeof(cbuf), "Horario Ciclo %d", _teCycleIdx + 1);
+        snprintf(cbuf, sizeof(cbuf), TXT_CYCLE_TIME_FMT, _teCycleIdx + 1);
         title = cbuf;
     }
 
@@ -432,8 +433,8 @@ void ScreenTimeEdit::render(UI& ui) {
     else snprintf(vstr, sizeof(vstr), " %02d  :[%02d]", _teHour, _teMin);
     ui.getDisplay().cx(vbuf, vstr);
 
-    ui.getDisplay().cx(fbuf, _teField == 0 ? "Escolher hora" : "Escolher minutos");
-    ui.getDisplay().cx(hintbuf, _teField == 0 ? "Clique p/ minutos" : "Clique p/ guardar");
+    ui.getDisplay().cx(fbuf, _teField == 0 ? TXT_CHOOSE_HOUR : TXT_CHOOSE_MINS);
+    ui.getDisplay().cx(hintbuf, _teField == 0 ? TXT_CLICK_FOR_MINS : TXT_CLICK_TO_SAVE);
 
     ui.getDisplay().setRows(hbuf, vbuf, fbuf, hintbuf);
 }

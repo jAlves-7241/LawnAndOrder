@@ -19,7 +19,7 @@ Terminal::Terminal() : _bufLen(0), _pendingClearHistory(false) { memset(_buffer,
 
 void Terminal::begin() {
   _bufLen = 0;
-  LOG_I("TERM", "Terminal de comando serial ativado a 115200 baud.");
+  LOG_I("TERM", TXT_LOG_TERM_READY);
 }
 
 void Terminal::update() {
@@ -48,11 +48,15 @@ void Terminal::update() {
       continue;
     }
     if (in_ansi) {
-      ansi_bytes++;
-      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~' || ansi_bytes > 10) {
+      if (ansi_bytes > 10) {
         in_ansi = false;
+      } else {
+        ansi_bytes++;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
+          in_ansi = false;
+        }
+        continue;
       }
-      continue;
     }
 
     // Se for fim de linha (LF ou CR)
@@ -164,8 +168,7 @@ void Terminal::_processCommand(char *cmd) {
 void Terminal::_cmdHelp() {
   Serial.println(
       "======================================================================");
-  Serial.println(
-      "                    LAWN & ORDER - SERVICO TERMINAL                  ");
+  Serial.println(TXT_TERM_WELCOME_HDR);
   Serial.println(
       "======================================================================");
   Serial.println(TXT_TERM_HELP_TITLE);
@@ -189,17 +192,17 @@ void Terminal::_cmdHelp() {
 static const char *getModeStr(AppMode mode) {
   switch (mode) {
   case AppMode::INTENSO:
-    return "INTENSO";
+    return TXT_INTENSE;
   case AppMode::MEDIO:
-    return "MEDIO";
+    return TXT_MEDIUM;
   case AppMode::FRACO:
-    return "FRACO";
+    return TXT_WEAK;
   case AppMode::DESATIVADO:
-    return "DESATIVADO";
+    return TXT_DISABLED;
   case AppMode::PERSONALIZADO:
-    return "PERSONALIZADO";
+    return TXT_CUSTOM;
   default:
-    return "DESCONHECIDO";
+    return TXT_UNKNOWN;
   }
 }
 
@@ -243,7 +246,7 @@ void Terminal::_cmdStatus() {
   Serial.println(TXT_TERM_STAT_ZONES);
   for (int i = 0; i < NUM_ZONES; i++) {
     Serial.printf(TXT_TERM_STAT_Z_FMT, i + 1,
-                  gState.zones[i].enabled ? "ON" : "OFF",
+                  gState.zones[i].enabled ? TXT_ON : TXT_OFF,
                   gState.zones[i].duration_min, gState.zones[i].name);
   }
 

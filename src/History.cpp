@@ -415,11 +415,12 @@ void History::update() {
             LittleFS.remove("/hist_tmp.csv");
             _pendingCacheSave = false;
             File f = LittleFS.open(HISTORY_FILE, "a");
-            if (f) { f.println(_rotPendingLine); f.close(); }
+            if (f) { f.println(_rotPendingLine); f.close(); _lineCount++; }
         }
         _rotState = RotState::IDLE;
-        uint8_t count = (_defHead >= _defTail) ? (_defHead - _defTail) : (4 - _defTail + _defHead);
-        for(uint8_t i = 0; i < count; i++) {
+        // Drenar apenas UMA entrada por ciclo para evitar re-entrância
+        // (record() pode desencadear nova rotação se o ficheiro estiver cheio)
+        if (_defHead != _defTail) {
             HistoryEntry e = _deferredQueue[_defTail];
             _defTail = (_defTail + 1) % 4;
             record(e);
@@ -474,8 +475,8 @@ void History::update() {
         LOG_I("HIST", TXT_LOG_EXPORT_DONE, _exportSent);
         _exportState = ExportState::IDLE;
         
-        uint8_t count = (_defHead >= _defTail) ? (_defHead - _defTail) : (4 - _defTail + _defHead);
-        for(uint8_t i = 0; i < count; i++) {
+        // Drenar apenas UMA entrada por ciclo (mesmo motivo da rotação)
+        if (_defHead != _defTail) {
             HistoryEntry e = _deferredQueue[_defTail];
             _defTail = (_defTail + 1) % 4;
             record(e);

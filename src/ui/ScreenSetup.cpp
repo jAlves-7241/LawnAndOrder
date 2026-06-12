@@ -39,12 +39,12 @@ void ScreenSetupWelcome::render(UI& ui) {
     if (_isComplete) {
         ui.getDisplay().cx(b0, TXT_CONFIG_DONE);
         ui.getDisplay().cx(b1, "");
-        ui.getDisplay().cx(b2, "Sistema pronto.");
-        ui.getDisplay().cx(b3, "Clique p/ iniciar");
+        ui.getDisplay().cx(b2, TXT_SYSTEM_READY);
+        ui.getDisplay().cx(b3, TXT_CLICK_TO_START);
     } else {
-        ui.getDisplay().cx(b0, "Bem-vindo!");
+        ui.getDisplay().cx(b0, TXT_WELCOME);
         ui.getDisplay().cx(b1, "");
-        ui.getDisplay().cx(b2, "Clique p/ iniciar");
+        ui.getDisplay().cx(b2, TXT_CLICK_TO_START);
         ui.getDisplay().cx(b3, TXT_SETUP_INITIAL);
     }
     ui.getDisplay().setRows(b0, b1, b2, b3);

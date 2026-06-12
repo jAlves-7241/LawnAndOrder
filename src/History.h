@@ -53,7 +53,7 @@ private:
 
     char _rotLineBuf[LINE_BUF];
     size_t _rotLinePos;
-    char _rotPendingLine[128];
+    char _rotPendingLine[LINE_BUF];
 
     // Cache for UI display
     HistoryEntry _cache[HISTORY_DISPLAY];

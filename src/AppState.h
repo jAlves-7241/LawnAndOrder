@@ -9,7 +9,7 @@
 enum class AppMode : uint8_t {
     INTENSO = 0,   // multiple daily slots - defaults set in config.h
     MEDIO,         // one daily slot - default set in config.h
-    FRACO,         // one slot on alternate days - default set in config.h
+    FRACO,         // one daily slot - default set in config.h
     DESATIVADO,    // no automatic watering
     PERSONALIZADO, // user-defined schedule (cycles, interval, times)
     _COUNT

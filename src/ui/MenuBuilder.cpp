@@ -33,38 +33,38 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
     case MenuID::MAIN:
         add_item(TXT_MANUAL_WATERING,       "go:manual");
         add_item(TXT_PROG,       "go:prog");
-        add_item("Definicoes",        "go:def");
+        add_item(TXT_MB_SETTINGS,        "go:def");
         add_item(TXT_BACK,         "go:idle");
         break;
 
     case MenuID::MANUAL:
-        add_item("Rega Geral",    "confirm:Iniciar rega com|params. atuais?|main|general");
+        add_item(TXT_MB_GEN_WATERING,    "confirm:Iniciar rega com|params. atuais?|main|general");
         add_item(TXT_CUSTOM, "go:czonas");
         add_item(TXT_BACK,     "go:main");
         break;
 
     case MenuID::PROG:
-        add_item("Ver Horarios",     "horarios");
-        add_item("Alterar Modo",     "go:modos");
+        add_item(TXT_MB_VIEW_SCHED,     "horarios");
+        add_item(TXT_MENU_CHANGE_MODE,     "go:modos");
         if (gState.mode == AppMode::PERSONALIZADO) {
-            add_item("Personalizar", "go:ccustom");
+            add_item(TXT_MENU_CUSTOMIZE, "go:ccustom");
         }
         add_item(TXT_CONFIG_ZONES, "go:cfgz");
         if (gState.suspended)
-            add_item("Retomar Rega", "cancel_susp");
+            add_item(TXT_MB_RESUME, "cancel_susp");
         else
-            add_item("Suspender Rega", "dur_pick:suspend");
+            add_item(TXT_MB_SUSPEND, "dur_pick:suspend");
         add_item(TXT_BACK,        "go:main");
         break;
 
     case MenuID::CFG_CUSTOM: {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        snprintf(lbuf, sizeof(lbuf), "Freq: %d dias", cs.interval_days);
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_FREQ_DAYS, cs.interval_days);
         add_item(lbuf, "dur_pick:freq");
-        snprintf(lbuf, sizeof(lbuf), "Ciclos: %d", cs.slot_count);
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
         add_item(lbuf, "dur_pick:cycles");
         for (int i = 0; i < cs.slot_count; i++) {
-            snprintf(lbuf, sizeof(lbuf), "Ciclo %d: %02d:%02d", i + 1, cs.slots[i].hour, cs.slots[i].minute);
+            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, i + 1, cs.slots[i].hour, cs.slots[i].minute);
             char act[16];
             snprintf(act, sizeof(act), "time_edit:c%d", i);
             add_item(lbuf, act);
@@ -75,27 +75,27 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 
     case MenuID::SETUP_CUSTOM: {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        snprintf(lbuf, sizeof(lbuf), "Freq: %d dias", cs.interval_days);
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_FREQ_DAYS, cs.interval_days);
         add_item(lbuf, "dur_pick:freq");
-        snprintf(lbuf, sizeof(lbuf), "Ciclos: %d", cs.slot_count);
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
         add_item(lbuf, "dur_pick:cycles");
         for (int i = 0; i < cs.slot_count; i++) {
-            snprintf(lbuf, sizeof(lbuf), "Ciclo %d: %02d:%02d", i + 1, cs.slots[i].hour, cs.slots[i].minute);
+            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, i + 1, cs.slots[i].hour, cs.slots[i].minute);
             char act[16];
             snprintf(act, sizeof(act), "time_edit:c%d", i);
             add_item(lbuf, act);
         }
-        add_item("Avancar >", "setup_advance");
+        add_item(TXT_MB_ADVANCE, "setup_advance");
         add_item(TXT_BACK, "setup_back");
         break;
     }
 
     case MenuID::MODOS:
-        snprintf(lbuf, sizeof(lbuf), "%s Intenso",      mc(0)); add_item(lbuf, "sel:0");
-        snprintf(lbuf, sizeof(lbuf), "%s Medio",         mc(1)); add_item(lbuf, "sel:1");
-        snprintf(lbuf, sizeof(lbuf), "%s Fraco",         mc(2)); add_item(lbuf, "sel:2");
-        snprintf(lbuf, sizeof(lbuf), "%s Desativado",    mc(3)); add_item(lbuf, "sel:3");
-        snprintf(lbuf, sizeof(lbuf), "%s Personalizado", mc(4)); add_item(lbuf, "sel:4");
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_INTENSE,      mc(0)); add_item(lbuf, "sel:0");
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_MEDIUM,         mc(1)); add_item(lbuf, "sel:1");
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_WEAK,         mc(2)); add_item(lbuf, "sel:2");
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_DISABLED,    mc(3)); add_item(lbuf, "sel:3");
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_CUSTOM, mc(4)); add_item(lbuf, "sel:4");
         add_item(TXT_BACK, "go:prog");
         break;
 
@@ -103,9 +103,9 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled)
-                snprintf(lbuf, sizeof(lbuf), "[ON] Z%d %-6.6s %2dmin", i+1, z.name, z.duration_min);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, i+1, z.name, z.duration_min);
             else
-                snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
             add_item(lbuf, act);
         }
@@ -114,7 +114,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 
     case MenuID::CUSTOM_ZONAS:
         for (int i = 0; i < NUM_ZONES; i++) {
-            snprintf(lbuf, sizeof(lbuf), "%s Z%d %s",
+            snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_CUSTOM,
                      gState.custom_sel[i] ? "[X]" : "[ ]",
                      i+1, gState.zones[i].name);
             char act[8]; snprintf(act, sizeof(act), "cz:%d", i);
@@ -145,8 +145,8 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                          (e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL"));
 
                 char l1[LCD_COLS+1], l2[LCD_COLS+1];
-                snprintf(l1, sizeof(l1), "Z1:%dmin  Z2:%dmin", e.zone_dur[0], e.zone_dur[1]);
-                snprintf(l2, sizeof(l2), "Z3:%dmin  Z4:%dmin", e.zone_dur[2], e.zone_dur[3]);
+                snprintf(l1, sizeof(l1), TXT_MB_Z1_Z2, e.zone_dur[0], e.zone_dur[1]);
+                snprintf(l2, sizeof(l2), TXT_MB_Z3_Z4, e.zone_dur[2], e.zone_dur[3]);
 
                 char act[80];
                 snprintf(act, sizeof(act),
@@ -216,9 +216,9 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled)
-                snprintf(lbuf, sizeof(lbuf), "[ON] Z%d %-6s %2dmin", i+1, z.name, z.duration_min);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, i+1, z.name, z.duration_min);
             else
-                snprintf(lbuf, sizeof(lbuf), "[OFF] Z%d %-10s", i+1, z.name);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, i+1, z.name);
             char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
             add_item(lbuf, act);
         }
@@ -230,15 +230,15 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         auto blmc = [&](uint32_t ms) -> const char* {
             return (gState.backlight_timeout_ms == ms) ? "[*]" : "[ ]";
         };
-        snprintf(lbuf, sizeof(lbuf), "%s 30 segundos", blmc(30000UL));
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_BL_30S, blmc(30000UL));
         add_item(lbuf, "bl:30000");
-        snprintf(lbuf, sizeof(lbuf), "%s  1 minuto",   blmc(60000UL));
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_BL_1M,   blmc(60000UL));
         add_item(lbuf, "bl:60000");
-        snprintf(lbuf, sizeof(lbuf), "%s  2 minutos",  blmc(120000UL));
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_BL_2M,  blmc(120000UL));
         add_item(lbuf, "bl:120000");
-        snprintf(lbuf, sizeof(lbuf), "%s  5 minutos",  blmc(300000UL));
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_BL_5M,  blmc(300000UL));
         add_item(lbuf, "bl:300000");
-        snprintf(lbuf, sizeof(lbuf), "%s  Sempre",     blmc(BACKLIGHT_TIMEOUT_NEVER));
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_BL_ALWAYS,     blmc(BACKLIGHT_TIMEOUT_NEVER));
         add_item(lbuf, "bl:4294967295");
         add_item(TXT_BACK, "go:def_avancado");
         break;

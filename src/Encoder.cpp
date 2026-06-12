@@ -34,7 +34,7 @@ void IRAM_ATTR Encoder::_isr() {
     }
     last_isr_ms = now;
 
-    int16_t d = (((GPIO.in >> _inst->_dt) & 1) == 0) ? 1 : -1;
+    int16_t d = (digitalRead(_inst->_dt) == LOW) ? 1 : -1;
     if (d > 0) {
         if (_inst->_delta < 32000) _inst->_delta += d;
     } else {

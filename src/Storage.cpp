@@ -208,7 +208,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
 
     for (int i = 0; i < NUM_ZONES; i++) {
         gState.zones[i].enabled = !!blob.zones[i].enabled;
-        gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : gState.zones[i].duration_min;
+        gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : 8;
     }
 
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
