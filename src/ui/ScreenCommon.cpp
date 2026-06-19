@@ -1,5 +1,6 @@
 #include "ScreenCommon.h"
 #include "../UI.h"
+#include "../i18n.h"
 #include <string.h>
 
 // ─────────────────────────────────────────────────────────
