@@ -54,8 +54,9 @@ void Storage::save() {
     if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) != sizeof(current) ||
         memcmp(&blob, &current, sizeof(blob)) != 0) {
         
-        prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
-        LOG_I("NVS", TXT_LOG_NVS_UPDATED);
+        size_t written = prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+        if (written == 0) { LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL); }
+        else { LOG_I("NVS", TXT_LOG_NVS_UPDATED); }
     }
 }
 
@@ -113,7 +114,9 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
     RecoveryState current = {};
     if (prefs.getBytes("recv", &current, sizeof(current)) != sizeof(current) ||
         memcmp(&copy, &current, sizeof(copy)) != 0) {
-        prefs.putBytes("recv", &copy, sizeof(copy));
+        if (prefs.putBytes("recv", &copy, sizeof(copy)) == 0) {
+            LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+        }
     }
 }
 

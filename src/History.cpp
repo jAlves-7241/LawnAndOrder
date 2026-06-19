@@ -90,8 +90,9 @@ void History::record(const HistoryEntry& entry) {
     // Caminho síncrono: salvar ficheiro + NVS imediatamente (comportamento atual)
     File f = LittleFS.open(HISTORY_FILE, "a");
     if (!f) { LOG_E("HIST", TXT_LOG_HIST_FILE_ERR); return; }
-    f.println(line);
+    size_t written = f.println(line);
     f.close();
+    if (written == 0) { LOG_E("HIST", TXT_LOG_HIST_FILE_ERR); return; }
     _lineCount++;
 
     if (_cacheCount < HISTORY_DISPLAY) {
@@ -415,7 +416,11 @@ void History::update() {
             LittleFS.remove("/hist_tmp.csv");
             _pendingCacheSave = false;
             File f = LittleFS.open(HISTORY_FILE, "a");
-            if (f) { f.println(_rotPendingLine); f.close(); _lineCount++; }
+            if (f) { f.println(_rotPendingLine); f.close(); }
+            // Rebuild consistent state from the actual file
+            _lineCount = _countLines();
+            _populateCache();
+            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
         }
         _rotState = RotState::IDLE;
         // Drenar apenas UMA entrada por ciclo para evitar re-entrância

@@ -157,11 +157,11 @@ void RTClock::update() {
         if (consecErrors >= 3) {
             LOG_E("RTC", TXT_LOG_RTC_I2C_CORRUPT,
                   utcDt.year(), utcDt.month(), utcDt.day());
+            consecErrors = 0;
+            _found = false; // Força a re-deteção a quente (hotplug) no próximo ciclo
             if (_errorCb) {
                 _errorCb();
             }
-            consecErrors = 0;
-            _found = false; // Força a re-deteção a quente (hotplug) no próximo ciclo
         }
         _incrementSoftwareClock(); // Impede que o relógio congele no display durante falhas I2C
         return; // Aborta o update para proteger o gState contra dados corrompidos
