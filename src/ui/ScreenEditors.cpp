@@ -311,8 +311,8 @@ void ScreenTimeEdit::setup(TimeEditContext ctx, uint8_t cycleIdx, MenuID backMen
         _teMin    = gState.rtc_valid ? gState.now.min  : 0;
     } else {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        _teHour   = cs.slots[cycleIdx].hour;
-        _teMin    = cs.slots[cycleIdx].minute;
+        _teHour   = cs.slots[_teCycleIdx].hour;
+        _teMin    = cs.slots[_teCycleIdx].minute;
     }
 
     _teField = 0;  // start on hour

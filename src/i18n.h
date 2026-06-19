@@ -557,6 +557,7 @@
 #define TXT_LOG_NVS_VAL_FAIL "Validation failed after read. Using defaults."
 #define TXT_LOG_NVS_LOADED "Data loaded (Mode: %d, Susp: %d)"
 #define TXT_LOG_NVS_UPDATED "Data updated"
+#define TXT_LOG_NVS_WRITE_FAIL "NVS write failed"
 #define TXT_LOG_NVS_IMP_INV_LEN                                                \
   "Import failed: invalid string length (%d vs %d)"
 #define TXT_LOG_NVS_IMP_INV_VER "Import failed: incompatible version (%d vs %d)"
@@ -738,6 +739,7 @@
   "Validacao falhou apos leitura. A usar predefinicoes."
 #define TXT_LOG_NVS_LOADED "Dados carregados (Modo: %d, Susp: %d)"
 #define TXT_LOG_NVS_UPDATED "Dados atualizados"
+#define TXT_LOG_NVS_WRITE_FAIL "Falha na escrita NVS"
 #define TXT_LOG_NVS_IMP_INV_LEN                                                \
   "Importacao falhou: comprimento de string invalido (%d vs %d)"
 #define TXT_LOG_NVS_IMP_INV_VER                                                \
