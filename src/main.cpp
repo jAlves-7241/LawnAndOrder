@@ -21,8 +21,13 @@ static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 UI             ui(display, encoder);
 
 void clearI2CBus() {
+<<<<<<< HEAD
     pinMode(PIN_SDA, INPUT_PULLUP);
     pinMode(PIN_SCL, OUTPUT); // Push-pull to guarantee clock pulses
+=======
+    pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
+    pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN);
+>>>>>>> 0316ef1c09e7737853a84965ab4b4581bf619457
     digitalWrite(PIN_SCL, HIGH);
     
     // Toggle SCL up to 9 times while SDA is LOW
