@@ -16,7 +16,7 @@ void Encoder::begin() {
     pinMode(_dt,  INPUT_PULLUP);
     pinMode(_sw,  INPUT_PULLUP);
 
-    _btn_prev = digitalRead(_sw);
+    _btn_prev = (digitalRead(_sw) == LOW);
     _last_reading = _btn_prev;
 
     attachInterrupt(digitalPinToInterrupt(_clk), _isr, FALLING);
