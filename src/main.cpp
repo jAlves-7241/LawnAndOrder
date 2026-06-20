@@ -20,11 +20,7 @@ Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 UI             ui(display, encoder);
 
-void recoverI2C() {
-    esp_task_wdt_reset();
-    LOG_W("SYS", TXT_LOG_I2C_REC_START);
-    Wire.end();
-    
+void clearI2CBus() {
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
     pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN);
     digitalWrite(PIN_SCL, HIGH);
@@ -46,12 +42,20 @@ void recoverI2C() {
     delayMicroseconds(5);
     digitalWrite(PIN_SDA, HIGH); // Transição LOW -> HIGH com SCL HIGH = STOP
     delayMicroseconds(10000);
+}
+
+void recoverI2C() {
+    esp_task_wdt_reset();
+    LOG_W("SYS", TXT_LOG_I2C_REC_START);
+    Wire.end();
+    
+    clearI2CBus();
     
     Wire.begin(PIN_SDA, PIN_SCL);
-    Wire.setTimeOut(150);
     rtclock.begin();
     esp_task_wdt_reset();
     display.recover();
+    Wire.setTimeOut(150); // Deve ser DEPOIS do display, pois a biblioteca LiquidCrystal faz Wire.begin() interno e limpa o timeout!
     LOG_I("SYS", TXT_LOG_I2C_REC_DONE);
 }
 
@@ -92,9 +96,10 @@ void setup() {
 
     history.begin();      // mount LittleFS, open/create history file
 
+    clearI2CBus();
     Wire.begin(PIN_SDA, PIN_SCL);
-    Wire.setTimeOut(150);
     display.begin();
+    Wire.setTimeOut(150); // DEPOIS do display.begin()
     encoder.begin();
 
     rtclock.setErrorCallback(recoverI2C);
