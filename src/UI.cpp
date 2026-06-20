@@ -258,7 +258,7 @@ void UI::dispatchAction(const char* action) {
         if (!strcmp(type, "custom")) {
             _screenDurPick.setup(gState.custom_dur_min > 0 ? gState.custom_dur_min : 5, DurContext::CUSTOM_RUN, 0, MenuID::CUSTOM_ZONAS);
         } else if (!strcmp(type, "suspend")) {
-            _screenDurPick.setup(1, DurContext::SUSPEND, 0, MenuID::PROG);
+            _screenDurPick.setup(SUSPEND_DEFAULT_DAYS, DurContext::SUSPEND, 0, MenuID::PROG);
         } else if (!strcmp(type, "freq")) {
             ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
             _screenDurPick.setup(cs.interval_days, DurContext::FREQ_DAYS, 0, _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
