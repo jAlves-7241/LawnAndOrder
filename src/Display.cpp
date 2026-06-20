@@ -21,6 +21,26 @@ void Display::begin() {
     LOG_I("LCD", TXT_LOG_LCD_READY);
 }
 
+void Display::recover() {
+    _lcd.init();
+    if (_backlightOn) {
+        _lcd.backlight();
+    } else {
+        _lcd.noBacklight();
+    }
+    
+    if (_displayOn) {
+        _lcd.display();
+    } else {
+        _lcd.noDisplay();
+    }
+    
+    _lcd.clear();
+    delay(10);
+    _invalidateShadow();
+    LOG_I("LCD", TXT_LOG_LCD_RECOVERED);
+}
+
 void Display::backlightOn() {
     if (_backlightOn) return;
     _lcd.backlight();

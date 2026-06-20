@@ -51,7 +51,7 @@ void recoverI2C() {
     Wire.setTimeOut(150);
     rtclock.begin();
     esp_task_wdt_reset();
-    display.begin();
+    display.recover();
     LOG_I("SYS", TXT_LOG_I2C_REC_DONE);
 }
 

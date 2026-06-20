@@ -14,6 +14,7 @@ class Display {
 public:
     Display();
     void begin();
+    void recover(); // Re-initializes without forcing backlight/display ON if they were OFF
 
     // Write all four rows at once.
     // Pass "" to write a blank row. Pass nullptr to leave a row unchanged.

@@ -417,6 +417,7 @@
 #define TXT_LOG_ZONE_ACTIVE_SEC "Zone %d (%s) active - dur=%lu s"
 #define TXT_LOG_NEXT_WATERING "Next watering: %02d:%02d"
 #define TXT_LOG_LCD_READY "Ready"
+#define TXT_LOG_LCD_RECOVERED "Recovered"
 #define TXT_LOG_TERM_READY "Serial command terminal activated at 115200 baud."
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - TERMINAL SERVICE                  "
 // Terminal
@@ -585,6 +586,7 @@
 #define TXT_LOG_ZONE_ACTIVE_SEC "Zona %d (%s) ativa - dur=%lu s"
 #define TXT_LOG_NEXT_WATERING "Proxima rega: %02d:%02d"
 #define TXT_LOG_LCD_READY "Pronto"
+#define TXT_LOG_LCD_RECOVERED "Recuperado"
 #define TXT_LOG_TERM_READY "Terminal de comando serial ativado a 115200 baud."
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - SERVICO TERMINAL                  "
 // Terminal
