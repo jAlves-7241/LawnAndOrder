@@ -100,21 +100,21 @@ void setup() {
     Wire.begin(PIN_SDA, PIN_SCL);
     delay(200); // Allow LCD to boot fully
 
-    // TEMPORARY I2C SCANNER
-    Serial.println("\n--- I2C Scanner ---");
-    byte count = 0;
+    // I2C bus scan — log all detected devices
+    byte i2cCount = 0;
     for (byte i = 8; i < 120; i++) {
         Wire.beginTransmission(i);
         if (Wire.endTransmission() == 0) {
-            Serial.print("Found I2C device at address: 0x");
-            if (i < 16) Serial.print("0");
-            Serial.println(i, HEX);
-            count++;
+            LOG_I("I2C", TXT_LOG_I2C_SCAN_FOUND, i);
+            i2cCount++;
             delay(1);
         }
     }
-    if (count == 0) Serial.println("No I2C devices found. Check wiring!");
-    Serial.println("-------------------\n");
+    if (i2cCount == 0) {
+        LOG_E("I2C", TXT_LOG_I2C_SCAN_NONE);
+    } else {
+        LOG_I("I2C", TXT_LOG_I2C_SCAN_DONE, i2cCount);
+    }
     display.begin();
     Wire.setTimeOut(150); // DEPOIS do display.begin()
     encoder.begin();
