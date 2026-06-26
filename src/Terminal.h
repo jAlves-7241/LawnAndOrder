@@ -7,6 +7,7 @@ public:
     void begin();
     void update(); // Processamento não bloqueante a cada iteração do loop
 
+    friend void terminalAwareLog(const char* msg);
 private:
     char _buffer[256];
     uint16_t _bufLen;

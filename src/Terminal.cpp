@@ -11,9 +11,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 Terminal terminal;
 extern UI ui;
+
+void terminalAwareLog(const char* msg) {
+    if (terminal._bufLen > 0) {
+        // Apagar a linha parcial do utilizador (CR + clear-to-EOL)
+        Serial.print("\r\033[K");
+        // Imprimir o log na sua própria linha
+        Serial.println(msg);
+        // Re-ecoar o input parcial para o utilizador continuar a escrever
+        for (uint16_t i = 0; i < terminal._bufLen; i++) {
+            Serial.write(terminal._buffer[i]);
+        }
+    } else {
+        Serial.println(msg);
+    }
+}
 
 Terminal::Terminal() : _bufLen(0), _pendingClearHistory(false) { memset(_buffer, 0, sizeof(_buffer)); }
 
