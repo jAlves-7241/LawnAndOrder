@@ -13,6 +13,11 @@ private:
     uint16_t _bufLen;
     bool _pendingClearHistory;
 
+    bool _in_ansi;
+    uint8_t _ansi_bytes;
+    bool _ignore_rest;
+    char _last_c;
+
     void _processCommand(char* cmd);
     void _cmdHelp();
     void _cmdStatus();

@@ -15,11 +15,18 @@ Terminal terminal;
 extern UI ui;
 
 void terminalAwareLog(const char* msg) {
-    if (terminal._bufLen > 0) {
+    if (terminal._bufLen > 0 || terminal._pendingClearHistory) {
         // Apagar a linha parcial do utilizador (CR + clear-to-EOL)
         Serial.print("\r\033[K");
         // Imprimir o log na sua própria linha
         Serial.println(msg);
+        
+        // Redesenhar o prompt se aplicável
+        if (terminal._pendingClearHistory) {
+            Serial.print(TXT_TERM_WIPE_CONFIRM);
+            Serial.print(" ");
+        }
+
         // Re-ecoar o input parcial para o utilizador continuar a escrever
         for (uint16_t i = 0; i < terminal._bufLen; i++) {
             Serial.write(terminal._buffer[i]);
@@ -29,10 +36,14 @@ void terminalAwareLog(const char* msg) {
     }
 }
 
-Terminal::Terminal() : _bufLen(0), _pendingClearHistory(false) { memset(_buffer, 0, sizeof(_buffer)); }
+Terminal::Terminal() : _bufLen(0), _pendingClearHistory(false), _in_ansi(false), _ansi_bytes(0), _ignore_rest(false), _last_c(0) { memset(_buffer, 0, sizeof(_buffer)); }
 
 void Terminal::begin() {
   _bufLen = 0;
+  _in_ansi = false;
+  _ansi_bytes = 0;
+  _ignore_rest = false;
+  _last_c = 0;
   LOG_I("TERM", TXT_LOG_TERM_READY);
 }
 
@@ -50,38 +61,46 @@ void Terminal::update() {
 
   // 2. Leitura não bloqueante de caracteres com limite
   uint8_t max_bytes_proc = 64;
-  static bool in_ansi = false;
-  static uint8_t ansi_bytes = 0;
-  static bool ignore_rest = false;
   while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
 
     if (c == 27) {
-      in_ansi = true;
-      ansi_bytes = 0;
+      _in_ansi = true;
+      _ansi_bytes = 0;
+      _last_c = c;
       continue;
     }
-    if (in_ansi) {
-      if (ansi_bytes > 10) {
-        in_ansi = false;
+    if (_in_ansi) {
+      if (_ansi_bytes > 10) {
+        _in_ansi = false;
+        _last_c = c;
+        continue;
       } else {
-        ansi_bytes++;
+        _ansi_bytes++;
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
-          in_ansi = false;
+          _in_ansi = false;
         }
+        _last_c = c;
         continue;
       }
     }
 
+    // Ignorar \n se vier imediatamente após \r (CRLF)
+    if (c == '\n' && _last_c == '\r') {
+      _last_c = c;
+      continue;
+    }
+
     // Se for fim de linha (LF ou CR)
     if (c == '\n' || c == '\r') {
-      ignore_rest = false;
+      _ignore_rest = false;
       if (_bufLen > 0 || _pendingClearHistory) {
         _buffer[_bufLen] = '\0';
-        _processCommand(_buffer);
         _bufLen = 0;
+        _processCommand(_buffer);
       }
-    } else if (ignore_rest) {
+    } else if (_ignore_rest) {
+      _last_c = c;
       continue;
     }
     // Lidar com backspace/delete
@@ -101,11 +120,13 @@ void Terminal::update() {
         // Eco do caracter digitado
         Serial.write(c);
       } else {
+        Serial.print("\r\033[K"); // Limpar a linha visualmente
         Serial.println(TXT_TERM_ERR_OVERFLOW);
         _bufLen = 0;
-        ignore_rest = true;
+        _ignore_rest = true;
       }
     }
+    _last_c = c;
   }
 }
 
@@ -136,13 +157,18 @@ void Terminal::_processCommand(char *cmd) {
   char *trimmed = trimWhitespace(cmd);
 
   if (_pendingClearHistory) {
+    _pendingClearHistory = false;
     if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 || 
         strcasecmp(trimmed, "s") == 0 || strcasecmp(trimmed, "sim") == 0)) {
-      _cmdClearHistory();
+      Serial.println(TXT_TERM_WIPING);
+      history.clear();
+      // Reposicionar ecra fisico para Idle para refletir o historico limpo
+      // imediatamente
+      ui.goIdle();
+      Serial.println(TXT_TERM_WIPE_OK);
     } else {
       Serial.println(TXT_TERM_CANCELLED);
     }
-    _pendingClearHistory = false;
     return;
   }
 
@@ -371,19 +397,10 @@ void Terminal::_cmdImportConfig(char *hexStr) {
 }
 
 void Terminal::_cmdClearHistory() {
-  if (!_pendingClearHistory) {
-    Serial.println(TXT_TERM_WIPE_WARN);
-    Serial.print(TXT_TERM_WIPE_CONFIRM);
-    Serial.print(" ");
-    _pendingClearHistory = true;
-    return;
-  }
-  Serial.println(TXT_TERM_WIPING);
-  history.clear();
-  // Reposicionar ecra fisico para Idle para refletir o historico limpo
-  // imediatamente
-  ui.goIdle();
-  Serial.println(TXT_TERM_WIPE_OK);
+  Serial.println(TXT_TERM_WIPE_WARN);
+  Serial.print(TXT_TERM_WIPE_CONFIRM);
+  Serial.print(" ");
+  _pendingClearHistory = true;
 }
 
 void Terminal::_cmdReboot() {
