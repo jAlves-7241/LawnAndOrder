@@ -11,7 +11,9 @@ public:
 private:
     char _buffer[256];
     uint16_t _bufLen;
+    uint16_t _cursorPos;
     bool _pendingClearHistory;
+    char _ansi_buf[8];
 
     bool _in_ansi;
     uint8_t _ansi_bytes;
