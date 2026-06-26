@@ -11,14 +11,45 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 Terminal terminal;
 extern UI ui;
 
-Terminal::Terminal() : _bufLen(0), _pendingClearHistory(false) { memset(_buffer, 0, sizeof(_buffer)); }
+void terminalAwareLog(const char* msg) {
+    if (terminal._bufLen > 0 || terminal._pendingClearHistory) {
+        // Apagar a linha parcial do utilizador (CR + clear-to-EOL)
+        Serial.print("\r\033[K");
+        // Imprimir o log na sua própria linha
+        Serial.println(msg);
+        
+        // Redesenhar o prompt se aplicável
+        if (terminal._pendingClearHistory) {
+            Serial.print(TXT_TERM_WIPE_CONFIRM);
+            Serial.print(" ");
+        }
+
+        // Re-ecoar o input parcial para o utilizador continuar a escrever
+        if (terminal._bufLen > 0) {
+            Serial.write((const uint8_t*)terminal._buffer, terminal._bufLen);
+        }
+        // Move visual cursor back if logical cursor is not at end
+        int back = terminal._bufLen - terminal._cursorPos;
+        if (back > 0) {
+            Serial.printf("\033[%dD", back);
+        }
+    } else {
+        Serial.println(msg);
+    }
+}
+
+Terminal::Terminal() : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _in_ansi(false), _ansi_bytes(0), _ignore_rest(false), _last_c(0) { memset(_buffer, 0, sizeof(_buffer)); }
 
 void Terminal::begin() {
   _bufLen = 0;
+  _cursorPos = 0;
+  _in_ansi = false;
+  _ansi_bytes = 0;
+  _ignore_rest = false;
+  _last_c = 0;
   LOG_I("TERM", TXT_LOG_TERM_READY);
 }
 
@@ -31,67 +62,181 @@ void Terminal::update() {
       Serial.read(); // Descartar inputs
     }
     _bufLen = 0;
+    _cursorPos = 0;
     return;
   }
 
   // 2. Leitura não bloqueante de caracteres com limite
   uint8_t max_bytes_proc = 64;
-  static bool in_ansi = false;
-  static uint8_t ansi_bytes = 0;
-  static bool ignore_rest = false;
   while (Serial.available() > 0 && max_bytes_proc-- > 0) {
     char c = Serial.read();
 
     if (c == 27) {
-      in_ansi = true;
-      ansi_bytes = 0;
+      _in_ansi = true;
+      _ansi_bytes = 0;
+      _last_c = c;
       continue;
     }
-    if (in_ansi) {
-      if (ansi_bytes > 10) {
-        in_ansi = false;
+    if (_in_ansi) {
+      if (_ansi_bytes < sizeof(_ansi_buf)) {
+        _ansi_buf[_ansi_bytes] = c;
+      }
+      
+      // Abortar sequências demasiado longas (proteção contra sequências inválidas)
+      if (_ansi_bytes >= sizeof(_ansi_buf) - 1) {
+        _in_ansi = false;
+        _last_c = c;
+        continue;
       } else {
-        ansi_bytes++;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
-          in_ansi = false;
+        _ansi_bytes++;
+
+        bool is_terminator = false;
+        if (_ansi_bytes == 1) {
+          if (c != '[' && c != 'O') {
+            is_terminator = true;
+          }
+        } else {
+          if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
+            is_terminator = true;
+          }
         }
+
+        if (is_terminator) {
+          _in_ansi = false;
+          if (_ansi_bytes == 2 && _ansi_buf[0] == '[') {
+            if (c == 'D' && _cursorPos > 0) {
+              _cursorPos--;
+              Serial.print("\033[D");
+            } else if (c == 'C' && _cursorPos < _bufLen) {
+              _cursorPos++;
+              Serial.print("\033[C");
+            } else if (c == 'H') {
+              if (_cursorPos > 0) {
+                Serial.printf("\033[%dD", _cursorPos);
+                _cursorPos = 0;
+              }
+            } else if (c == 'F') {
+              if (_cursorPos < _bufLen) {
+                Serial.printf("\033[%dC", _bufLen - _cursorPos);
+                _cursorPos = _bufLen;
+              }
+            }
+          } else if (_ansi_bytes == 2 && _ansi_buf[0] == 'O') {
+            if (c == 'H') {
+              if (_cursorPos > 0) {
+                Serial.printf("\033[%dD", _cursorPos);
+                _cursorPos = 0;
+              }
+            } else if (c == 'F') {
+              if (_cursorPos < _bufLen) {
+                Serial.printf("\033[%dC", _bufLen - _cursorPos);
+                _cursorPos = _bufLen;
+              }
+            }
+          } else if (_ansi_bytes == 3 && _ansi_buf[0] == '[' && c == '~') {
+            if (_ansi_buf[1] == '3') {
+              if (_cursorPos < _bufLen) {
+                _bufLen--;
+                memmove(&_buffer[_cursorPos], &_buffer[_cursorPos + 1], _bufLen - _cursorPos);
+                Serial.print("\033[K");
+                if (_bufLen > _cursorPos) {
+                  Serial.write((const uint8_t*)(_buffer + _cursorPos), _bufLen - _cursorPos);
+                }
+                int back = _bufLen - _cursorPos;
+                if (back > 0) {
+                  Serial.printf("\033[%dD", back);
+                }
+              }
+            } else if (_ansi_buf[1] == '1' || _ansi_buf[1] == '7') {
+              if (_cursorPos > 0) {
+                Serial.printf("\033[%dD", _cursorPos);
+                _cursorPos = 0;
+              }
+            } else if (_ansi_buf[1] == '4' || _ansi_buf[1] == '8') {
+              if (_cursorPos < _bufLen) {
+                Serial.printf("\033[%dC", _bufLen - _cursorPos);
+                _cursorPos = _bufLen;
+              }
+            }
+          }
+        }
+        _last_c = c;
         continue;
       }
     }
 
+    // Ignorar \n se vier imediatamente após \r (CRLF)
+    if (c == '\n' && _last_c == '\r') {
+      _last_c = c;
+      continue;
+    }
+
     // Se for fim de linha (LF ou CR)
     if (c == '\n' || c == '\r') {
-      ignore_rest = false;
+      _ignore_rest = false;
       if (_bufLen > 0 || _pendingClearHistory) {
         _buffer[_bufLen] = '\0';
-        _processCommand(_buffer);
         _bufLen = 0;
+        _cursorPos = 0;
+        _processCommand(_buffer);
       }
-    } else if (ignore_rest) {
+    } else if (_ignore_rest) {
+      _last_c = c;
       continue;
+    }
+    // Cancelar/limpar linha atual (Ctrl+C ou Ctrl+U)
+    else if (c == 3 || c == 21) {
+      if (_bufLen > 0 || _pendingClearHistory) {
+        Serial.print("\r\033[K");
+        _bufLen = 0;
+        _cursorPos = 0;
+        if (_pendingClearHistory) {
+          _pendingClearHistory = false;
+          Serial.println(TXT_TERM_CANCELLED);
+        }
+      }
     }
     // Lidar com backspace/delete
     else if (c == '\b' || c == 127) {
-      if (_bufLen > 0) {
+      if (_cursorPos > 0) {
+        _cursorPos--;
         _bufLen--;
-        // Apaga o caracter visualmente do terminal remoto
-        Serial.write('\b');
-        Serial.write(' ');
-        Serial.write('\b');
+        // Shift left
+        memmove(&_buffer[_cursorPos], &_buffer[_cursorPos + 1], _bufLen - _cursorPos);
+        // Redraw from cursor
+        Serial.print("\b\033[K");
+        if (_bufLen > _cursorPos) {
+          Serial.write((const uint8_t*)(_buffer + _cursorPos), _bufLen - _cursorPos);
+        }
+        // Move visual cursor back
+        int back = _bufLen - _cursorPos;
+        if (back > 0) {
+          Serial.printf("\033[%dD", back);
+        }
       }
     }
     // Acumular caracteres normais e imprimíveis
     else if (c >= 32 && c <= 126) {
       if (_bufLen < sizeof(_buffer) - 1) {
-        _buffer[_bufLen++] = c;
-        // Eco do caracter digitado
+        // Shift right
+        memmove(&_buffer[_cursorPos + 1], &_buffer[_cursorPos], _bufLen - _cursorPos);
+        _buffer[_cursorPos++] = c;
+        _bufLen++;
+        // Redraw from cursor
         Serial.write(c);
+        if (_cursorPos < _bufLen) {
+          Serial.write((const uint8_t*)(_buffer + _cursorPos), _bufLen - _cursorPos);
+          Serial.printf("\033[%dD", _bufLen - _cursorPos);
+        }
       } else {
+        Serial.print("\r\033[K"); // Limpar a linha visualmente
         Serial.println(TXT_TERM_ERR_OVERFLOW);
         _bufLen = 0;
-        ignore_rest = true;
+        _cursorPos = 0;
+        _ignore_rest = true;
       }
     }
+    _last_c = c;
   }
 }
 
@@ -122,13 +267,18 @@ void Terminal::_processCommand(char *cmd) {
   char *trimmed = trimWhitespace(cmd);
 
   if (_pendingClearHistory) {
+    _pendingClearHistory = false;
     if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 || 
         strcasecmp(trimmed, "s") == 0 || strcasecmp(trimmed, "sim") == 0)) {
-      _cmdClearHistory();
+      Serial.println(TXT_TERM_WIPING);
+      history.clear();
+      // Reposicionar ecra fisico para Idle para refletir o historico limpo
+      // imediatamente
+      ui.goIdle();
+      Serial.println(TXT_TERM_WIPE_OK);
     } else {
       Serial.println(TXT_TERM_CANCELLED);
     }
-    _pendingClearHistory = false;
     return;
   }
 
@@ -144,21 +294,21 @@ void Terminal::_processCommand(char *cmd) {
     args = trimWhitespace(args);
   }
 
-  if (strcmp(trimmed, "help") == 0 || strcmp(trimmed, "?") == 0) {
+  if (strcasecmp(trimmed, "help") == 0 || strcmp(trimmed, "?") == 0) {
     _cmdHelp();
-  } else if (strcmp(trimmed, "status") == 0) {
+  } else if (strcasecmp(trimmed, "status") == 0) {
     _cmdStatus();
-  } else if (strcmp(trimmed, "set_time") == 0) {
+  } else if (strcasecmp(trimmed, "set_time") == 0) {
     _cmdSetTime(args);
-  } else if (strcmp(trimmed, "export_config") == 0) {
+  } else if (strcasecmp(trimmed, "export_config") == 0) {
     _cmdExportConfig();
-  } else if (strcmp(trimmed, "import_config") == 0) {
+  } else if (strcasecmp(trimmed, "import_config") == 0) {
     _cmdImportConfig(args);
-  } else if (strcmp(trimmed, "export_history") == 0) {
+  } else if (strcasecmp(trimmed, "export_history") == 0) {
     _cmdExportHistory();
-  } else if (strcmp(trimmed, "clear_history") == 0) {
+  } else if (strcasecmp(trimmed, "clear_history") == 0) {
     _cmdClearHistory();
-  } else if (strcmp(trimmed, "reboot") == 0) {
+  } else if (strcasecmp(trimmed, "reboot") == 0) {
     _cmdReboot();
   } else {
     Serial.printf(TXT_TERM_UNKNOWN_CMD, trimmed);
@@ -357,19 +507,10 @@ void Terminal::_cmdImportConfig(char *hexStr) {
 }
 
 void Terminal::_cmdClearHistory() {
-  if (!_pendingClearHistory) {
-    Serial.println(TXT_TERM_WIPE_WARN);
-    Serial.print(TXT_TERM_WIPE_CONFIRM);
-    Serial.print(" ");
-    _pendingClearHistory = true;
-    return;
-  }
-  Serial.println(TXT_TERM_WIPING);
-  history.clear();
-  // Reposicionar ecra fisico para Idle para refletir o historico limpo
-  // imediatamente
-  ui.goIdle();
-  Serial.println(TXT_TERM_WIPE_OK);
+  Serial.println(TXT_TERM_WIPE_WARN);
+  Serial.print(TXT_TERM_WIPE_CONFIRM);
+  Serial.print(" ");
+  _pendingClearHistory = true;
 }
 
 void Terminal::_cmdReboot() {

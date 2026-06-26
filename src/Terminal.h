@@ -7,10 +7,18 @@ public:
     void begin();
     void update(); // Processamento não bloqueante a cada iteração do loop
 
+    friend void terminalAwareLog(const char* msg);
 private:
     char _buffer[256];
     uint16_t _bufLen;
+    uint16_t _cursorPos;
     bool _pendingClearHistory;
+    char _ansi_buf[8];
+
+    bool _in_ansi;
+    uint8_t _ansi_bytes;
+    bool _ignore_rest;
+    char _last_c;
 
     void _processCommand(char* cmd);
     void _cmdHelp();
