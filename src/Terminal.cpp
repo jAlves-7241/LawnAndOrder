@@ -521,6 +521,10 @@ void Terminal::_cmdReboot() {
 }
 
 void Terminal::_cmdExportHistory() {
+  if (history.entryCount() == 0) {
+    Serial.println(TXT_TERM_HIST_EMPTY);
+    return;
+  }
   Serial.println(TXT_LOG_START_EXPORT);
   history.startExport();
 }
