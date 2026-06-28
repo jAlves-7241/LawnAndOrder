@@ -1,7 +1,7 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v1.1.0"
+#define FW_VERSION "v1.1.1"
 #define FW_BUILD_DATE "26Jun2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
