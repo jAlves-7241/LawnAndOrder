@@ -56,7 +56,7 @@
 #define SCHED_CUSTOM_SLOTS 1
 
 // ── Zone Defaults ─────────────────────────────────────────
-// Note: Zone names should ideally be 6 characters or less to perfectly fit the 20x4 LCD.
+// Note: Zone names should ideally be 9 characters or less to perfectly fit the 20x4 LCD.
 #define ZONE1_NAME "Entrada"
 #define ZONE1_DUR 8
 #define ZONE2_NAME "Portao"
