@@ -72,7 +72,7 @@ void initAppState() {
     }
 
     // ── Mode & schedule ──────────────────────────────────
-    gState.mode            = AppMode::MEDIO;
+    gState.mode            = AppMode::DESATIVADO;
     gState.suspended       = false;
     gState.suspended_until = 0;
     gState.custom_ref_day  = 0xFFFFFFFFUL; // sentinel: "not yet set" - Scheduler will initialise on first use
