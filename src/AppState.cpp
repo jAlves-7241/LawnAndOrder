@@ -58,7 +58,6 @@ ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
 void initAppState() {
     // ── Zone defaults ────────────────────────────────────
     const char*   names[NUM_ZONES]   = { ZONE1_NAME, ZONE2_NAME, ZONE3_NAME, ZONE4_NAME };
-    const bool    enabled[NUM_ZONES] = { true,  true,  true,  true };
     const uint8_t durs[NUM_ZONES]    = { ZONE1_DUR, ZONE2_DUR, ZONE3_DUR, ZONE4_DUR };
 
     for (int i = 0; i < NUM_ZONES; i++) {
@@ -68,7 +67,7 @@ void initAppState() {
             snprintf(gState.zones[i].name, sizeof(gState.zones[i].name), TXT_ZONE_PREFIX, i + 1);
         }
         gState.zones[i].name[sizeof(gState.zones[i].name) - 1] = '\0';
-        gState.zones[i].enabled      = enabled[i];
+        gState.zones[i].enabled      = (durs[i] > 0);
         gState.zones[i].duration_min = durs[i];
     }
 
