@@ -102,7 +102,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
     case MenuID::CFG_ZONAS:
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
-            if (z.enabled)
+            if (z.enabled && z.duration_min > 0)
                 snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, i+1, z.name);
             else
                 snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, i+1, z.name);
@@ -215,7 +215,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
     case MenuID::SETUP_ZONES:
         for (int i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
-            if (z.enabled)
+            if (z.enabled && z.duration_min > 0)
                 snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, i+1, z.name);
             else
                 snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, i+1, z.name);
