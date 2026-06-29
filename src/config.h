@@ -56,6 +56,7 @@
 #define SCHED_CUSTOM_SLOTS 1
 
 // ── Zone Defaults ─────────────────────────────────────────
+// Note: Zone names should ideally be 6 characters or less to perfectly fit the 20x4 LCD.
 #define ZONE1_NAME "Entrada"
 #define ZONE1_DUR 8
 #define ZONE2_NAME "Portao"
@@ -92,6 +93,7 @@
 #define RELAY_DEADTIME_MS 20UL // Tempo de espera (dead time) de relés em ms
 #define WDT_TIMEOUT_S 8        // Watchdog timeout em segundos
 #define SUSPEND_DEFAULT_DAYS 3 // Dias padrão para suspensão de rega
+#define SAFETY_GAP_SEC 7200UL  // Tempo de segurança (em segundos) para evitar regas duplas. Valor seguro: 7200 (2h)
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
 #define DATE_YEAR_MAX 2099     // Ano máximo para o editor de data
 #define DATE_YEAR_SPAN                                                         \

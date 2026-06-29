@@ -220,6 +220,7 @@ void WateringController::update() {
                 _syncState();
             } else {
                 LOG_E("REGA", TXT_LOG_ZONE_OOB, _zoneIdx);
+                stop();
             }
         }
         return;

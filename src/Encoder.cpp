@@ -1,4 +1,5 @@
 #include "Encoder.h"
+#include <driver/gpio.h>
 
 Encoder* volatile Encoder::_inst = nullptr;
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
@@ -24,17 +25,17 @@ void Encoder::begin() {
 
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
-    static volatile uint32_t last_isr_ms = 0;
+    static volatile uint64_t last_isr_us = 0;
     
     portENTER_CRITICAL_ISR(&mux);
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    if (now - last_isr_ms < 2) {
+    uint64_t now_us = esp_timer_get_time();
+    if (now_us - last_isr_us < 2000ULL) {
         portEXIT_CRITICAL_ISR(&mux);
         return;
     }
-    last_isr_ms = now;
+    last_isr_us = now_us;
 
-    int16_t d = (digitalRead(_inst->_dt) == LOW) ? 1 : -1;
+    int16_t d = (gpio_get_level((gpio_num_t)_inst->_dt) == 0) ? 1 : -1;
     if (d > 0) {
         if (_inst->_delta < 32000) _inst->_delta += d;
     } else {

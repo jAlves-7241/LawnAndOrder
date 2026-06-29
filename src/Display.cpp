@@ -76,6 +76,7 @@ void Display::_invalidateShadow() {
 
 void Display::setRows(const char* r0, const char* r1,
                       const char* r2, const char* r3) {
+    if (!_displayOn) return;
     const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
     for (int r = 0; r < LCD_ROWS; r++) {
         if (rows[r]) _writeRow(r, rows[r]);

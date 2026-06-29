@@ -128,9 +128,12 @@ void Storage::exportConfigHex(char* hexOut, size_t maxLen) {
     // Convert to hex string
     if (maxLen < sizeof(AppConfigBlob) * 2 + 1) return;
     uint8_t* ptr = (uint8_t*)&blob;
+    static const char hexChars[] = "0123456789ABCDEF";
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
-        snprintf(hexOut + (i * 2), maxLen - (i * 2), "%02X", ptr[i]);
+        hexOut[i * 2]     = hexChars[ptr[i] >> 4];
+        hexOut[i * 2 + 1] = hexChars[ptr[i] & 0x0F];
     }
+    hexOut[sizeof(AppConfigBlob) * 2] = '\0';
 }
 
 // ─────────────────────────────────────────────────────────
@@ -235,6 +238,30 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
                 auto temp = cs.slots[i];
                 cs.slots[i] = cs.slots[j];
                 cs.slots[j] = temp;
+            }
+        }
+    }
+    
+    // Validar sobreposição de slots
+    if (cs.slot_count > 1) {
+        uint32_t total_dur = 0;
+        for (int i = 0; i < NUM_ZONES; i++) {
+            if (gState.zones[i].enabled) total_dur += gState.zones[i].duration_min;
+        }
+        
+        if (total_dur > 0) {
+            for (int i = 0; i < cs.slot_count; i++) {
+                for (int j = i + 1; j < cs.slot_count; j++) {
+                    uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                    uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                    int16_t diff = (int16_t)s1 - (int16_t)s2;
+                    if (diff < 0) diff = -diff;
+                    if (diff > 720) diff = 1440 - diff;
+                    if (diff < total_dur) {
+                        LOG_W("NVS", "Hex import overlap detected");
+                        return false;
+                    }
+                }
             }
         }
     }

@@ -344,7 +344,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
     }
 
     if (_teContext == TimeEditContext::RTC) {
-        if (!rtclock.isValid()) {
+        if (!rtclock.isPresent()) {
             ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT, TXT_FOUND, "", ui.inSetup() ? _backMenu : MenuID::DEF);
             ui.changeScreen(&ui.getScreenInfo());
             return;

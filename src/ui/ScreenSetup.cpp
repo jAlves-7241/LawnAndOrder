@@ -38,12 +38,12 @@ void ScreenSetupWelcome::render(UI& ui) {
     char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
     if (_isComplete) {
         ui.getDisplay().cx(b0, TXT_CONFIG_DONE);
-        ui.getDisplay().cx(b1, "");
+        b1[0] = '\0';
         ui.getDisplay().cx(b2, TXT_SYSTEM_READY);
         ui.getDisplay().cx(b3, TXT_CLICK_TO_START);
     } else {
         ui.getDisplay().cx(b0, TXT_WELCOME);
-        ui.getDisplay().cx(b1, "");
+        b1[0] = '\0';
         ui.getDisplay().cx(b2, TXT_CLICK_TO_START);
         ui.getDisplay().cx(b3, TXT_SETUP_INITIAL);
     }

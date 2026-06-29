@@ -128,7 +128,12 @@ void setup() {
 
     // Evaluate active suspension against the real RTC time
     if (gState.suspended_until > 0) {
-        if (!gState.rtc_valid || gState.now.unix >= gState.suspended_until) {
+        if (!gState.rtc_valid) {
+            // Transient RTC error: clear RAM flags to avoid indefinite block, but DO NOT wipe NVS
+            gState.suspended = false;
+            gState.suspended_until = 0;
+            LOG_W("SYS", TXT_LOG_RTC_UNAVAIL);
+        } else if (gState.now.unix >= gState.suspended_until) {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
@@ -156,4 +161,5 @@ void loop() {
     wateringCtrl.update();  // advances zone timer, drives relays
     history.update();       // processes background file rotations
     terminal.update();
+    delay(1);
 }

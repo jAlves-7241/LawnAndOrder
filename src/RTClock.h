@@ -47,6 +47,9 @@ public:
     // True if the chip was found and the oscillator is running.
     bool isValid() const { return _found && !_lostPower; }
 
+    // True if the hardware module is physically detected.
+    bool isPresent() const { return _found; }
+
     void setErrorCallback(ErrorCallback cb) { _errorCb = cb; }
 
 private:

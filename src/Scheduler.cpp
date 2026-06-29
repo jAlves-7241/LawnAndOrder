@@ -221,7 +221,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     // 3. Safety Gap
     if (next_cycle_unix != 0xFFFFFFFF) {
         uint32_t estimated_end = current_unix + remaining_duration_sec;
-        if ((uint64_t)estimated_end + 7200ULL > (uint64_t)next_cycle_unix) {
+        if ((uint64_t)estimated_end + (uint64_t)SAFETY_GAP_SEC > (uint64_t)next_cycle_unix) {
             LOG_W("SCHED", TXT_LOG_SCHED_REC_GAP);
             return true;
         }
@@ -326,8 +326,7 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
                     LOG_D("SCHED", TXT_LOG_SCHED_CUSTOM_DAY, candidate_day_1970);
                     ref_day = candidate_day_1970;
                 } else {
-                    DateTime current(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
-                    ref_day = current.unixtime() / 86400UL;
+                    ref_day = candidate_day_1970;
                 }
             }
             uint32_t diff = (candidate_day_1970 >= ref_day) ? (candidate_day_1970 - ref_day) : (ref_day - candidate_day_1970);
