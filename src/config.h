@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v1.1.1"
-#define FW_BUILD_DATE "26Jun2026"
+#define FW_VERSION "v1.1.2"
+#define FW_BUILD_DATE "29Jun2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
@@ -56,14 +56,14 @@
 #define SCHED_CUSTOM_SLOTS 1
 
 // ── Zone Defaults ─────────────────────────────────────────
-// Note: Zone names should ideally be 9 characters or less to perfectly fit the 20x4 LCD.
+// Note: Zone names should ideally be 7 characters or less to perfectly fit the 20x4 LCD.
 #define ZONE1_NAME "Entrada"
 #define ZONE1_DUR 8
 #define ZONE2_NAME "Portao"
-#define ZONE2_DUR 8
+#define ZONE2_DUR 6
 #define ZONE3_NAME "Garagem"
-#define ZONE3_DUR 8
-#define ZONE4_NAME "Artificial"
+#define ZONE3_DUR 7
+#define ZONE4_NAME "Relva"
 #define ZONE4_DUR 0
 
 // ── RTC / Tempo ───────────────────────────────────────────
