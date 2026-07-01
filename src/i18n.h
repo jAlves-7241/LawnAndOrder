@@ -443,6 +443,8 @@
   "  clear_history                - Completely wipe system watering history"
 #define TXT_TERM_HELP_8                                                        \
   "  reboot                       - Restart the ESP32 controller"
+#define TXT_TERM_HELP_9                                                        \
+  "  i2c_scan                     - Run an I2C bus scan"
 #define TXT_TERM_STAT_LOCAL "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
   "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n"
@@ -620,6 +622,8 @@
   "do sistema"
 #define TXT_TERM_HELP_8                                                        \
   "  reboot                       - Reinicia o controlador ESP32"
+#define TXT_TERM_HELP_9                                                        \
+  "  i2c_scan                     - Executa um scan ao barramento I2C"
 #define TXT_TERM_STAT_LOCAL "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
   "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n"

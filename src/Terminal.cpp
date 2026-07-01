@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <Wire.h>
 
 Terminal terminal;
 extern UI ui;
@@ -34,6 +35,7 @@ const Terminal::CmdEntry Terminal::CMD_TABLE[] = {
     { "export_history", &Terminal::_cmdExportHistory, TXT_TERM_HELP_6,  nullptr           },
     { "clear_history",  &Terminal::_cmdClearHistory,  TXT_TERM_HELP_7,  nullptr           },
     { "reboot",         &Terminal::_cmdReboot,        TXT_TERM_HELP_8,  nullptr           },
+    { "i2c_scan",       &Terminal::_cmdI2cScan,       TXT_TERM_HELP_9,  nullptr           },
 };
 
 const uint8_t Terminal::CMD_COUNT = sizeof(Terminal::CMD_TABLE) / sizeof(Terminal::CMD_TABLE[0]);
@@ -685,4 +687,23 @@ void Terminal::_cmdReboot(char* /*args*/) {
     Serial.flush();
     delay(100);
     ESP.restart();
+}
+
+void Terminal::_cmdI2cScan(char* /*args*/) {
+    byte i2cCount = 0;
+    for (byte i = 8; i < 120; i++) {
+        Wire.beginTransmission(i);
+        if (Wire.endTransmission() == 0) {
+            Serial.printf(TXT_LOG_I2C_SCAN_FOUND, i);
+            Serial.println();
+            i2cCount++;
+            delay(1);
+        }
+    }
+    if (i2cCount == 0) {
+        Serial.println(TXT_LOG_I2C_SCAN_NONE);
+    } else {
+        Serial.printf(TXT_LOG_I2C_SCAN_DONE, i2cCount);
+        Serial.println();
+    }
 }
