@@ -31,7 +31,8 @@ public:
     // Returns true on success; false if the module is not responding.
     bool begin();
 
-    // Call every loop(). Reads the chip into gState.now once per second.
+    // Call every loop(). Reads the RTC about every 30 seconds and advances
+    // gState.now with a software clock between hardware reads.
     void update();
 
     // Set date and time.

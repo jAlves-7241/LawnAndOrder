@@ -111,6 +111,8 @@
 #define TXT_WELCOME "Welcome!"
 #define TXT_CLICK_TO_START "Click to start"
 #define TXT_SYSTEM_READY "System ready."
+#define TXT_SETUP_NO_RTC "No RTC found"
+#define TXT_SETUP_SKIP_TIME "Skip time setup?"
 
 #define TXT_ERR_OVERLAP "! OVERLAP !"
 #define TXT_ERR_DUR_EXCESS "Excess duration"
@@ -301,6 +303,8 @@
 #define TXT_WELCOME "Bem-vindo!"
 #define TXT_CLICK_TO_START "Clique p/ iniciar"
 #define TXT_SYSTEM_READY "Sistema pronto."
+#define TXT_SETUP_NO_RTC "RTC nao encontrado"
+#define TXT_SETUP_SKIP_TIME "Avancar sem hora?"
 
 #define TXT_ERR_OVERLAP "! SOBREPOSICAO !"
 #define TXT_ERR_DUR_EXCESS "Duracao excessiva"
