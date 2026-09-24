@@ -345,11 +345,20 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
     if (_teContext == TimeEditContext::RTC) {
         if (!rtclock.isPresent()) {
-            ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT, TXT_FOUND, "", ui.inSetup() ? _backMenu : MenuID::DEF);
-            ui.changeScreen(&ui.getScreenInfo());
+            if (ui.inSetup()) {
+                ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
+                                            MenuID::SETUP_MODE, "skip_clock");
+                ui.changeScreen(&ui.getScreenConfirm());
+            } else {
+                ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT,
+                                         TXT_FOUND, "", MenuID::DEF);
+                ui.changeScreen(&ui.getScreenInfo());
+            }
             return;
         }
-        rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(), ui.getDateEditDay(), _teHour, _teMin, 0);
+
+        rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
+                    ui.getDateEditDay(), _teHour, _teMin, 0);
 
         if (ui.inSetup()) {
             ui.advanceSetup();
@@ -367,14 +376,16 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         // Validar sobreposições antes de guardar
         uint16_t total_dur = ui.getTotalZoneDuration();
         uint8_t enCount = 0;
-        for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
+        for (int z = 0; z < NUM_ZONES; z++) {
+            if (gState.zones[z].enabled) enCount++;
+        }
         if (enCount > 1) total_dur += (enCount - 1); // incluir delays de relés
-        
+
         uint8_t old_h = cs.slots[_teCycleIdx].hour;
         uint8_t old_m = cs.slots[_teCycleIdx].minute;
         cs.slots[_teCycleIdx].hour = _teHour;
         cs.slots[_teCycleIdx].minute = _teMin;
-        
+
         bool overlap = false;
         for (int i = 0; i < cs.slot_count; i++) {
             for (int j = i + 1; j < cs.slot_count; j++) {
@@ -383,16 +394,21 @@ void ScreenTimeEdit::handleClick(UI& ui) {
                 int16_t diff = (int16_t)s1 - (int16_t)s2;
                 if (diff < 0) diff = -diff;
                 if (diff > 720) diff = 1440 - diff;
-                if (diff < total_dur) { overlap = true; break; }
+                if (diff < total_dur) {
+                    overlap = true;
+                    break;
+                }
             }
             if (overlap) break;
         }
-        
+
         if (overlap) {
             // Reverter alteração
             cs.slots[_teCycleIdx].hour = old_h;
             cs.slots[_teCycleIdx].minute = old_m;
-            ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_CYCLES_CLOSE, TXT_ERR_FOR_DUR, TXT_ERR_ADJUST_TIME, _backMenu);
+            ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_CYCLES_CLOSE,
+                                     TXT_ERR_FOR_DUR, TXT_ERR_ADJUST_TIME,
+                                     _backMenu);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
@@ -401,11 +417,11 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         for (int i = 0; i < cs.slot_count - 1; i++) {
             for (int j = 0; j < cs.slot_count - i - 1; j++) {
                 uint16_t t1 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                uint16_t t2 = cs.slots[j+1].hour * 60 + cs.slots[j+1].minute;
+                uint16_t t2 = cs.slots[j + 1].hour * 60 + cs.slots[j + 1].minute;
                 if (t1 > t2) {
                     ScheduleSlot temp = cs.slots[j];
-                    cs.slots[j] = cs.slots[j+1];
-                    cs.slots[j+1] = temp;
+                    cs.slots[j] = cs.slots[j + 1];
+                    cs.slots[j + 1] = temp;
                 }
             }
         }

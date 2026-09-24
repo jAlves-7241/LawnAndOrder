@@ -1,79 +1,61 @@
-# Sistema de Rega - ESP32 (Código Fonte)
+# Sistema de Rega — arquitetura e funcionamento
 
-Este diretório contém a implementação do controlador de rega autónomo para o ESP32.
+Este diretório contém o firmware do controlador ESP32. A execução é cooperativa: o `loop()` chama os serviços regularmente e a rega é temporizada sem esperar bloqueado pela duração da válvula. Algumas operações curtas de I²C, LittleFS, NVS e Serial são síncronas; exportação de histórico e rotação do ficheiro são processadas incrementalmente.
 
----
+## Arquitetura
 
-## Estrutura de Ficheiros de Código
+- `main.cpp`: inicialização e ciclo principal; estabelece os níveis OFF dos relés no início do arranque.
+- `AppState.h / .cpp`: estruturas da aplicação e estado central `gState`.
+- `WateringController.h / .cpp`: fila de zonas, temporização, comutação dos relés e estado de recuperação persistente.
+- `Scheduler.h / .cpp`: cálculo limitado do próximo horário, tratamento de frequência personalizada e disparo de ciclos automáticos.
+- `RTClock.h / .cpp`: DS3231 no hardware, conversão local/UTC, DST europeu e avanço por software entre leituras do RTC.
+- `Storage.h / .cpp`: configuração e estado de recuperação em NVS; exportação/importação hexadecimal validada.
+- `History.h / .cpp`: CSV em LittleFS, cache de entradas recentes em NVS e exportação série.
+- `Display.h / .cpp`, `Encoder.h / .cpp`, `UI.h / .cpp`: LCD com shadow buffer, encoder via ISR/debounce e encaminhamento dos ecrãs.
+- `Terminal.h / .cpp`: CLI Serial a 115200 baud, com leitura incremental de comandos.
+- `log.h`, `i18n.h`, `config.h`: logs, idiomas e parâmetros/hardware.
+- `ui/`: ecrãs individuais e construção de menus. O `MenuBuilder` gera ações textuais que o gestor UI encaminha.
 
-- `config.h`: Definições globais de pinagem (relés, LCD, RTC, encoder), constantes temporais, limites físicos e de versão do firmware.
-- `log.h`: Sistema otimizado de logs com 4 níveis (`ERRO`, `AVISO`, `INFO`, `DEBUG`), resolvido e filtrado em tempo de compilação (zero overhead de código quando desligado).
-- `AppState.h / .cpp`: Estado central global da aplicação (`gState`), dados das zonas, configurações de temporização e cache do histórico.
-- `Display.h / .cpp`: Driver LCD otimizado com *shadow buffering* (só escreve caracteres alterados física e visualmente no ecrã para eliminar qualquer flicker).
-- `Encoder.h / .cpp`: Driver para encoder rotativo baseado em interrupções de hardware com debounce inteligente.
-- `History.h / .cpp`: Sistema de logs de rega em formato CSV gravado no LittleFS com rotação de ficheiro não bloqueante e exportação série assíncrona.
-- `RTClock.h / .cpp`: Interface com o relógio de hardware DS3231 com fuso horário e compensação automática de horário de verão (regras EU).
-- `Scheduler.h / .cpp`: Motor de agendamento automático $O(1)$ baseado em aritmética modular.
-- `Storage.h / .cpp`: Persistência de definições de utilizador e cache binária de histórico na NVS Flash do ESP32.
-- `Terminal.h / .cpp`: Terminal de comando interativo por comunicação Serial CLI (115200 baud) totalmente não bloqueante.
-- `WateringController.h / .cpp`: Controlo de baixo nível dos relés GPIO das eletroválvulas, gestão da fila e temporização ativa de rega.
-- `UI.h / .cpp`: Gestor de interface centralizado, responsável pelo tratamento de inatividade/backlight e encaminhamento de ecrãs.
-- `main.cpp`: Ponto de entrada do firmware, executando a inicialização segura e o ciclo de execução principal.
+A separação por módulos é acompanhada por singletons e estado global partilhado (`gState`), uma escolha simples para este firmware de uma só aplicação, mas que torna testes unitários isolados mais difíceis. O encoder é o único serviço com entrada assíncrona por interrupção; o delta é protegido por secção crítica.
 
----
+## Inicialização (`setup()`)
 
-## Módulo de Interface do Utilizador (`src/ui/`)
+1. Comanda os relés para OFF e configura os GPIOs.
+2. Inicializa o watchdog com `WDT_TIMEOUT_S` (8 s por defeito) e o estado em RAM.
+3. Abre NVS e carrega configurações validadas.
+4. Monta LittleFS e carrega a cache do histórico.
+5. Recupera o barramento I²C, inicializa-o, faz um scan, inicia o LCD e o encoder.
+6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão e tenta recuperar um ciclo interrompido.
+7. Calcula o horário seguinte, inicia UI e terminal.
 
-A interface física no LCD 2004 é implementada através de um padrão polimórfico orientado a objetos, separando cada ecrã numa classe especializada:
+`History::begin()` usa `LittleFS.begin(true)`: se a montagem falhar, a biblioteca pode formatar o filesystem. Isto permite recuperar a disponibilidade do controlador, mas o histórico local pode perder-se. A configuração NVS é separada.
 
-- `ui/UIScreen.h`: Classe abstrata base. Define o ciclo de vida de um ecrã (`onEnter`, `onExit`, `render`, `update`, `handleRotation` e `handleClick`).
-- `ui/UITypes.h`: Define as identidades de cada ecrã (`MenuID`), os contextos das caixas de entrada de dados (`DurContext` e `TimeEditContext`) e os passos do assistente de configuração (`SetupStep`).
-- `ui/MenuBuilder.h / .cpp`: Constrói dinamicamente os itens de menu baseados nas variáveis de estado de RAM e nos buffers estáticos.
-- `ui/ScreenCommon.h / .cpp`:
-  - `ScreenInfo`: Apresenta ecrãs informativos genéricos com botão de regresso automático.
-  - `ScreenConfirm`: Pede confirmação explícita de Sim/Voltar para ações perigosas ou arranques manuais.
-  - `ScreenDone`: Confirma a execução imediata de uma tarefa com mensagem de sucesso.
-- `ui/ScreenEditors.h / .cpp`:
-  - `ScreenDurPick`: Seletor interativo para escolher valores numéricos (duração de zona 0–20 min, dias de suspensão, frequência).
-  - `ScreenDateEdit`: Introdução sequencial do dia/mês/ano com validação de limites temporais.
-  - `ScreenTimeEdit`: Seletor interativo para horas/minutos dos ciclos de rega automática.
+## Ciclo principal (`loop()`)
 
-- `ui/ScreenIdle.h / .cpp`: Ecrã principal passivo (idle). Mostra a hora atual e as informações de agendamento automático, progresso ativo da rega por zona ou estado de suspensão.
-- `ui/ScreenMenu.h / .cpp`: Renders e controla menus scrolláveis gerados a partir do `MenuBuilder`.
-- `ui/ScreenSetup.h / .cpp`: Controla o assistente interativo de primeiro arranque (**Setup Wizard**).
+A ordem efetiva em `main.cpp` é:
 
----
+1. Alimentar o watchdog.
+2. `rtclock.update()`.
+3. `scheduler.update()`.
+4. `ui.update()`.
+5. `wateringCtrl.update()`.
+6. `history.update()`.
+7. `terminal.update()` e pausa de 1 ms.
 
-## Fluxo Detalhado do Sistema
+O RTC de hardware é consultado com intervalo nominal de 30 s; entre leituras, o relógio por software avança com base em `millis()`. O scheduler é avaliado com o tempo atualizado, e o controlador de rega implementa dead-time e espera entre zonas sem `delay()` durante a rega.
 
-### 1. Inicialização (`setup()`)
-```
-[Arranque do ESP32]
-  │
-  ├── 1. SAFETY FIRST: Força todos os relés OFF antes de iniciar periféricos.
-  ├── 2. Watchdog: Configura o Task Watchdog do ESP32 a 5 segundos no loop principal.
-  ├── 3. AppState: Carrega definições de fábrica para a RAM.
-  ├── 4. NVS (Storage): Inicializa e carrega definições persistentes na RAM.
-  ├── 5. LittleFS (History): Monta o sistema de ficheiros e popula a cache binária.
-  ├── 6. UI Hardware: Inicializa o Display (LCD) e Encoder (GPIO ISRs).
-  ├── 7. RTClock: Liga o barramento I2C, configura fuso automático e recoverI2C como callback.
-  ├── 8. Safety Clean: Remove suspensão expirada e desliga relés de segurança no WateringController.
-  ├── 9. Scheduler: Calcula e agenda o ciclo seguinte cronológico.
-  ├── 10. UI & Terminal: Lança o terminal de comandos serial e o Setup Wizard (se aplicável).
-  ▼
-[Pronto para o Loop]
-```
+## Decisões e limites operacionais
 
-### 2. Ciclo de Execução Principal (`loop()`)
-O ciclo principal corre continuamente sem bloqueios. Cada milissegundo de inatividade é repartido entre os vários controladores:
-1. **`esp_task_wdt_reset()`**: Reseta e alimenta o watchdog físico.
-2. **`rtclock.update()`**: Lê o RTC DS3231 uma vez por segundo para sincronizar o relógio do sistema.
-3. **`scheduler.update()`**: Compara a hora e o dia com a tabela de agendamento modular para disparar ciclos automáticos.
-4. **`ui.update()`**: Monitoriza delta de rotação do encoder, cliques e gere o backlight/screen off automático.
-5. **`wateringCtrl.update()`**: Trata da comutação e do tempo ativo de rega física de cada zona.
-6. **`history.update()`**: Efetua operações de ficheiro assíncronas em LittleFS.
-7. **`terminal.update()`**: Lê e processa comandos remotos inseridos na consola CLI.
+- **Blackout durante uma zona:** a NVS não é atualizada a cada segundo para limitar desgaste. A posição e a duração configurada ficam guardadas; se a energia falhar durante uma zona, essa zona pode ser repetida pela duração completa após reinício. A posição é persistida quando uma zona termina, por isso uma falha durante essa gravação também pode repetir a zona acabada de concluir. O reinício valida hora, duração máxima e distância para o próximo ciclo antes de retomar. É um compromisso deliberado entre desgaste da flash e precisão da retoma.
 
----
+- **DST e reboot:** a proteção contra duplicação da hora repetida é mantida em RAM para evitar escrita persistente adicional. Um reboot na janela entre as duas ocorrências pode permitir uma segunda ativação. A janela é rara; se o custo dessa duplicação aumentar, a alternativa é persistir um marcador de último disparo.
+- **RTC inválido/ausente:** o relógio por software mantém a interface utilizável, mas sem uma hora válida não autoriza agendamentos automáticos nem retoma validada após blackout. No assistente de primeiro arranque, o utilizador pode confirmar que pretende continuar sem RTC. `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot; para operação automática persistente, é necessário um RTC válido.
 
-Para documentação completa sobre o funcionamento e utilização, consulte o [README.md principal](../README.md).
+- **Importação de configuração:** o blob é verificado antes da aplicação. Uma importação inválida não deve deixar alterações parciais no estado em RAM.
+- **Hardware:** o estado OFF por software não deteta relés ou válvulas mecanicamente presos. A camada de hardware da instalação continua responsável por isolamento, corte de água e proteção contra falhas físicas.
+
+## Interface
+
+A UI do LCD 20×4 usa classes de ecrã com ciclo de vida (`onEnter`, `render`, `update`, `handleRotation`, `handleClick`). `ScreenCommon` fornece informação, confirmação e conclusão; `ScreenEditors` contém editores numéricos/data/hora; `ScreenSetup` gere o assistente inicial. A configuração sem RTC exige confirmação explícita antes de avançar para seleção de modo e zonas.
+
+Para instruções de utilização, comandos Serial e opções de configuração, consulte o [README principal](../README.md).

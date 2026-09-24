@@ -170,13 +170,20 @@ bool UI::executeConfirmed(const char* tag) {
         return true;
     }
 
+    if (!strcmp(tag, "skip_clock")) {
+        advanceSetup();
+        return true;
+    }
+
     if (!strcmp(tag, "general")) {
         bool any = false;
-        for (int i=0; i<NUM_ZONES; i++) {
+        for (int i = 0; i < NUM_ZONES; i++) {
             if (gState.zones[i].enabled) any = true;
         }
         if (!any) {
-            _screenInfo.setup(TXT_ERR_ACTIVE_ZONES, TXT_NO_ACTIVE_ZONES, TXT_ERR_ACTIVATE_ZONES, TXT_ERR_SCHEDULE, MenuID::MANUAL);
+            _screenInfo.setup(TXT_ERR_ACTIVE_ZONES, TXT_NO_ACTIVE_ZONES,
+                              TXT_ERR_ACTIVATE_ZONES, TXT_ERR_SCHEDULE,
+                              MenuID::MANUAL);
             changeScreen(&_screenInfo);
             return true;
         }

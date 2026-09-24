@@ -1,6 +1,6 @@
 # Lawn & Order — Controlador de Rega Autónomo (ESP32)
 
-Sistema de rega automática para jardim, baseado em ESP32, com ecrã LCD 2004 (I2C), encoder rotativo, relógio de tempo real (RTC) e controlo de até 4 zonas de rega através de relés. O firmware é totalmente não bloqueante, regista histórico de regas em LittleFS, persiste configurações em NVS Flash e expõe um terminal de comandos via Serial.
+Sistema de rega automática para jardim, baseado em ESP32, com ecrã LCD 2004 (I2C), encoder rotativo, relógio de tempo real (RTC) e controlo de até 4 zonas de rega através de relés. A execução da rega e da interface é orientada por ciclo e não espera pelo fim de uma rega; algumas operações curtas de periféricos, LittleFS e NVS são síncronas. O histórico é guardado em LittleFS, as configurações em NVS Flash, e existe um terminal de comandos via Serial.
 
 Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é compatível com simulação no [Wokwi](https://wokwi.com/).
 
@@ -15,11 +15,21 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 - **Suspensão temporária**: pausa a rega automática por um número de dias definido pelo utilizador.
 - **Assistente de configuração inicial (Setup Wizard)**: guia o utilizador no primeiro arranque (data/hora, modo, zonas).
 - **Histórico de regas**: gravado em CSV no LittleFS, com cache em RAM/NVS para acesso instantâneo no LCD e exportação completa via Serial.
-- **Recuperação de falha de energia**: ciclos de rega interrompidos por um blackout são retomados de forma segura ao reiniciar (ou descartados se já não fizerem sentido).
+- **Recuperação de falha de energia**: após reiniciar, um ciclo interrompido é validado contra o RTC, limites de duração e próximo horário. Para reduzir escritas na flash, o estado persistido não acompanha o tempo decorrido na zona atual: essa zona pode voltar a regar durante toda a duração configurada. Ver os limites de segurança abaixo.
 - **Hora automática com DST (horário de verão)**: suporte às regras europeias de transição de horário.
 - **Terminal de comandos Serial**: consulta de estado, acerto de hora, exportação/importação de configurações e histórico, reset remoto.
-- **Tolerância a falhas do RTC**: se a pilha do DS3231 estiver descarregada ou o módulo não for detetado, o sistema cai automaticamente para um relógio por software, mantém a interface a funcionar (assinalando a hora como inválida no LCD) e tenta redetetar o RTC a cada ~10 s; uma falha a meio da operação (queda de tensão/EMI) é detetada por leitura contínua do oscilador e despoleta recuperação automática do barramento I2C.
+- **Tolerância a falhas do RTC**: a interface continua a funcionar com relógio por software, mas a hora é marcada como inválida e a rega automática fica inibida até existir uma hora válida. O RTC é consultado periodicamente (intervalo nominal de 30 s); falhas persistentes despoletam tentativas de deteção e, após leituras corrompidas consecutivas, recuperação do barramento I2C.
 - **Suporte multi-idioma**: textos do LCD e do terminal Serial separados e configuráveis independentemente (`PT`/`EN`) em `i18n.h`.
+
+## Decisões de projeto e limites operacionais
+
+- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila e a posição da zona, mas não acompanha continuamente o tempo decorrido. Isto reduz escritas na flash. Se faltar energia durante uma zona, ao reiniciar essa zona pode ser executada novamente pela duração completa configurada. A posição da fila é gravada ao concluir cada zona; uma falha antes de essa gravação terminar também pode repetir a zona acabada de concluir. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Este compromisso é intencional; para instalações em que a repetição máxima não seja aceitável, usar um corte de água independente ou rever a política para exigir confirmação manual após um blackout.
+- **Hora de verão**: a proteção contra a hora repetida no fim do DST impede duplicados durante a execução normal, mas o marcador fica apenas em RAM. Um reboot exatamente entre as duas ocorrências da mesma hora local pode permitir uma segunda ativação. O risco é limitado a essa janela rara e não justifica uma escrita adicional persistente por defeito.
+- **RTC indisponível**: no assistente inicial, é possível confirmar que se pretende continuar sem RTC. A interface e a rega manual continuam disponíveis. Sem uma hora válida, rega agendada, suspensões temporizadas e validação da retoma após blackout ficam inibidas. `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot; para operação automática persistente, defina/recupere o RTC.
+- **Histórico**: o arranque tenta montar LittleFS com formatação automática em caso de falha. Se essa recuperação for acionada, o histórico local pode ser apagado; as configurações NVS são armazenadas separadamente. Exporte o histórico se precisar de uma cópia duradoura.
+- **Saída de relé**: o firmware comanda os GPIOs para o estado OFF no arranque, mas não consegue detetar um relé ou válvula mecanicamente preso. A instalação deve usar alimentação, isolamento e válvulas adequados; para instalações onde uma fuga tenha consequências relevantes, considere um corte de água independente.
+
+A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz todas as características elétricas e de falha do DS3231 físico. A validação em hardware com o DS3231 é a referência para o comportamento real.
 
 ---
 
@@ -29,7 +39,7 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 |---|---|
 | ESP32 DevKit C (v4) | Microcontrolador principal |
 | LCD 2004 com módulo I2C | 20 colunas × 4 linhas, endereço `0x27` |
-| Módulo RTC DS3231 | Relógio de tempo real com bateria (DS1307 usado apenas em simulação Wokwi) |
+| Módulo RTC DS3231 | Relógio de tempo real com bateria (o Wokwi usa o modelo RTC disponível no simulador) |
 | Encoder rotativo KY-040 | Navegação nos menus (rotação + clique) |
 | Módulo de relés (até 4 canais) | Controlo das eletroválvulas, ativo em LOW por defeito |
 
@@ -150,7 +160,7 @@ A maioria dos parâmetros do sistema está centralizada em **`src/config.h`** e 
 | `RELAY_DEADTIME_MS` | Dead-time de segurança aplicado antes de ativar um relé | `20` ms |
 | `WDT_TIMEOUT_S` | Timeout do watchdog de hardware | `8` s |
 | `SUSPEND_DEFAULT_DAYS` | Valor inicial sugerido ao suspender a rega | `3` dias |
-| `SAFETY_GAP_SEC` | Intervalo mínimo de segurança (s) entre o fim de um ciclo recuperado e o próximo ciclo agendado, para evitar regas duplas | `7200` (2 h) |
+| `SAFETY_GAP_SEC` | Intervalo mínimo de segurança (s) entre o fim estimado de um ciclo recuperado e o próximo ciclo agendado, para evitar sobreposição | `7200` (2 h) |
 | `DATE_YEAR_MIN` / `DATE_YEAR_MAX` | Intervalo de anos aceite no editor de data e no `set_time` | `2020` – `2099` |
 | `HISTORY_MAX_ENTRIES` | Número máximo de linhas guardadas no ficheiro de histórico antes de rotação | `1500` |
 | `HISTORY_DISPLAY` | Número de entradas de histórico mostradas no menu do LCD | `3` |
