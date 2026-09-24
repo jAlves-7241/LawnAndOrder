@@ -1,7 +1,9 @@
 #include "i18n.h"
 #include "Storage.h"
 #include <Preferences.h>
+#include <stddef.h>
 #include "log.h"
+
 
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS = "rega";
@@ -22,13 +24,42 @@ void Storage::begin() {
 
 static const char* KEY_CFG = "cfg";
 
+// AppConfigBlob is a packed wire/storage format. Validate bool bytes before
+// reading them as bools so malformed NVS/import data cannot create invalid
+// C++ bool representations.
+static bool _blobHasValidBooleans(const AppConfigBlob& blob) {
+    static_assert(sizeof(bool) == 1, "AppConfigBlob expects 1-byte bools");
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&blob);
+
+    if (raw[offsetof(AppConfigBlob, auto_dst)] > 1 ||
+        raw[offsetof(AppConfigBlob, setup_done)] > 1) {
+        return false;
+    }
+
+    const size_t zonesOffset = offsetof(AppConfigBlob, zones);
+    for (size_t i = 0; i < NUM_ZONES; ++i) {
+        const size_t zoneOffset = zonesOffset + i * sizeof(blob.zones[0]);
+        if (raw[zoneOffset] > 1) return false;
+    }
+    return true;
+}
+
+static int _hexNibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+
 // ─────────────────────────────────────────────────────────
 bool Storage::load() {
     if (!_ready) return false;
 
     AppConfigBlob blob = {};
     size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
-    if (readBytes != sizeof(blob) || blob.version != NVS_VERSION) {
+    if (readBytes != sizeof(blob) || blob.version != NVS_VERSION ||
+        !_blobHasValidBooleans(blob)) {
         LOG_W("NVS", TXT_LOG_NVS_BLOB_INV, blob.version);
         return false;
     }
@@ -43,22 +74,29 @@ bool Storage::load() {
 }
 
 // ─────────────────────────────────────────────────────────
-void Storage::save() {
-    if (!_ready) return;
+bool Storage::save() {
+    if (!_ready) return false;
 
     AppConfigBlob blob = {};
     _stateToBlob(blob);
 
     // Read current to avoid unnecessary write
     AppConfigBlob current = {};
-    if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) != sizeof(current) ||
-        memcmp(&blob, &current, sizeof(blob)) != 0) {
-        
-        size_t written = prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
-        if (written == 0) { LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL); }
-        else { LOG_I("NVS", TXT_LOG_NVS_UPDATED); }
+    if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) == sizeof(current) &&
+        memcmp(&blob, &current, sizeof(blob)) == 0) {
+        return true;
     }
+
+    size_t written = prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    if (written != sizeof(blob)) {
+        LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+        return false;
+    }
+
+    LOG_I("NVS", TXT_LOG_NVS_UPDATED);
+    return true;
 }
+
 
 // ─────────────────────────────────────────────────────────
 void Storage::clear() {
@@ -146,12 +184,12 @@ bool Storage::importConfigHex(const char* hexIn) {
     }
 
     AppConfigBlob blob = {};
-    uint8_t* ptr = (uint8_t*)&blob;
+    uint8_t* ptr = reinterpret_cast<uint8_t*>(&blob);
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
-        char tmp[3] = { hexIn[i * 2], hexIn[i * 2 + 1], '\0' };
-        char* endptr;
-        ptr[i] = (uint8_t)strtol(tmp, &endptr, 16);
-        if (*endptr != '\0') return false;
+        const int hi = _hexNibble(hexIn[i * 2]);
+        const int lo = _hexNibble(hexIn[i * 2 + 1]);
+        if (hi < 0 || lo < 0) return false;
+        ptr[i] = (uint8_t)((hi << 4) | lo);
     }
 
     if (blob.version != NVS_VERSION) {
@@ -159,12 +197,21 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
-    if (!_blobToState(blob)) {
+    const AppState previousState = gState;
+    const uint8_t customMode = (uint8_t)AppMode::PERSONALIZADO;
+    const ModeSchedule previousCustomSchedule = MODE_SCHEDULES[customMode];
+
+    if (!_blobHasValidBooleans(blob) || !_blobToState(blob)) {
+        return false;
+    }
+
+    if (!save()) {
+        gState = previousState;
+        MODE_SCHEDULES[customMode] = previousCustomSchedule;
         return false;
     }
 
     LOG_I("NVS", TXT_LOG_NVS_IMP_OK);
-    save(); // Grava no NVS flash com memcmp de segurança incorporado
     return true;
 }
 
@@ -199,37 +246,43 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         return false;
     }
 
+    const AppState previousState = gState;
+    const uint8_t customMode = (uint8_t)AppMode::PERSONALIZADO;
+    const ModeSchedule previousCustomSchedule = MODE_SCHEDULES[customMode];
+
     gState.mode = (AppMode)blob.mode;
 
-    if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER && blob.backlight_timeout_ms < 30000UL) {
+    if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER &&
+        blob.backlight_timeout_ms < 30000UL) {
         gState.backlight_timeout_ms = 120000UL; // Fallback para 2 minutos
     } else {
         gState.backlight_timeout_ms = blob.backlight_timeout_ms;
     }
-    gState.suspended_until      = blob.suspended_until;
-    gState.custom_ref_day       = blob.custom_ref_day;
-    gState.auto_dst             = !!blob.auto_dst;
-    gState.setup_done           = !!blob.setup_done;
-    gState.suspended            = (gState.suspended_until > 0);
+    gState.suspended_until = blob.suspended_until;
+    gState.custom_ref_day = blob.custom_ref_day;
+    gState.auto_dst = !!blob.auto_dst;
+    gState.setup_done = !!blob.setup_done;
+    gState.suspended = (gState.suspended_until > 0);
 
     for (int i = 0; i < NUM_ZONES; i++) {
         gState.zones[i].enabled = !!blob.zones[i].enabled;
-        gState.zones[i].duration_min = (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : 8;
+        gState.zones[i].duration_min =
+            (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : 8;
     }
 
-    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    ModeSchedule& cs = MODE_SCHEDULES[customMode];
     cs.interval_days = blob.custom_interval_days;
     if (cs.interval_days == 0 || cs.interval_days > 14) cs.interval_days = 1;
-    
+
     cs.slot_count = blob.custom_slot_count;
     if (cs.slot_count == 0 || cs.slot_count > MAX_SLOTS_PER_MODE) cs.slot_count = 1;
 
     for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
-        cs.slots[i].hour   = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
+        cs.slots[i].hour = (blob.custom_slots[i].hour > 23) ? 0 : blob.custom_slots[i].hour;
         cs.slots[i].minute = (blob.custom_slots[i].minute > 59) ? 0 : blob.custom_slots[i].minute;
     }
-    
-    // Garantir que os slots ativos estão sempre ordenados cronologicamente (Bubble Sort simples)
+
+    // Keep active slots in chronological order.
     for (int i = 0; i < cs.slot_count - 1; i++) {
         for (int j = i + 1; j < cs.slot_count; j++) {
             uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
@@ -241,14 +294,20 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
             }
         }
     }
-    
-    // Validar sobreposição de slots
+
+    // Reject schedules whose watering runs could overlap.
     if (cs.slot_count > 1) {
         uint32_t total_dur = 0;
+        uint8_t enabledZones = 0;
         for (int i = 0; i < NUM_ZONES; i++) {
-            if (gState.zones[i].enabled) total_dur += gState.zones[i].duration_min;
+            if (gState.zones[i].enabled) {
+                total_dur += gState.zones[i].duration_min;
+                enabledZones++;
+            }
         }
-        
+        // Match the UI check: include one minute per inter-zone transition.
+        if (enabledZones > 1) total_dur += enabledZones - 1;
+
         if (total_dur > 0) {
             for (int i = 0; i < cs.slot_count; i++) {
                 for (int j = i + 1; j < cs.slot_count; j++) {
@@ -258,13 +317,15 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
                     if (diff < 0) diff = -diff;
                     if (diff > 720) diff = 1440 - diff;
                     if (diff < total_dur) {
-                        LOG_W("NVS", "Hex import overlap detected");
+                        LOG_W("NVS", "Custom schedule overlap detected");
+                        gState = previousState;
+                        MODE_SCHEDULES[customMode] = previousCustomSchedule;
                         return false;
                     }
                 }
             }
         }
     }
-    
+
     return true;
 }

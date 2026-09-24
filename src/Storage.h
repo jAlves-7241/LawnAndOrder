@@ -83,7 +83,8 @@ public:
     bool load();
 
     // Write all persisted fields from gState to NVS.
-    void save();
+    // Returns false if NVS is unavailable or the write fails.
+    bool save();
 
     // Erase the entire NVS namespace (factory reset).
     void clear();
