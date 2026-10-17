@@ -1,4 +1,5 @@
 #include "RTClock.h"
+#include "Storage.h"
 #include "log.h"
 #include "i18n.h"
 
@@ -250,6 +251,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         } else {
             gState.suspended_until = (uint32_t)newUntil;
         }
+        storage.save();
     }
 
     LOG_I("RTC", TXT_LOG_RTC_TIME_SET,
