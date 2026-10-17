@@ -267,7 +267,7 @@ void History::_populateCache() {
             if (c == '\n') {
                 char* p = _trimLineBuffer(line, linePos);
                 if (strlen(p) > 0) {
-                    HistoryEntry temp;
+                    HistoryEntry temp = {};
                     if (_lineToEntry(p, temp)) {
                         if (_cacheCount < HISTORY_DISPLAY) {
                             _cache[_cacheCount++] = temp;
@@ -289,7 +289,7 @@ void History::_populateCache() {
     if (linePos > 0) {
         char* p = _trimLineBuffer(line, linePos);
         if (strlen(p) > 0) {
-            HistoryEntry temp;
+            HistoryEntry temp = {};
             if (_lineToEntry(p, temp)) {
                 if (_cacheCount < HISTORY_DISPLAY) {
                     _cache[_cacheCount++] = temp;
@@ -351,7 +351,7 @@ void History::update() {
                     char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
                     
                     if (strlen(p) > 0) {
-                        HistoryEntry temp;
+                        HistoryEntry temp = {};
                         if (_lineToEntry(p, temp)) {
                             if (_rotSkipped < _rotDiscard) {
                                 _rotSkipped++;
@@ -376,7 +376,7 @@ void History::update() {
             if (_rotLinePos > 0) {
                 char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
                 if (strlen(p) > 0) {
-                    HistoryEntry temp;
+                    HistoryEntry temp = {};
                     if (_lineToEntry(p, temp)) {
                         if (_rotSkipped < _rotDiscard) {
                             _rotSkipped++;

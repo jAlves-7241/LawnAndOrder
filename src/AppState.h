@@ -59,7 +59,9 @@ struct HistoryEntry {
     uint8_t     month, day, hour, min;
     uint8_t     zone_dur[NUM_ZONES];  // actual minutes run per zone (0 = skipped)
     WaterTrigger trigger;
+    uint8_t     _pad = 0;
 };
+static_assert(sizeof(HistoryEntry) == 12, "HistoryEntry must be 12 bytes");
 
 // ─────────────────────────────────────────────────────────
 // Schedule data structures

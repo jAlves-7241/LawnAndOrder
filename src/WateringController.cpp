@@ -347,7 +347,7 @@ void WateringController::_finishCycle() {
     if (!anyRun) {
         LOG_I("REGA", TXT_LOG_CYCLE_NO_DUR);
     } else {
-        HistoryEntry entry;
+        HistoryEntry entry = {};
         entry.year    = _cycleStart.year;
         entry.month   = _cycleStart.month;
         entry.day     = _cycleStart.day;
