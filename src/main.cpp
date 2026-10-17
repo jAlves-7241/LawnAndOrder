@@ -129,9 +129,9 @@ void setup() {
     // Evaluate active suspension against the real RTC time
     if (gState.suspended_until > 0) {
         if (!gState.rtc_valid) {
-            // Transient RTC error: clear RAM flags to avoid indefinite block, but DO NOT wipe NVS
-            gState.suspended = false;
-            gState.suspended_until = 0;
+            // Transient RTC error: retain suspended_until so subsequent NVS saves do not wipe it.
+            // Scheduler will evaluate expiration once RTC time is available.
+            gState.suspended = true;
             LOG_W("SYS", TXT_LOG_RTC_UNAVAIL);
         } else if (gState.now.unix >= gState.suspended_until) {
             gState.suspended = false;
