@@ -98,7 +98,11 @@ void Scheduler::update() {
 void Scheduler::onModeChanged() {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
-    _lastMin = 0xFF; // Force schedule evaluation
+    if (gState.rtc_valid) {
+        _lastMin = gState.now.min; // Align with current minute to prevent mid-minute double trigger
+    } else {
+        _lastMin = 0xFF;
+    }
     if (!gState.rtc_valid) {
         // RTC not ready - seed next_* from the first slot of the new mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
