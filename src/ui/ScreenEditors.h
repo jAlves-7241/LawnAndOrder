@@ -16,10 +16,10 @@ public:
     void render(UI& ui) override;
 
 private:
-    uint8_t _durValue;
-    DurContext _durContext;
-    uint8_t _durZoneIdx;
-    MenuID _backMenu;
+    uint8_t _durValue = 0;
+    DurContext _durContext = DurContext::CUSTOM_RUN;
+    uint8_t _durZoneIdx = 0;
+    MenuID _backMenu = MenuID::MAIN;
 
     void _getRange(DurContext ctx, int& vmin, int& vmax);
 };
@@ -37,11 +37,11 @@ public:
     void render(UI& ui) override;
 
 private:
-    uint8_t  _deDay;
-    uint8_t  _deMonth;
-    uint16_t _deYear;
-    uint8_t  _deField;  // 0 = day, 1 = month, 2 = year
-    MenuID _backMenu;
+    uint8_t  _deDay = 1;
+    uint8_t  _deMonth = 1;
+    uint16_t _deYear = 2026;
+    uint8_t  _deField = 0;  // 0 = day, 1 = month, 2 = year
+    MenuID _backMenu = MenuID::MAIN;
 };
 
 // ─────────────────────────────────────────────────────────
@@ -57,10 +57,10 @@ public:
     void render(UI& ui) override;
 
 private:
-    uint8_t _teHour;
-    uint8_t _teMin;
-    uint8_t _teField;  // 0 = hour, 1 = minute
-    TimeEditContext _teContext;
-    uint8_t _teCycleIdx;
-    MenuID _backMenu;
+    uint8_t _teHour = 0;
+    uint8_t _teMin = 0;
+    uint8_t _teField = 0;  // 0 = hour, 1 = minute
+    TimeEditContext _teContext = TimeEditContext::RTC;
+    uint8_t _teCycleIdx = 0;
+    MenuID _backMenu = MenuID::MAIN;
 };

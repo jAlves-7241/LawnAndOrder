@@ -12,5 +12,5 @@ public:
     void render(UI& ui) override;
 
 private:
-    bool _isComplete;
+    bool _isComplete = false;
 };

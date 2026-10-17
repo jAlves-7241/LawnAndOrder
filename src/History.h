@@ -46,22 +46,22 @@ private:
 
     File _rotSrc;
     File _rotDst;
-    uint16_t _rotDiscard;
-    uint16_t _rotKeep;
-    uint16_t _rotSkipped;
-    uint16_t _rotCopied;
+    uint16_t _rotDiscard = 0;
+    uint16_t _rotKeep = 0;
+    uint16_t _rotSkipped = 0;
+    uint16_t _rotCopied = 0;
 
-    char _rotLineBuf[LINE_BUF];
-    size_t _rotLinePos;
-    char _rotPendingLine[LINE_BUF];
+    char _rotLineBuf[LINE_BUF] = {};
+    size_t _rotLinePos = 0;
+    char _rotPendingLine[LINE_BUF] = {};
 
     // Cache for UI display
-    HistoryEntry _cache[HISTORY_DISPLAY];
+    HistoryEntry _cache[HISTORY_DISPLAY] = {};
     uint8_t      _cacheCount = 0;
     
     bool         _pendingCacheSave = false;   // NVS save diferido (rotação async)
     
-    HistoryEntry _deferredQueue[4];
+    HistoryEntry _deferredQueue[4] = {};
     uint8_t      _defHead = 0;
     uint8_t      _defTail = 0;
 
@@ -69,10 +69,10 @@ private:
     enum class ExportState : uint8_t { IDLE, SENDING, FOOTER };
     ExportState _exportState = ExportState::IDLE;
     File        _exportFile;
-    uint16_t    _exportSent;
-    uint16_t    _exportTotal;
-    char        _exportLineBuf[LINE_BUF];
-    size_t      _exportLinePos;
+    uint16_t    _exportSent = 0;
+    uint16_t    _exportTotal = 0;
+    char        _exportLineBuf[LINE_BUF] = {};
+    size_t      _exportLinePos = 0;
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);

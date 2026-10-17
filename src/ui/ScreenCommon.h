@@ -16,8 +16,8 @@ public:
     void render(UI& ui) override;
 
 private:
-    char _rows[4][LCD_COLS + 1];
-    MenuID _backMenu;
+    char _rows[4][LCD_COLS + 1] = {};
+    MenuID _backMenu = MenuID::MAIN;
 };
 
 // ─────────────────────────────────────────────────────────
@@ -33,10 +33,10 @@ public:
     void render(UI& ui) override;
 
 private:
-    char _rows[4][LCD_COLS + 1];
-    MenuID _backMenu;
-    char _tag[16];
-    bool _selectionOk;
+    char _rows[4][LCD_COLS + 1] = {};
+    MenuID _backMenu = MenuID::MAIN;
+    char _tag[16] = {};
+    bool _selectionOk = false;
 };
 
 // ─────────────────────────────────────────────────────────
@@ -54,6 +54,6 @@ public:
     void setBackMenu(MenuID back) { _backMenu = back; }
 
 private:
-    char _rows[4][LCD_COLS + 1];
-    MenuID _backMenu; // inherited dynamically based on previous state
+    char _rows[4][LCD_COLS + 1] = {};
+    MenuID _backMenu = MenuID::MAIN; // inherited dynamically based on previous state
 };

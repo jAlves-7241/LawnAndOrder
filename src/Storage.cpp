@@ -179,7 +179,7 @@ bool Storage::importConfigHex(const char* hexIn) {
     if (!hexIn) return false;
     size_t len = strlen(hexIn);
     if (len != sizeof(AppConfigBlob) * 2) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_LEN, len, sizeof(AppConfigBlob) * 2);
+        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_LEN, (int)len, (int)(sizeof(AppConfigBlob) * 2));
         return false;
     }
 

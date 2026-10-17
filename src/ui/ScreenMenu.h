@@ -14,11 +14,11 @@ public:
 private:
     static const uint8_t MAX_ITEMS = MenuBuilder::MAX_ITEMS;
 
-    MenuID _mid;
-    MenuItem _items[MAX_ITEMS];
-    uint8_t _itemCount;
-    uint8_t _cur;
-    uint8_t _off;
+    MenuID _mid = MenuID::MAIN;
+    MenuItem _items[MAX_ITEMS] = {};
+    uint8_t _itemCount = 0;
+    uint8_t _cur = 0;
+    uint8_t _off = 0;
 
     void dispatch(UI& ui, const char* action);
 };

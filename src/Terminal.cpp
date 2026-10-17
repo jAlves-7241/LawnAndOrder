@@ -115,7 +115,7 @@ static const char *getModeStr(AppMode mode) {
 // ═════════════════════════════════════════════════════════
 
 Terminal::Terminal()
-    : _bufLen(0), _cursorPos(0), _pendingClearHistory(false),
+    : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _ansi_buf{},
       _in_ansi(false), _ansi_bytes(0), _ignore_rest(false), _last_c(0)
 {
     memset(_buffer, 0, sizeof(_buffer));
