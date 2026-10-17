@@ -148,16 +148,18 @@ char* Display::_fx(char* buf, size_t n, const char* s) {
 // Centred in LCD_COLS
 char* Display::_cx(char* buf, size_t n, const char* s) {
     if (n == 0) return buf;
+    int maxCols = min((int)LCD_COLS, (int)n - 1);
+    if (maxCols <= 0) {
+        buf[0] = '\0';
+        return buf;
+    }
     int len = strlen(s);
-    if (len > LCD_COLS) len = LCD_COLS;
-    if (len > (int)n - 1) len = n - 1;
-    int pad = LCD_COLS - len;
+    if (len > maxCols) len = maxCols;
+    int pad = maxCols - len;
     int lpad = pad / 2;
-    if (lpad > (int)n - 1) lpad = n - 1;
     memset(buf, ' ', lpad);
     memcpy(buf + lpad, s, len);
     int rpad = pad - lpad;
-    if (rpad > (int)n - 1 - lpad - len) rpad = n - 1 - lpad - len;
     memset(buf + lpad + len, ' ', rpad);
     buf[lpad + len + rpad] = '\0';
     return buf;
@@ -166,20 +168,34 @@ char* Display::_cx(char* buf, size_t n, const char* s) {
 // "~~ TITLE ~~" - fills full LCD_COLS with tildes around centred text
 char* Display::_hdr(char* buf, size_t n, const char* s) {
     if (n == 0) return buf;
+    int maxCols = min((int)LCD_COLS, (int)n - 1);
+    if (maxCols <= 0) {
+        buf[0] = '\0';
+        return buf;
+    }
     int len = strlen(s);
-    if (len > LCD_COLS - 2) len = LCD_COLS - 2;
-    if (len > (int)n - 3) len = n - 3;
-    int total_tilde = LCD_COLS - len - 2;  // 2 for the spaces
+    if (len > maxCols - 2) len = maxCols - 2;
+    if (len < 0) len = 0;
+    int total_tilde = maxCols - len - 2;  // 2 for the spaces
+    if (total_tilde < 0) total_tilde = 0;
     int lt = total_tilde / 2;
     int rt = total_tilde - lt;
     int pos = 0;
-    if (lt > (int)n - 1) lt = n - 1;
-    memset(buf + pos, '~', lt); pos += lt;
-    if (pos < (int)n - 1) buf[pos++] = ' ';
-    memcpy(buf + pos, s, len); pos += len;
-    if (pos < (int)n - 1) buf[pos++] = ' ';
-    if (rt > (int)n - 1 - pos) rt = n - 1 - pos;
-    memset(buf + pos, '~', rt); pos += rt;
+    if (lt > 0) {
+        memset(buf + pos, '~', lt);
+        pos += lt;
+    }
+    if (pos < maxCols) buf[pos++] = ' ';
+    if (len > 0) {
+        memcpy(buf + pos, s, len);
+        pos += len;
+    }
+    if (pos < maxCols) buf[pos++] = ' ';
+    if (rt > 0 && pos < maxCols) {
+        if (rt > maxCols - pos) rt = maxCols - pos;
+        memset(buf + pos, '~', rt);
+        pos += rt;
+    }
     buf[pos] = '\0';
     return buf;
 }
@@ -188,9 +204,8 @@ char* Display::_hdr(char* buf, size_t n, const char* s) {
 char* Display::_pbar(char* buf, size_t n, uint8_t pct) {
     if (n == 0) return buf;
     if (pct > 100) pct = 100;
-    int barWidth = LCD_COLS - 7;
-    if (barWidth < 0) barWidth = 0;
-    int filled = (barWidth > 0) ? ((pct * barWidth) / 100) : 0;
+    const int barWidth = LCD_COLS - 7;
+    int filled = (pct * barWidth) / 100;
     int pos = 0;
     if (pos < (int)n - 1) buf[pos++] = '[';
     for (int i = 0; i < barWidth; i++) {
