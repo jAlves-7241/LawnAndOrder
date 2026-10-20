@@ -178,3 +178,22 @@ RUN_TEST(test_specific_condition);
    }
    ```
 4. Run `pio test -e native -f test_<subsystem>`.
+
+---
+
+## 6. IDE & CI/CD Automation
+
+### VS Code Integration
+* **Status Bar Architecture**: The PlatformIO VS Code extension's bottom toolbar actions (Build, Upload, Test) target the active environment selected in the Environment Switcher (`$(chip)` in the status bar). `default_envs = esp32dev` keeps Build/Upload pointing to the microcontroller by default.
+* **Embedded Test Safety**: `test_ignore = *` is configured on `[env:esp32dev]`. If tests are triggered while `esp32dev` is active, PlatformIO skips test discovery without attempting to flash or connect via serial.
+* **Execution Options in VS Code**:
+  1. **VS Code Test Task**: Run `Tasks: Run Test Task` (or custom keybinding). Configured in `.vscode/tasks.json` as the default test task targeting `pio test -e native`.
+  2. **Activity Bar Testing Panel**: Open the beaker icon on the left Activity Bar to view and run individual or all test suites under `native`.
+  3. **PlatformIO Project Tasks Panel**: Open the PlatformIO alien icon -> `native` -> `Advanced` / `General` -> `Test`.
+  4. **Status Bar Switcher**: Click the environment name in the bottom status bar, select `env:native` to run tests via the status bar beaker icon, then switch back to `Default` or `esp32dev` for firmware compilation and flashing.
+
+### CI/CD Pipeline (GitHub Actions)
+Continuous integration is defined in `.github/workflows/ci.yml` and executes on every push to active branches (`main`, `master`, `test-suite`, `migration/*`) and pull requests:
+* **Job 1 (`test-native`)**: Sets up Python, installs PlatformIO, restores package cache, and executes all native unit tests via `pio test -e native` on an `ubuntu-latest` runner.
+* **Job 2 (`build-esp32`)**: Restores toolchain/platform cache and verifies full embedded firmware compilation via `pio run -e esp32dev` on an `ubuntu-latest` runner.
+
