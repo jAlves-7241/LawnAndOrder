@@ -1,5 +1,12 @@
 #pragma once
 
+#ifdef unix
+#undef unix
+#endif
+#ifdef linux
+#undef linux
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -11,6 +18,13 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+
+#ifdef unix
+#undef unix
+#endif
+#ifdef linux
+#undef linux
+#endif
 
 typedef bool boolean;
 typedef uint8_t byte;
@@ -65,6 +79,11 @@ inline int digitalRead(uint8_t pin) {
 #endif
 
 // BSD / Arduino string utilities
+#if defined(__linux__) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 38))
+// glibc 2.38+ provides strlcpy in <string.h>
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+// BSD/macOS provides strlcpy in <string.h>
+#else
 inline size_t strlcpy(char* dst, const char* src, size_t size) {
     if (!dst || !src || size == 0) return 0;
     size_t srclen = strlen(src);
@@ -73,6 +92,7 @@ inline size_t strlcpy(char* dst, const char* src, size_t size) {
     dst[toCopy] = '\0';
     return srclen;
 }
+#endif
 
 // Arduino String class mock (minimal adapter)
 class String : public std::string {
