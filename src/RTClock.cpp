@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include "RTClock.h"
 #include "Storage.h"
 #include "log.h"
