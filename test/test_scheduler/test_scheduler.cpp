@@ -157,6 +157,55 @@ void test_scheduler_suspension_auto_wake(void) {
     TEST_ASSERT_EQUAL_UINT32(0, gState.suspended_until);
 }
 
+void test_scheduler_month_end_and_leap_year_rollover(void) {
+    gState.mode = AppMode::MEDIO;
+
+    // 1. January 31 at 23:00 -> next is tomorrow (Feb 1) at slot 0 (08:00)
+    DateTime dtJan31(2026, 1, 31, 23, 0, 0);
+    SystemTime now = { dtJan31.year(), dtJan31.month(), dtJan31.day(), 23, 0, 0, dtJan31.dayOfTheWeek(), dtJan31.unixtime() };
+    uint8_t nextH = 0, nextM = 0;
+    uint32_t nextDay = 0;
+
+    bool ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    DateTime dtNext(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(2, dtNext.month()); // February
+    TEST_ASSERT_EQUAL_UINT8(1, dtNext.day());   // 1st
+
+    // 2. 2026 is NOT a leap year: Feb 28 at 23:00 -> next is March 1
+    DateTime dtFeb28(2026, 2, 28, 23, 0, 0);
+    now = { dtFeb28.year(), dtFeb28.month(), dtFeb28.day(), 23, 0, 0, dtFeb28.dayOfTheWeek(), dtFeb28.unixtime() };
+    ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    dtNext = DateTime(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(3, dtNext.month()); // March
+    TEST_ASSERT_EQUAL_UINT8(1, dtNext.day());   // 1st
+
+    // 3. 2028 IS a leap year: Feb 28 at 23:00 -> next is Feb 29
+    DateTime dtLeap28(2028, 2, 28, 23, 0, 0);
+    now = { dtLeap28.year(), dtLeap28.month(), dtLeap28.day(), 23, 0, 0, dtLeap28.dayOfTheWeek(), dtLeap28.unixtime() };
+    ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    dtNext = DateTime(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(2, dtNext.month()); // February
+    TEST_ASSERT_EQUAL_UINT8(29, dtNext.day());  // 29th!
+}
+
+void test_scheduler_on_mode_changed_immediate_update(void) {
+    gState.mode = AppMode::DESATIVADO;
+    gState.now = { 2026, 6, 15, 10, 0, 0, 1, 1781500000UL };
+    gState.next_hour = 0;
+    gState.next_min = 0;
+
+    // Switch to INTENSO (slots at 06:00, 14:00, 22:00)
+    gState.mode = AppMode::INTENSO;
+    scheduler.onModeChanged();
+
+    // Next slot should immediately become 14:00
+    TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT1_H, gState.next_hour);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT1_M, gState.next_min);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -165,5 +214,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_scheduler_custom_every_x_days);
     RUN_TEST(test_scheduler_cycle_expired_check);
     RUN_TEST(test_scheduler_suspension_auto_wake);
+    RUN_TEST(test_scheduler_month_end_and_leap_year_rollover);
+    RUN_TEST(test_scheduler_on_mode_changed_immediate_update);
     return UNITY_END();
 }

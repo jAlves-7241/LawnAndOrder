@@ -157,6 +157,34 @@ void test_storage_save_and_load_persistence(void) {
     TEST_ASSERT_TRUE(gState.setup_done);
 }
 
+void test_storage_rejects_corrupted_boolean_bytes(void) {
+    char hex[128] = {};
+    storage.exportConfigHex(hex, sizeof(hex));
+
+    // Find offset of auto_dst in hex string (offsetof * 2)
+    size_t autoDstHexOffset = offsetof(AppConfigBlob, auto_dst) * 2;
+    hex[autoDstHexOffset] = '0';
+    hex[autoDstHexOffset + 1] = '2'; // Invalid bool byte (value 2)
+
+    bool ok = storage.importConfigHex(hex);
+    TEST_ASSERT_FALSE(ok);
+}
+
+void test_storage_duration_clamping_on_import(void) {
+    char hex[128] = {};
+    storage.exportConfigHex(hex, sizeof(hex));
+
+    // Zone 0 duration is at offsetof(AppConfigBlob, zones[0].duration_min)
+    size_t durOffset = (offsetof(AppConfigBlob, zones) + 1) * 2;
+    hex[durOffset] = '1';
+    hex[durOffset + 1] = 'E'; // 30 minutes in hex (0x1E > 20)
+
+    bool ok = storage.importConfigHex(hex);
+    TEST_ASSERT_TRUE(ok);
+    // Durations > 20 must be clamped to safe default of 8
+    TEST_ASSERT_EQUAL_UINT8(8, gState.zones[0].duration_min);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
@@ -164,5 +192,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_storage_import_rejects_invalid_inputs);
     RUN_TEST(test_storage_recovery_state_roundtrip);
     RUN_TEST(test_storage_save_and_load_persistence);
+    RUN_TEST(test_storage_rejects_corrupted_boolean_bytes);
+    RUN_TEST(test_storage_duration_clamping_on_import);
     return UNITY_END();
 }

@@ -15,6 +15,10 @@
 typedef bool boolean;
 typedef uint8_t byte;
 
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+
 #define HIGH 1
 #define LOW 0
 #define OUTPUT 1
@@ -37,9 +41,14 @@ inline void setMockMillis(uint32_t ms) { _mock_millis = ms; }
 inline void advanceMockMillis(uint32_t ms) { _mock_millis += ms; }
 
 // Mock GPIO
+extern uint8_t _mock_gpio[64];
 inline void pinMode(uint8_t pin, uint8_t mode) { (void)pin; (void)mode; }
-inline void digitalWrite(uint8_t pin, uint8_t val) { (void)pin; (void)val; }
-inline int digitalRead(uint8_t pin) { (void)pin; return 0; }
+inline void digitalWrite(uint8_t pin, uint8_t val) {
+    if (pin < 64) _mock_gpio[pin] = val;
+}
+inline int digitalRead(uint8_t pin) {
+    return (pin < 64) ? _mock_gpio[pin] : 0;
+}
 
 // Math macros / functions
 #ifndef min
@@ -197,6 +206,17 @@ public:
         }
         return 0;
     }
+
+    void flush() {}
 };
 
 extern MockSerial Serial;
+
+class EspClass {
+public:
+    bool rebooted = false;
+    void restart() { rebooted = true; }
+};
+
+extern EspClass ESP;
+inline EspClass ESP;

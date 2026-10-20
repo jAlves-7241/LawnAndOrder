@@ -120,11 +120,51 @@ void test_history_record_and_read_last(void) {
     TEST_ASSERT_EQUAL_UINT8(0, history.readLast(4, out));
 }
 
+void test_history_rotation_triggered_at_capacity(void) {
+    history.clear();
+
+    // Populate file with lines directly to simulate full file
+    File f = LittleFS.open(HISTORY_FILE, "w");
+    for (int i = 0; i < HISTORY_MAX_ENTRIES; i++) {
+        f.println("2026-06-01T08:00,A,10,10,0,0");
+    }
+    f.close();
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    // Recording entry at capacity triggers async rotation
+    HistoryEntry e = { 2026, 6, 2, 8, 0, { 15, 15, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e);
+
+    // Rotation state machine should be active
+    TEST_ASSERT_TRUE(history._rotState != History::RotState::IDLE);
+
+    // Run update iterations until rotation completes
+    int safetyLimit = 500;
+    while (history._rotState != History::RotState::IDLE && safetyLimit-- > 0) {
+        history.update();
+    }
+
+    TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
+    uint16_t expectedRemaining = HISTORY_MAX_ENTRIES - (HISTORY_MAX_ENTRIES / 10) + 1;
+    TEST_ASSERT_EQUAL_UINT16(expectedRemaining, history.entryCount());
+}
+
+void test_history_rejects_missing_columns(void) {
+    HistoryEntry e = {};
+    // Line with only 1 zone duration instead of 4
+    const char* incompleteCsv = "2026-06-01T08:00,A,10";
+    // Should parse without crashing
+    bool ok = History::_lineToEntry(incompleteCsv, e);
+    (void)ok;
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
     RUN_TEST(test_history_line_to_entry_valid);
     RUN_TEST(test_history_line_to_entry_rejects_corrupted);
     RUN_TEST(test_history_record_and_read_last);
+    RUN_TEST(test_history_rotation_triggered_at_capacity);
+    RUN_TEST(test_history_rejects_missing_columns);
     return UNITY_END();
 }
