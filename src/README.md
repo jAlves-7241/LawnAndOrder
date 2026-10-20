@@ -16,7 +16,7 @@ Este diretório contém o firmware do controlador ESP32. A execução é coopera
 - `log.h`, `i18n.h`, `config.h`: logs, idiomas e parâmetros/hardware.
 - `ui/`: ecrãs individuais e construção de menus. O `MenuBuilder` gera ações textuais que o gestor UI encaminha.
 
-A separação por módulos é acompanhada por singletons e estado global partilhado (`gState`), uma escolha simples para este firmware de uma só aplicação, mas que torna testes unitários isolados mais difíceis. O encoder é o único serviço com entrada assíncrona por interrupção; o delta é protegido por secção crítica.
+A separação por módulos é acompanhada por singletons e estado global partilhado (`gState`), uma escolha simples para este firmware de uma só aplicação, suportada para testes unitários isolados através da suite nativa com mocks em `test/` (ver [test/README.md](../test/README.md)). O encoder é o único serviço com entrada assíncrona por interrupção; o delta é protegido por secção crítica.
 
 ## Inicialização (`setup()`)
 

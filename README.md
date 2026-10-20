@@ -119,6 +119,20 @@ pio device monitor
 
 (baud rate: `115200`, configurado em `platformio.ini`)
 
+### Testes Automatizados
+
+O projeto inclui uma suite de 43 testes unitários nativos que correm no computador de desenvolvimento sem necessidade de hardware físico:
+
+```bash
+# Executar todos os testes
+pio test -e native
+
+# Executar apenas uma suite específica (ex: scheduler, watering, terminal)
+pio test -e native -f test_scheduler
+```
+
+Para a descrição completa da arquitetura de testes, mocks e instruções para adicionar novos casos, consulte o **[test/README.md](test/README.md)**.
+
 
 ## Terminal de Comandos (Serial, 115200 baud)
 
