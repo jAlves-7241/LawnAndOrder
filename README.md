@@ -119,19 +119,19 @@ pio device monitor
 
 (baud rate: `115200`, configurado em `platformio.ini`)
 
-### Testes Automatizados
+### Automated Unit Testing
 
-O projeto inclui uma suite de 43 testes unitários nativos que correm no computador de desenvolvimento sem necessidade de hardware físico:
+Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Executar todos os testes
+# Execute full suite (43 tests)
 pio test -e native
 
-# Executar apenas uma suite específica (ex: scheduler, watering, terminal)
+# Filter by module (e.g. scheduler, watering, terminal)
 pio test -e native -f test_scheduler
 ```
 
-Para a descrição completa da arquitetura de testes, mocks e instruções para adicionar novos casos, consulte o **[test/README.md](test/README.md)**.
+For mock layer implementation, technical specifications, and extension guidelines, see **[test/README.md](test/README.md)**.
 
 
 ## Terminal de Comandos (Serial, 115200 baud)

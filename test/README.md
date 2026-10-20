@@ -1,180 +1,180 @@
-# Suite de Testes Unitários — Lawn & Order
+# Native Unit Test Suite
 
-Este diretório contém a suite de testes unitários automatizados do firmware **Lawn & Order**, executada nativamente no computador de desenvolvimento (Windows, Linux, macOS) através do ambiente `[env:native]` do **PlatformIO** e do framework **Unity**.
-
-A abordagem de testes é **100% não-invasiva**: o código-fonte de produção em `src/` não foi alterado nem poluído com diretivas de teste ou frameworks pesados. Todos os drivers de hardware e dependências do Arduino/ESP32 são substituídos em tempo de compilação por shims ultraleves em `test/mocks/`.
+Technical documentation for the Lawn & Order native unit test suite, implemented via PlatformIO's `native` environment and the Unity test framework.
 
 ---
 
-## 🚀 Como Executar os Testes
+## 1. Technical Architecture
 
-### Executar Toda a Suite de Testes (43 Testes)
-
-```bash
-pio test -e native
-```
-
-O tempo de execução de toda a suite é de aproximadamente **13 segundos** (~1.9s por módulo).
-
-### Executar Apenas um Módulo Específico
-
-Utilize o argumento `-f` (filtro) para selecionar uma suite:
-
-```bash
-# Testar apenas o Scheduler (agendamento e horários)
-pio test -e native -f test_scheduler
-
-# Testar apenas o Terminal de Comandos (CLI Serial)
-pio test -e native -f test_terminal
-
-# Testar apenas o Controlador de Rega (relés, dead-time, filas)
-pio test -e native -f test_watering
-
-# Testar apenas o RTClock (regras de DST europeu e fusos)
-pio test -e native -f test_rtclock
-
-# Testar apenas a Persistência NVS (Storage e exportação hexadecimal)
-pio test -e native -f test_storage
-
-# Testar apenas o Histórico CSV e LittleFS
-pio test -e native -f test_history
-
-# Testar apenas as estruturas e invariantes do AppState
-pio test -e native -f test_appstate
-```
-
-### Modo Detalhado (Verbose)
-
-Para ver a saída completa linha a linha:
-
-```bash
-pio test -e native -v
-```
-
----
-
-## 📁 Estrutura dos Testes
+### Execution Model
+* **Platform**: PlatformIO `native` environment running on host OS (Windows, Linux, macOS) compiled with GCC/Clang in C++17 (`-std=gnu++17`).
+* **Test Framework**: Unity (`test_framework = unity`).
+* **Compilation Model**: Header shadowing and selective translation unit inclusion. Hardware/framework headers are shadowed by `-I test/mocks` placed ahead of `-I src` in `platformio.ini`.
+* **Zero Source Modification**: Production source code in `src/` is compiled as-is without `#ifdef` test pollution. Test runners directly `#include` required implementation files (`.cpp`) to link isolated subsystems without pulling in `main.cpp`, FreeRTOS tasks, or physical hardware drivers.
 
 ```
 test/
-├── README.md               # Este guia de documentação
-├── mocks/                  # Camada de abstração e mocks de hardware
-│   ├── Arduino.h           # Tipos base, millis(), micros(), GPIO, MockSerial, String
-│   ├── RTClib.h            # DateTime e TimeSpan matematicamente exatos (sem I2C)
-│   ├── Preferences.h       # Mock em RAM para a NVS Flash da ESP32
-│   ├── FS.h / LittleFS.h   # Mock em RAM para o sistema de ficheiros LittleFS
-│   ├── Wire.h              # Mock para o barramento I2C
-│   ├── LiquidCrystal_I2C.h # Mock para o ecrã LCD 2004
-│   ├── esp_task_wdt.h      # Mock do watchdog do ESP-IDF
-│   ├── TestCommon.h        # Declaração do harness comum
-│   └── TestCommon.cpp      # Implementação do reset de mocks (resetAllTestMocks)
-├── test_appstate/          # Invariantes de memória e tabelas estáticas de modos
-├── test_history/           # Formatação e parsing CSV, rotação e sanitização
-├── test_rtclock/           # Regras do horário de verão europeu (DST) e conversão UTC/Local
-├── test_scheduler/         # Cálculo do próximo ciclo, intervalos, anos bissextos e proteção DST
-├── test_storage/           # Exportação/importação hexadecimal e tolerância a dados corruptos
-├── test_terminal/          # Tokenizer da CLI Serial, filtros ANSI, overflow e comandos
-└── test_watering/          # Filas de rega, dead-time de relés, paragem e recuperação
+├── mocks/                  # Hardware abstraction and shim layer
+│   ├── Arduino.h           # Core types, GPIO registers, time stubs, MockSerial stream
+│   ├── RTClib.h            # Pure algorithmic DateTime/TimeSpan implementation
+│   ├── Preferences.h       # In-memory NVS flash emulation (std::map backed)
+│   ├── FS.h / LittleFS.h   # In-memory virtual filesystem and stream File mock
+│   ├── Wire.h              # TwoWire I2C bus mock
+│   ├── LiquidCrystal_I2C.h # LCD controller stub
+│   ├── esp_task_wdt.h      # ESP-IDF task watchdog stub
+│   ├── TestCommon.h        # Common test harness definitions
+│   └── TestCommon.cpp      # Global mock instances and resetAllTestMocks()
+├── test_appstate/          # Memory layout, alignment, and static schedules
+├── test_history/           # CSV serialization, deserialization, rotation, and cache
+├── test_rtclock/           # European DST transitions and UTC-to-local conversion
+├── test_scheduler/         # Next cycle computation, intervals, and blackout expiration
+├── test_storage/           # Hex configuration codec, validation, and NVS persistence
+├── test_terminal/          # Serial CLI tokenizer, ANSI filter, buffer protection, commands
+└── test_watering/          # Valve queue sequencing, relay dead-time, stop, and recovery
 ```
 
 ---
 
-## 🧪 Suítes de Teste e Cobertura
+## 2. Mock Layer Implementation (`test/mocks/`)
 
-### 1. `test_scheduler` (Motor de Agendamento)
-* `test_scheduler_medio_next_slot`: Validação de transições entre horários no modo Médio (08:00 e 20:00).
-* `test_scheduler_intenso_next_slot`: Validação dos 3 horários diários no modo Intenso (06:00, 14:00, 22:00).
-* `test_scheduler_desativado_returns_false`: Garante que o modo Desativado inibe qualquer agendamento.
-* `test_scheduler_custom_every_x_days`: Validação da aritmética de dias no modo Personalizado (`DayPattern::EVERY_X_DAYS`).
-* `test_scheduler_cycle_expired_check`: Limites rígidos de segurança para evitar retoma de regas obsoletas.
-* `test_scheduler_suspension_auto_wake`: Despertar automático quando a data limite de suspensão é atingida.
-* `test_scheduler_month_end_and_leap_year_rollover`: Transições em fim de mês (31 Jan → 1 Fev, 28 Fev → 1 Mar em anos normais, 28 Fev → 29 Fev em anos bissextos como 2028).
-* `test_scheduler_on_mode_changed_immediate_update`: Recálculo instantâneo de horários ao alterar o modo de rega.
-
-### 2. `test_watering` (Controlador de Válvulas e Filas)
-* `test_watering_general_builds_queue_and_skips_disabled`: Construção correta da fila de zonas (zonas desativadas ou com duração zero são omitidas).
-* `test_watering_custom_selection`: Execução personalizada apenas para zonas selecionadas com duração override.
-* `test_watering_dead_time_and_relay_activation`: Garantia de intervalo morto (*dead-time* de 50ms) antes de acionar o GPIO do relé (ativo em LOW), impedindo sobretensão.
-* `test_watering_emergency_stop`: Desativação imediata de todos os relés e limpeza de estado após paragem de emergência.
-* `test_watering_test_run_does_not_log_to_history`: Ciclos de teste de 30s não poluem o ficheiro de histórico permanente.
-* `test_watering_blackout_recovery_resumes_interrupted_cycle`: Validação da retoma automática de um ciclo interrompido por corte de energia a partir da zona interrompida.
-
-### 3. `test_terminal` (Linha de Comandos Série)
-* `test_terminal_help_command`: Listagem formatada de ajuda.
-* `test_terminal_status_command`: Relatório detalhado do estado do sistema via Serial.
-* `test_terminal_set_time_command`: Acerto de hora por comando e marcação de RTC válido.
-* `test_terminal_clear_history_confirmation_flow`: Máquina de estados de confirmação interativa (`y` para apagar).
-* `test_terminal_clear_history_cancellation`: Cancelamento seguro de limpeza de histórico (`n`).
-* `test_terminal_ansi_arrow_keys_filtered`: Filtragem de sequências de escape ANSI (setas do teclado) sem corromper comandos.
-* `test_terminal_buffer_overflow_protection`: Rejeição graciosa de inputs excessivos (>256 caracteres).
-* `test_terminal_reboot_command`: Acionamento do reset de software (`ESP.restart()`).
-* `test_terminal_i2c_scan_command`: Varredura de endereços do barramento I2C.
-
-### 4. `test_storage` (Persistência NVS e Configuração Hexadecimal)
-* `test_storage_export_hex_length_and_format`: Validação do formato de 68 caracteres hexadecimais em maiúsculas.
-* `test_storage_export_and_import_roundtrip`: Integridade total do ciclo exportar → limpar RAM → importar.
-* `test_storage_import_rejects_invalid_inputs`: Rejeição defensiva de strings nulas, incompletas ou com carateres inválidos.
-* `test_storage_recovery_state_roundtrip`: Persistência binária compactada do estado de recuperação pós-blackout.
-* `test_storage_save_and_load_persistence`: Carregamento e gravação de preferências NVS.
-* `test_storage_rejects_corrupted_boolean_bytes`: Rejeição de valores booleanos corrompidos (ex: `0x02` ou `0xFF`).
-* `test_storage_duration_clamping_on_import`: Clamping de segurança para durações superiores a 20 minutos.
-
-### 5. `test_history` (Registo CSV e Rotação LittleFS)
-* `test_history_entry_to_line_format`: Formatação padronizada ISO 8601 (`YYYY-MM-DDTHH:MM,A,d0,d1,d2,d3`).
-* `test_history_line_to_entry_valid`: Leitura e conversão de linha CSV em struct `HistoryEntry`.
-* `test_history_line_to_entry_rejects_corrupted`: Rejeição de anos inválidos (<2020 ou >2099), meses > 12 e horas > 23.
-* `test_history_record_and_read_last`: Gestão de cache em RAM para consulta rápida no ecrã LCD.
-* `test_history_rotation_triggered_at_capacity`: Rotação assíncrona automática ao atingir 1500 linhas (`HISTORY_MAX_ENTRIES`).
-* `test_history_rejects_missing_columns`: Resiliência contra ficheiros incompletos ou linhas truncadas.
-
-### 6. `test_rtclock` (Relógio de Tempo Real e Horário de Verão)
-* `test_eu_dst_winter_and_summer_months`: Classificação de meses de inverno vs verão.
-* `test_eu_dst_march_transition_boundary`: Transição exata de entrada em DST no último domingo de março às 01:00 UTC.
-* `test_eu_dst_october_transition_boundary`: Transição exata de saída de DST no último domingo de outubro às 01:00 UTC.
-* `test_utc_to_local_conversion`: Conversão UTC para Hora Local considerando `TIMEZONE_OFFSET` e DST automático.
-
-### 7. `test_appstate` (Estruturas e Invariantes)
-* `test_struct_sizes_and_alignment`: `static_assert` de 12 bytes para `HistoryEntry` e integridade de structs empacotadas.
-* `test_init_app_state_defaults`: Inicialização limpa e valores de fábrica do sistema.
-* `test_mode_schedules_table`: Verificação das tabelas de agendamento pré-configuradas em compile-time.
+| Mock File | Implemented Functionality | State Reset Mechanism |
+|---|---|---|
+| `Arduino.h` | <ul><li>Time tracking: `millis()`, `micros()`, `delay()`, `setMockMillis()`, `advanceMockMillis()`</li><li>GPIO: Pin array `_mock_gpio[64]`, `pinMode()`, `digitalWrite()`, `digitalRead()`</li><li>Stream I/O: `MockSerial Serial` with input/output string buffers, formatted `printf()`, chunked `read()`</li><li>Utilities: `strlcpy()`, `min()`, `max()`, `constrain()`, `abs()`, `String` adapter</li><li>Hardware stubs: `IRAM_ATTR`, `EspClass ESP` with `restart()` tracking</li></ul> | `_mock_millis = 1000`<br>`memset(_mock_gpio, HIGH, 64)`<br>`Serial.reset()` |
+| `RTClib.h` | <ul><li>Pure algorithmic `DateTime` and `TimeSpan` matching Adafruit RTClib interface</li><li>Leap year determination, days-in-month calculations, day-of-week calculation</li><li>Arithmetic operators (`+`, `-`, `<`, `==`)</li><li>Stubbed `RTC_DS3231` and `RTC_DS1307` classes</li></ul> | Stateless (value types) |
+| `Preferences.h` | <ul><li>In-memory NVS key-value store: `std::map<std::string, std::map<std::string, std::vector<uint8_t>>>`</li><li>Binary blob access: `getBytes()`, `putBytes()`</li><li>Type-specific access: `getUShort()`, `putUShort()`, `getUInt()`, `putUInt()`, `getBool()`, `putBool()`</li><li>Namespace management: `begin()`, `end()`, `clear()`</li></ul> | `Preferences::resetStorage()` |
+| `FS.h` / `LittleFS.h` | <ul><li>In-memory file table: `std::map<std::string, std::string>`</li><li>Stream operations: `seek()` (`SeekSet`, `SeekCur`, `SeekEnd`), `read()`, `println()`, `available()`, `size()`</li><li>Filesystem operations: `open()`, `remove()`, `rename()`, `exists()`, `begin()`</li></ul> | `LittleFS.reset()` |
+| `Wire.h` | <ul><li>I2C address detection simulation via `detectedAddresses` vector</li><li>`beginTransmission()`, `endTransmission()` return codes</li></ul> | `Wire.detectedAddresses.clear()` |
+| `LiquidCrystal_I2C.h` | <ul><li>No-op stubs: `init()`, `clear()`, `setCursor()`, `print()`, `backlight()`, `noBacklight()`</li></ul> | Stateless |
+| `esp_task_wdt.h` | <ul><li>No-op stubs: `esp_task_wdt_reset()`, `esp_task_wdt_add()`, `esp_task_wdt_delete()`</li></ul> | Stateless |
 
 ---
 
-## 🛠️ Como Adicionar um Novo Teste
+## 3. Test Suites Technical Reference
 
-Para adicionar novos casos de teste a uma suite existente (ex: `test_scheduler`):
+### `test_appstate`
+* `test_struct_sizes_and_alignment`: Validates compile-time size invariants (`sizeof(HistoryEntry) == 12`, `sizeof(RecoveryState)`, `sizeof(AppConfigBlob)`).
+* `test_init_app_state_defaults`: Verifies `initAppState()` establishes default zone mappings, durations, disabled modes, and initial sentinel values.
+* `test_mode_schedules_table`: Validates static `MODE_SCHEDULES` matrix against compile-time configuration defines (`INTENSO`, `MEDIO`, `FRACO`, `DESATIVADO`, `PERSONALIZADO`).
 
-1. Abra o ficheiro correspondente: `test/test_scheduler/test_scheduler.cpp`.
-2. Adicione a função do teste:
+### `test_rtclock`
+* `test_eu_dst_winter_and_summer_months`: Tests DST state classification across non-boundary months.
+* `test_eu_dst_march_transition_boundary`: Tests boundary conditions on the last Sunday of March (00:59:59 UTC = standard time; 01:00:00 UTC = daylight saving time).
+* `test_eu_dst_october_transition_boundary`: Tests boundary conditions on the last Sunday of October (00:59:59 UTC = daylight saving time; 01:00:00 UTC = standard time).
+* `test_utc_to_local_conversion`: Verifies offset computation (`TIMEZONE_OFFSET` and optional DST hour) and behavior when `auto_dst` is disabled.
+
+### `test_scheduler`
+* `test_scheduler_medio_next_slot`: Slot selection for 2-slot daily schedule across morning, midday, and night rollovers.
+* `test_scheduler_intenso_next_slot`: Slot selection for 3-slot daily schedule.
+* `test_scheduler_desativado_returns_false`: Asserts `computeNext` returns `false` and zeroes output when automatic watering is disabled.
+* `test_scheduler_custom_every_x_days`: Multi-day interval calculations (`EVERY_X_DAYS`) against arbitrary reference day epochs.
+* `test_scheduler_cycle_expired_check`: Hard maximum duration validation (8h/12h limits), backwards clock detection, and next-cycle overlap safety gaps.
+* `test_scheduler_suspension_auto_wake`: Verifies automatic clearance of `gState.suspended` when `now.unix >= suspended_until`.
+* `test_scheduler_month_end_and_leap_year_rollover`: Calendar arithmetic across Jan 31 → Feb 1, Feb 28 → Mar 1 (non-leap year), and Feb 28 → Feb 29 (leap year 2028).
+* `test_scheduler_on_mode_changed_immediate_update`: Verifies instant recomputation of `next_hour`/`next_min` when the operating mode changes.
+
+### `test_storage`
+* `test_storage_export_hex_length_and_format`: Verifies exported string length equals `sizeof(AppConfigBlob) * 2` (68 bytes) with valid uppercase hexadecimal representation.
+* `test_storage_export_and_import_roundtrip`: End-to-end serialization and deserialization integrity across state, schedules, and zone durations.
+* `test_storage_import_rejects_invalid_inputs`: Defensive rejection of null pointers, incorrect lengths, non-hex characters, and out-of-bounds mode enumerations.
+* `test_storage_recovery_state_roundtrip`: Verifies persistence and recovery of packed `RecoveryState` binary struct.
+* `test_storage_save_and_load_persistence`: Verifies NVS flash persistence cycle via the simulated Preferences backend.
+* `test_storage_rejects_corrupted_boolean_bytes`: Validates `_blobHasValidBooleans` rejection when boolean bytes exceed value 1.
+* `test_storage_duration_clamping_on_import`: Verifies durations exceeding 20 minutes are clamped to default value 8.
+
+### `test_history`
+* `test_history_entry_to_line_format`: Validates ISO 8601 formatting (`YYYY-MM-DDTHH:MM,<trigger>,d0,d1,d2,d3`) across `AUTO` ('A'), `MANUAL` ('M'), and `CUSTOM` ('C') triggers.
+* `test_history_line_to_entry_valid`: Validates parsing of standard CSV lines into `HistoryEntry` records.
+* `test_history_line_to_entry_rejects_corrupted`: Validates rejection of invalid dates, out-of-bounds months (>12), hours (>23), minutes (>59), and non-standard delimiters.
+* `test_history_record_and_read_last`: Verifies RAM cache FIFO ordering, line count tracking, and exclusion of `TEST` ('T') triggers.
+* `test_history_rotation_triggered_at_capacity`: Verifies that exceeding `HISTORY_MAX_ENTRIES` (1500) initiates asynchronous rotation, discarding `HISTORY_MAX_ENTRIES / 10` oldest records while retaining latest.
+* `test_history_rejects_missing_columns`: Validates parser resilience against truncated CSV records.
+
+### `test_terminal`
+* `test_terminal_help_command`: Help menu formatting and command presence.
+* `test_terminal_status_command`: Real-time system report formatting via Serial stream.
+* `test_terminal_set_time_command`: Time parsing, clock update, and RTC validity flag assignment.
+* `test_terminal_clear_history_confirmation_flow`: Interactive confirmation state machine (`y` proceeds to wipe).
+* `test_terminal_clear_history_cancellation`: Interactive confirmation abort (`n` leaves history intact).
+* `test_terminal_ansi_arrow_keys_filtered`: Verifies terminal line editor processes ANSI cursor sequences without leaking raw escape bytes into command buffer.
+* `test_terminal_buffer_overflow_protection`: Verifies lines exceeding 256 bytes trigger buffer overflow protection and reset safely across chunked 64-byte update cycles.
+* `test_terminal_reboot_command`: Verifies `reboot` command triggers `ESP.restart()`.
+* `test_terminal_i2c_scan_command`: Verifies address reporting across simulated I2C devices.
+
+### `test_watering`
+* `test_watering_general_builds_queue_and_skips_disabled`: Queue compilation validating that disabled zones and zones with `duration_min == 0` are excluded.
+* `test_watering_custom_selection`: Selective zone execution with runtime duration overrides.
+* `test_watering_dead_time_and_relay_activation`: Verifies relay dead-time enforcement (50ms where all pins remain `HIGH`) before activating zone relay (`LOW`).
+* `test_watering_emergency_stop`: Immediate hardware deactivation (all pins forced `HIGH`), queue purging, and state synchronization.
+* `test_watering_test_run_does_not_log_to_history`: Verifies 30-second zone test runs are excluded from persistent history logging.
+* `test_watering_blackout_recovery_resumes_interrupted_cycle`: Verifies reboot recovery loads persisted `RecoveryState`, validates expiration window, and resumes from interrupted queue position.
+
+---
+
+## 4. Usage & Execution Commands
+
+```bash
+# Execute entire test suite (all 43 test cases)
+pio test -e native
+
+# Execute specific test suite
+pio test -e native -f test_scheduler
+pio test -e native -f test_watering
+pio test -e native -f test_terminal
+pio test -e native -f test_storage
+pio test -e native -f test_history
+pio test -e native -f test_rtclock
+pio test -e native -f test_appstate
+
+# Verbose output (detailed assertion logs)
+pio test -e native -vv
+```
+
+---
+
+## 5. Adding New Tests
+
+### Pattern for Adding a Test Case to Existing Suite
+```cpp
+void test_specific_condition(void) {
+    // 1. Arrange: configure global or local state
+    gState.mode = AppMode::MEDIO;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, 1781500000UL };
+
+    // 2. Act: invoke module method
+    uint8_t nextH = 0, nextM = 0;
+    bool ok = scheduler.computeNext(gState.mode, gState.now, nextH, nextM);
+
+    // 3. Assert: verify results via Unity macros
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(20, nextH);
+}
+
+// In main():
+RUN_TEST(test_specific_condition);
+```
+
+### Pattern for Creating a New Test Suite
+1. Create directory `test/test_<subsystem>/`.
+2. Create test runner `test/test_<subsystem>/test_<subsystem>.cpp`.
+3. Include test infrastructure:
    ```cpp
-   void test_meu_novo_caso(void) {
-       // Configurar estado
-       gState.mode = AppMode::FRACO;
-       
-       // Executar função a testar
-       uint8_t h, m;
-       bool ok = scheduler.computeNext(gState.mode, gState.now, h, m);
-       
-       // Asserções Unity
-       TEST_ASSERT_TRUE(ok);
-       TEST_ASSERT_EQUAL_UINT8(8, h);
+   #include <unity.h>
+   #include "TestCommon.h"
+   #include "../../test/mocks/TestCommon.cpp"
+   #include "../../src/<RequiredSubsystem>.cpp"
+
+   void setUp(void) {
+       resetAllTestMocks();
    }
-   ```
-3. Registe o teste na função `main()`:
-   ```cpp
+
+   void tearDown(void) {}
+
+   // Test cases...
+
    int main(int argc, char **argv) {
        UNITY_BEGIN();
-       // ... outros testes ...
-       RUN_TEST(test_meu_novo_caso);
+       RUN_TEST(test_case_name);
        return UNITY_END();
    }
    ```
-4. Execute `pio test -e native -f test_scheduler` para validar.
-
----
-
-## 💡 Boas Práticas e Convenções
-
-* **Isolamento**: Cada teste deve ser independente. A função `setUp()` invoca `resetAllTestMocks()` antes de cada caso de teste.
-* **Tempo Simulado**: Nunca use chamadas que bloqueiem o CPU (`sleep`, `delay` real). Use `advanceMockMillis(ms)` para avançar o relógio de simulação.
-* **Logs Silenciosos**: Durante os testes unitários, `terminalAwareLog()` é silenciado por defeito para manter o terminal limpo para o relatório do Unity.
+4. Run `pio test -e native -f test_<subsystem>`.
