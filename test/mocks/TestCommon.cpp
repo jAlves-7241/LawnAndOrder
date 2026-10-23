@@ -21,5 +21,8 @@ void resetAllTestMocks() {
     Serial.reset();
     LittleFS.reset();
     Preferences::resetStorage();
+    Wire.reset();
+    ESP.reset();
+    _log_suspended = false;
     initAppState();
 }

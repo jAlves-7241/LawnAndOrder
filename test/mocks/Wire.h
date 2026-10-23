@@ -19,6 +19,11 @@ public:
         return 2; // Not found
     }
 
+    void reset() {
+        detectedAddresses.clear();
+        _lastAddr = 0;
+    }
+
 private:
     uint8_t _lastAddr = 0;
 };

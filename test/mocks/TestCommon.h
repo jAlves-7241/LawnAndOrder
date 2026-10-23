@@ -12,5 +12,8 @@
 #include "Preferences.h"
 #include "LittleFS.h"
 #include "AppState.h"
+#include "Wire.h"
+
+extern bool _log_suspended;
 
 void resetAllTestMocks();

@@ -53,6 +53,24 @@ inline uint32_t micros() { return _mock_micros; }
 inline void delay(uint32_t ms) { _mock_millis += ms; }
 inline void setMockMillis(uint32_t ms) { _mock_millis = ms; }
 inline void advanceMockMillis(uint32_t ms) { _mock_millis += ms; }
+inline void setMockMicros(uint32_t us) { _mock_micros = us; }
+inline void advanceMockMicros(uint32_t us) { _mock_micros += us; }
+
+// Interrupt stubs
+#define FALLING 2
+#define RISING 3
+#define CHANGE 4
+inline int digitalPinToInterrupt(int pin) { return pin; }
+inline void attachInterrupt(int pin, void (*isr)(), int mode) { (void)pin; (void)isr; (void)mode; }
+inline void detachInterrupt(int pin) { (void)pin; }
+
+// ESP-IDF Critical Section Mocks
+typedef int portMUX_TYPE;
+#define portMUX_INITIALIZER_UNLOCKED 0
+#define portENTER_CRITICAL_ISR(mux) do { (void)(mux); } while(0)
+#define portEXIT_CRITICAL_ISR(mux)  do { (void)(mux); } while(0)
+#define portENTER_CRITICAL(mux)     do { (void)(mux); } while(0)
+#define portEXIT_CRITICAL(mux)      do { (void)(mux); } while(0)
 
 // Mock GPIO
 extern uint8_t _mock_gpio[64];
@@ -100,12 +118,39 @@ public:
     String() : std::string() {}
     String(const char* s) : std::string(s ? s : "") {}
     String(const std::string& s) : std::string(s) {}
+    String(char c) : std::string(1, c) {}
     String(int val) : std::string(std::to_string(val)) {}
     String(unsigned int val) : std::string(std::to_string(val)) {}
     String(long val) : std::string(std::to_string(val)) {}
     String(unsigned long val) : std::string(std::to_string(val)) {}
+    String(float val, int precision = 2) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.*f", precision, val);
+        assign(buf);
+    }
+    String(double val, int precision = 2) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.*f", precision, val);
+        assign(buf);
+    }
     
     int toInt() const { return atoi(c_str()); }
+    char charAt(size_t index) const {
+        return (index < size()) ? (*this)[index] : 0;
+    }
+    int indexOf(char c, size_t fromIndex = 0) const {
+        size_t pos = find(c, fromIndex);
+        return (pos == std::string::npos) ? -1 : (int)pos;
+    }
+    int indexOf(const String& str, size_t fromIndex = 0) const {
+        size_t pos = find(str, fromIndex);
+        return (pos == std::string::npos) ? -1 : (int)pos;
+    }
+    String substring(size_t from, size_t to = std::string::npos) const {
+        if (from >= size()) return String("");
+        if (to == std::string::npos || to > size()) return String(substr(from));
+        return String(substr(from, to - from));
+    }
     void toLowerCase() {
         for (auto& c : *this) c = tolower((unsigned char)c);
     }
@@ -221,11 +266,14 @@ public:
         int len = vsnprintf(buf, sizeof(buf), format, args);
         va_end(args);
         if (len > 0) {
-            outputBuffer.append(buf, len);
+            size_t toAppend = ((size_t)len < sizeof(buf)) ? (size_t)len : sizeof(buf) - 1;
+            outputBuffer.append(buf, toAppend);
             return (size_t)len;
         }
         return 0;
     }
+
+    int availableForWrite() const { return 512; }
 
     void flush() {}
 };
@@ -236,6 +284,7 @@ class EspClass {
 public:
     bool rebooted = false;
     void restart() { rebooted = true; }
+    void reset() { rebooted = false; }
 };
 
 extern EspClass ESP;
