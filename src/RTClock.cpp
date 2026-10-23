@@ -1,4 +1,3 @@
-#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include "RTClock.h"
 #include "Storage.h"
 #include "log.h"
@@ -55,10 +54,11 @@ bool RTClock::begin() {
         return false;
     }
 
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localDt = DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
+    DateTime localDt(localUnix);
 
     _copyToState(localDt);
     gState.now.unix = utcDt.unixtime();
@@ -99,10 +99,11 @@ void RTClock::update() {
                 
                 DateTime utcDt = _rtc.now();
                 if (utcDt.year() >= 2020 && utcDt.year() <= 2099 && !_lostPower) {
-                    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+                    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
                     if (gState.auto_dst && _isEU_DST(utcDt)) {
-                        localDt = DateTime(localDt.unixtime() + 3600);
+                        localUnix += 3600;
                     }
+                    DateTime localDt(localUnix);
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
                     LOG_I("RTC", TXT_LOG_RTC_HOT_SYNC,
@@ -172,13 +173,14 @@ void RTClock::update() {
     }
 #endif
 
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
 
     if (gState.auto_dst && _isEU_DST(utcDt)) {
         // Apply +1 hour offset
-        localDt = DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
 
+    DateTime localDt(localUnix);
     _copyToState(localDt);
 
     // Override the Unix timestamp with the actual UTC timestamp.
@@ -199,7 +201,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // A hora recebida do utilizador é HORA LOCAL.
     DateTime localDt(year, month, day, hour, minute, second);
-    DateTime utcDt = DateTime(localDt.unixtime() - TIMEZONE_OFFSET * 3600);
+    uint32_t utcUnix = localDt.unixtime() - TIMEZONE_OFFSET * 3600;
 
     // Converter para UTC se o DST estiver ativo e aplicável a esta hora
     if (gState.auto_dst) {
@@ -215,9 +217,11 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             }
         }
         if (isDstLocal) {
-            utcDt = DateTime(utcDt.unixtime() - 3600);
+            utcUnix -= 3600;
         }
     }
+
+    DateTime utcDt(utcUnix);
 
     if (_found) {
         _rtc.adjust(utcDt);
@@ -308,10 +312,11 @@ void RTClock::_incrementSoftwareClock() {
     if (currentUnix == gState.now.unix) return; // Sem avanço
 
     DateTime utcDt(currentUnix);
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localDt = DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
+    DateTime localDt(localUnix);
     _copyToState(localDt);
     gState.now.unix = currentUnix;
     lastKnownUnix = currentUnix;
@@ -348,9 +353,9 @@ bool RTClock::_isEU_DST(const DateTime& dt) {
 }
 
 DateTime RTClock::utcToLocal(const DateTime& utcDt) {
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        return DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
-    return localDt;
+    return DateTime(localUnix);
 }
