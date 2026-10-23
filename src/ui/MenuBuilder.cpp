@@ -27,7 +27,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         return ((uint8_t)gState.mode == i) ? "[*]" : "[ ]";
     };
 
-    char lbuf[21];
+    char lbuf[32];
 
     switch (mid) {
     case MenuID::MAIN:
@@ -144,7 +144,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                          e.trigger == WaterTrigger::AUTO ? "AUTO" :
                          (e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL"));
 
-                char l1[LCD_COLS+1], l2[LCD_COLS+1];
+                char l1[24], l2[24];
                 snprintf(l1, sizeof(l1), TXT_MB_Z1_Z2, e.zone_dur[0], e.zone_dur[1]);
                 snprintf(l2, sizeof(l2), TXT_MB_Z3_Z4, e.zone_dur[2], e.zone_dur[3]);
 

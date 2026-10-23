@@ -25,8 +25,16 @@ bool History::begin(bool formatOnFail) {
         LittleFS.remove("/hist_tmp.csv"); // Clean up orphaned temp file from a crash
         // Tenta carregar da NVS primeiro
         bool nvsOk = storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount);
-        uint16_t actualLines = _countLines();
-        if (nvsOk && _lineCount == actualLines) {
+        bool fsConsistent = false;
+        File f = LittleFS.open(HISTORY_FILE, "r");
+        if (f) {
+            size_t fsize = f.size();
+            f.close();
+            fsConsistent = (_lineCount == 0 && fsize == 0) || (_lineCount > 0 && fsize > 0);
+        } else if (_lineCount == 0) {
+            fsConsistent = true;
+        }
+        if (nvsOk && fsConsistent) {
             // Cache e total recuperados instantaneamente da NVS!
             // Compactar cache para eliminar possíveis lacunas/gaps resultantes de corrupção
             uint8_t validCount = 0;

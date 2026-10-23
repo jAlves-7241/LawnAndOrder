@@ -195,6 +195,7 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // Preservar a suspensão mantendo a diferença de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
+    bool wasRtcValid = gState.rtc_valid;
 
     // A hora recebida do utilizador é HORA LOCAL.
     DateTime localDt(year, month, day, hour, minute, second);
@@ -239,20 +240,31 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     // Forçar releitura para gState
     _lastReadMs = millis() - 30000UL;
 
-    // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)
-    if (gState.suspended && gState.suspended_until > 0 && oldUnixUTC > 0) {
-        int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
-        int64_t newUntil = (int64_t)gState.suspended_until + delta;
-        // Se a nova hora ultrapassou a meta de suspensão, ou overflow negativo
-        if (newUntil > UINT32_MAX) {
-            gState.suspended_until = UINT32_MAX;
-        } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
-            gState.suspended = false;
-            gState.suspended_until = 0;
+    // Reajustar o `suspended_until`
+    if (gState.suspended && gState.suspended_until > 0) {
+        if (wasRtcValid && oldUnixUTC > 0) {
+            // Se o relogio anterior ja era valido, reajustar com base no delta UTC (imune a saltos de fuso)
+            int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
+            int64_t newUntil = (int64_t)gState.suspended_until + delta;
+            // Se a nova hora ultrapassou a meta de suspensao, ou overflow negativo
+            if (newUntil > UINT32_MAX) {
+                gState.suspended_until = UINT32_MAX;
+            } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
+                gState.suspended = false;
+                gState.suspended_until = 0;
+            } else {
+                gState.suspended_until = (uint32_t)newUntil;
+            }
+            storage.save();
         } else {
-            gState.suspended_until = (uint32_t)newUntil;
+            // Se o relogio anterior era invalido (placeholder de boot), avaliar o prazo contra a nova hora real
+            if (gState.now.unix >= gState.suspended_until) {
+                gState.suspended = false;
+                gState.suspended_until = 0;
+                storage.save();
+                LOG_I("SYS", TXT_LOG_SUSP_EXP_CLR);
+            }
         }
-        storage.save();
     }
 
     LOG_I("RTC", TXT_LOG_RTC_TIME_SET,
