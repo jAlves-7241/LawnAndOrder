@@ -1,17 +1,14 @@
 #include <unity.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
+#define private public
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
 #include "../../src/WateringController.cpp"
-
-#define private public
-#include "Scheduler.h"
-#undef private
-
 #include "../../src/Scheduler.cpp"
+#undef private
 
 void setUp(void) {
     resetAllTestMocks();
@@ -197,13 +194,122 @@ void test_scheduler_on_mode_changed_immediate_update(void) {
     gState.next_hour = 0;
     gState.next_min = 0;
 
-    // Switch to INTENSO (slots at 06:00, 14:00, 22:00)
+    // Switch to INTENSO (slots at 07:00, 13:00, 19:00)
     gState.mode = AppMode::INTENSO;
     scheduler.onModeChanged();
 
-    // Next slot should immediately become 14:00
+    // Next slot should immediately become 13:00
     TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT1_H, gState.next_hour);
     TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT1_M, gState.next_min);
+}
+
+void test_scheduler_fraco_next_slot(void) {
+    gState.mode = AppMode::FRACO;
+
+    // Morning: 06:00 -> next is 08:00 today
+    SystemTime now = { 2026, 6, 15, 6, 0, 0, 1, 1781500000UL };
+    uint8_t nextH = 0, nextM = 0;
+    uint32_t nextDay = 0;
+    bool ok = scheduler.computeNext(AppMode::FRACO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_FRACO_SLOT0_H, nextH);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_FRACO_SLOT0_M, nextM);
+
+    // After 08:00: 10:00 -> wraps to tomorrow 08:00
+    now.hour = 10;
+    ok = scheduler.computeNext(AppMode::FRACO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_FRACO_SLOT0_H, nextH);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_FRACO_SLOT0_M, nextM);
+    DateTime dtNext(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(16, dtNext.day()); // Next day
+}
+
+void test_scheduler_dow_mask(void) {
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.day_pattern = DayPattern::DOW_MASK;
+    // Monday (1), Wednesday (3), Friday (5)
+    cs.dow_mask = (1 << 1) | (1 << 3) | (1 << 5);
+    cs.slots[0].hour = 8;
+    cs.slots[0].minute = 0;
+
+    // 2026-06-15 is a Monday (dow = 1)
+    DateTime dtMon(2026, 6, 15, 6, 0, 0);
+    SystemTime now = { dtMon.year(), dtMon.month(), dtMon.day(), 6, 0, 0, dtMon.dayOfTheWeek(), dtMon.unixtime() };
+    uint8_t nextH = 0, nextM = 0;
+    uint32_t nextDay = 0;
+
+    // Before 08:00 on Monday -> fires Monday
+    bool ok = scheduler.computeNext(AppMode::PERSONALIZADO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    DateTime dtNext(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(15, dtNext.day()); // Monday June 15
+
+    // After 08:00 on Monday -> next must be Wednesday June 17
+    now.hour = 10;
+    ok = scheduler.computeNext(AppMode::PERSONALIZADO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    dtNext = DateTime(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(17, dtNext.day()); // Wednesday June 17
+
+    // After 08:00 on Wednesday -> next must be Friday June 19
+    DateTime dtWed(2026, 6, 17, 10, 0, 0);
+    now = { dtWed.year(), dtWed.month(), dtWed.day(), 10, 0, 0, dtWed.dayOfTheWeek(), dtWed.unixtime() };
+    ok = scheduler.computeNext(AppMode::PERSONALIZADO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    dtNext = DateTime(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(19, dtNext.day()); // Friday June 19
+
+    // After 08:00 on Friday -> next wraps to next Monday June 22
+    DateTime dtFri(2026, 6, 19, 10, 0, 0);
+    now = { dtFri.year(), dtFri.month(), dtFri.day(), 10, 0, 0, dtFri.dayOfTheWeek(), dtFri.unixtime() };
+    ok = scheduler.computeNext(AppMode::PERSONALIZADO, now, nextH, nextM, &nextDay, false);
+    TEST_ASSERT_TRUE(ok);
+    dtNext = DateTime(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(22, dtNext.day()); // Monday June 22
+}
+
+void test_scheduler_dst_fallback_duplicate_block(void) {
+    gState.mode = AppMode::MEDIO;
+    uint32_t t1 = 1781500000UL;
+    gState.now = { 2026, 10, 25, 8, 0, 0, 0, t1 };
+    scheduler._lastMin = 0xFF;
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // If autumn DST causes hour 8 to repeat 1 hour later (unix + 3600),
+    // update() should detect (t.unix - _lastTriggerUnix[0]) < 7200 and block auto-start
+    gState.now = { 2026, 10, 25, 8, 0, 1, 0, t1 + 3600UL };
+    scheduler._lastMin = 0xFF;
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+}
+
+void test_scheduler_on_watering_done_advances_slot(void) {
+    gState.mode = AppMode::MEDIO;
+    gState.now = { 2026, 6, 15, 8, 15, 0, 1, 1781500900UL };
+    gState.next_hour = 8;
+    gState.next_min = 0;
+
+    scheduler.onWateringDone();
+
+    // After slot 0 completes, next slot must advance to 20:00 (slot 1)
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_H, gState.next_hour);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_M, gState.next_min);
+}
+
+void test_scheduler_exact_minute_boundary(void) {
+    gState.mode = AppMode::MEDIO;
+    SystemTime now = { 2026, 6, 15, 8, 0, 0, 1, 1781500000UL };
+    uint8_t nextH = 0, nextM = 0;
+
+    bool ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_H, nextH);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_M, nextM);
 }
 
 int main(int argc, char **argv) {
@@ -216,5 +322,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_scheduler_suspension_auto_wake);
     RUN_TEST(test_scheduler_month_end_and_leap_year_rollover);
     RUN_TEST(test_scheduler_on_mode_changed_immediate_update);
+    RUN_TEST(test_scheduler_fraco_next_slot);
+    RUN_TEST(test_scheduler_dow_mask);
+    RUN_TEST(test_scheduler_dst_fallback_duplicate_block);
+    RUN_TEST(test_scheduler_on_watering_done_advances_slot);
+    RUN_TEST(test_scheduler_exact_minute_boundary);
     return UNITY_END();
 }

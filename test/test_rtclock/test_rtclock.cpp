@@ -107,11 +107,54 @@ void test_utc_to_local_conversion(void) {
     TEST_ASSERT_EQUAL_UINT8(10 + TIMEZONE_OFFSET, summerLocalNoDst.hour());
 }
 
+void test_rtclock_leap_year_dst_calculation(void) {
+    // 2028 is a leap year.
+    // In March 2028, March 31 is Friday -> Last Sunday is March 26.
+    DateTime march26_before(2028, 3, 26, 0, 59, 59);
+    TEST_ASSERT_FALSE(RTClock::_isEU_DST(march26_before));
+
+    DateTime march26_after(2028, 3, 26, 1, 0, 0);
+    TEST_ASSERT_TRUE(RTClock::_isEU_DST(march26_after));
+
+    // In October 2028, October 31 is Tuesday -> Last Sunday is October 29.
+    DateTime oct29_before(2028, 10, 29, 0, 59, 59);
+    TEST_ASSERT_TRUE(RTClock::_isEU_DST(oct29_before));
+
+    DateTime oct29_after(2028, 10, 29, 1, 0, 0);
+    TEST_ASSERT_FALSE(RTClock::_isEU_DST(oct29_after));
+}
+
+void test_rtclock_year_end_rollover(void) {
+    gState.auto_dst = false;
+    // Dec 31 23:59:59 UTC
+    DateTime endOfYearUtc(2026, 12, 31, 23, 59, 59);
+    DateTime local = RTClock::utcToLocal(endOfYearUtc);
+
+    TEST_ASSERT_EQUAL_UINT16(2026, local.year());
+    TEST_ASSERT_EQUAL_UINT8(12, local.month());
+    TEST_ASSERT_EQUAL_UINT8(31, local.day());
+    TEST_ASSERT_EQUAL_UINT8(23, local.hour());
+    TEST_ASSERT_EQUAL_UINT8(59, local.minute());
+    TEST_ASSERT_EQUAL_UINT8(59, local.second());
+
+    // Midnight rollover +1s into new year
+    DateTime newYearUtc = endOfYearUtc + TimeSpan(1);
+    DateTime newYearLocal = RTClock::utcToLocal(newYearUtc);
+    TEST_ASSERT_EQUAL_UINT16(2027, newYearLocal.year());
+    TEST_ASSERT_EQUAL_UINT8(1, newYearLocal.month());
+    TEST_ASSERT_EQUAL_UINT8(1, newYearLocal.day());
+    TEST_ASSERT_EQUAL_UINT8(0, newYearLocal.hour());
+    TEST_ASSERT_EQUAL_UINT8(0, newYearLocal.minute());
+    TEST_ASSERT_EQUAL_UINT8(0, newYearLocal.second());
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
     RUN_TEST(test_eu_dst_march_transition_boundary);
     RUN_TEST(test_eu_dst_october_transition_boundary);
     RUN_TEST(test_utc_to_local_conversion);
+    RUN_TEST(test_rtclock_leap_year_dst_calculation);
+    RUN_TEST(test_rtclock_year_end_rollover);
     return UNITY_END();
 }

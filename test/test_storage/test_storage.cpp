@@ -185,6 +185,55 @@ void test_storage_duration_clamping_on_import(void) {
     TEST_ASSERT_EQUAL_UINT8(8, gState.zones[0].duration_min);
 }
 
+void test_storage_import_rejects_version_mismatch(void) {
+    char hex[128] = {};
+    storage.exportConfigHex(hex, sizeof(hex));
+
+    // Change version (first byte / 2 hex chars) to 0xFE
+    hex[0] = 'F';
+    hex[1] = 'E';
+
+    bool ok = storage.importConfigHex(hex);
+    TEST_ASSERT_FALSE(ok);
+}
+
+void test_storage_clear_wipes_all(void) {
+    gState.mode = AppMode::INTENSO;
+    storage.save();
+
+    // Verify it was saved
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::INTENSO, gState.mode);
+
+    // Clear storage
+    storage.clear();
+
+    // After clear, load should fail (clean state)
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::DESATIVADO, gState.mode);
+}
+
+void test_storage_history_cache_persistence(void) {
+    HistoryEntry sample[3] = {};
+    sample[0] = { 2026, 6, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    sample[1] = { 2026, 6, 2, 8, 0, { 12, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    sample[2] = { 2026, 6, 3, 8, 0, { 15, 0, 0, 0 }, WaterTrigger::CUSTOM, 0 };
+
+    storage.saveHistoryCache(sample, sizeof(sample), 99);
+
+    HistoryEntry loaded[3] = {};
+    uint16_t loadedCount = 0;
+    bool ok = storage.loadHistoryCache(loaded, sizeof(loaded), loadedCount);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT16(99, loadedCount);
+    TEST_ASSERT_EQUAL_UINT8(1, loaded[0].day);
+    TEST_ASSERT_EQUAL_UINT8(2, loaded[1].day);
+    TEST_ASSERT_EQUAL_UINT8(3, loaded[2].day);
+    TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, loaded[2].trigger);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
@@ -194,5 +243,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_storage_save_and_load_persistence);
     RUN_TEST(test_storage_rejects_corrupted_boolean_bytes);
     RUN_TEST(test_storage_duration_clamping_on_import);
+    RUN_TEST(test_storage_import_rejects_version_mismatch);
+    RUN_TEST(test_storage_clear_wipes_all);
+    RUN_TEST(test_storage_history_cache_persistence);
     return UNITY_END();
 }

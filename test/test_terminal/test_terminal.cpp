@@ -30,8 +30,6 @@ UI ui;
 
 void setUp(void) {
     resetAllTestMocks();
-    Wire.detectedAddresses.clear();
-    ESP.rebooted = false;
     _ui_went_idle = false;
     terminal.begin();
     storage.begin();
@@ -148,6 +146,90 @@ void test_terminal_i2c_scan_command(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("0x68") != std::string::npos);
 }
 
+void test_terminal_export_and_import_config_commands(void) {
+    Serial.reset();
+    _ui_went_idle = false;
+
+    // Export config
+    Serial.feedInput("export_config\r\n");
+    terminal.update();
+
+    // Verify hex output present
+    char validHex[sizeof(AppConfigBlob) * 2 + 1];
+    storage.exportConfigHex(validHex, sizeof(validHex));
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(validHex) != std::string::npos);
+
+    // Import valid config
+    Serial.reset();
+    std::string importCmd = std::string("import_config ") + validHex + "\r\n";
+    Serial.feedInput(importCmd);
+    while (Serial.available() > 0) {
+        terminal.update();
+    }
+    TEST_ASSERT_TRUE(_ui_went_idle);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_IMP_OK) != std::string::npos);
+
+    // Import missing argument
+    Serial.reset();
+    Serial.feedInput("import_config\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_IMP_FMT) != std::string::npos);
+
+    // Import invalid blob
+    Serial.reset();
+    Serial.feedInput("import_config 123456\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_IMP_BLOB) != std::string::npos);
+}
+
+void test_terminal_export_history_command(void) {
+    history.clear();
+    Serial.reset();
+
+    // Export when empty
+    Serial.feedInput("export_history\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_HIST_EMPTY) != std::string::npos);
+
+    // Export with record
+    HistoryEntry e = { 2026, 6, 1, 8, 0, { 10, 10, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e);
+
+    Serial.reset();
+    Serial.feedInput("export_history\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_START_EXPORT) != std::string::npos);
+
+    int safety = 100;
+    while (history.isExporting() && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-01T08:00,A,10,10,0,0") != std::string::npos);
+}
+
+void test_terminal_unknown_and_case_insensitive_commands(void) {
+    Serial.reset();
+
+    // Unknown command
+    Serial.feedInput("UNKNOWN_FOOBAR\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("UNKNOWN_FOOBAR") != std::string::npos);
+
+    // Case insensitivity with whitespace: "  HeLp  \r\n"
+    Serial.reset();
+    Serial.feedInput("  HeLp  \r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("status") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("set_time") != std::string::npos);
+
+    // Blank line (only CRLF)
+    Serial.reset();
+    Serial.feedInput("\r\n");
+    terminal.update();
+    // Must not crash
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -159,5 +241,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_terminal_buffer_overflow_protection);
     RUN_TEST(test_terminal_reboot_command);
     RUN_TEST(test_terminal_i2c_scan_command);
+    RUN_TEST(test_terminal_export_and_import_config_commands);
+    RUN_TEST(test_terminal_export_history_command);
+    RUN_TEST(test_terminal_unknown_and_case_insensitive_commands);
     return UNITY_END();
 }

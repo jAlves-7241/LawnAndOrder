@@ -169,6 +169,128 @@ void test_watering_blackout_recovery_resumes_interrupted_cycle(void) {
     TEST_ASSERT_EQUAL_UINT8(2, wateringCtrl._queue[wateringCtrl._queuePos].zone_idx);
 }
 
+void test_watering_multi_zone_sequence_and_history_logging(void) {
+    history.clear();
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+
+    // Configure 2 active zones: Zone 0 (1 min) and Zone 2 (2 min)
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 1;
+    gState.zones[1].enabled = false;
+    gState.zones[1].duration_min = 0;
+    gState.zones[2].enabled = true;
+    gState.zones[2].duration_min = 2;
+    gState.zones[3].enabled = false;
+    gState.zones[3].duration_min = 0;
+
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, 1781500000UL };
+
+    // Start auto cycle
+    wateringCtrl.startGeneral(WaterTrigger::AUTO);
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    TEST_ASSERT_TRUE(wateringCtrl._isRelayDeadTimeWaiting);
+
+    // 1. Pass dead-time for Zone 0
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl._isRelayDeadTimeWaiting);
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1)); // Zone 0 ON
+
+    // 2. Complete Zone 0 duration (1 min = 60000 ms)
+    advanceMockMillis(60000);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_1)); // Zone 0 OFF
+    TEST_ASSERT_TRUE(wateringCtrl._isWaiting); // Waiting ZONE_WAIT_DELAY_MS
+
+    // 3. During inter-zone delay (ZONE_WAIT_DELAY_MS = 5000ms), all relays must remain OFF
+    advanceMockMillis(2500);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl._isWaiting);
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_3));
+
+    // 4. Complete inter-zone delay (another 2600ms > 5000ms total)
+    advanceMockMillis(2600);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl._isWaiting);
+    TEST_ASSERT_TRUE(wateringCtrl._isRelayDeadTimeWaiting);
+
+    // 5. Pass dead-time for Zone 2
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl._isRelayDeadTimeWaiting);
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_3)); // Zone 2 ON
+
+    // 6. Complete Zone 2 duration (2 min = 120000 ms)
+    advanceMockMillis(120000);
+    wateringCtrl.update();
+
+    // 7. Verify cycle finished and relays OFF
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    TEST_ASSERT_FALSE(gState.watering.active);
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_3));
+
+    // 8. Verify History recorded
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    HistoryEntry entries[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, entries));
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, entries[0].trigger);
+    TEST_ASSERT_EQUAL_UINT8(1, entries[0].zone_dur[0]);
+    TEST_ASSERT_EQUAL_UINT8(0, entries[0].zone_dur[1]);
+    TEST_ASSERT_EQUAL_UINT8(2, entries[0].zone_dur[2]);
+    TEST_ASSERT_EQUAL_UINT8(0, entries[0].zone_dur[3]);
+
+    // 9. Recovery state cleared
+    RecoveryState rs = {};
+    storage.loadRecoveryState(rs);
+    TEST_ASSERT_FALSE(rs.active);
+}
+
+void test_watering_emergency_stop_partial_duration_recorded(void) {
+    history.clear();
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, 1781500000UL };
+
+    // Run 1: Stop after 45s (>= 30s) -> should record 1 min
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    advanceMockMillis(45000);
+    wateringCtrl.stop();
+
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    HistoryEntry e[1] = {};
+    history.readLast(1, e);
+    TEST_ASSERT_EQUAL_UINT8(1, e[0].zone_dur[0]);
+
+    // Run 2: Stop after 10s (< 30s) -> should record 0 min (no entry logged)
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    advanceMockMillis(10000);
+    wateringCtrl.stop();
+
+    // Entry count should still be 1 (second run was ignored due to 0 duration)
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+}
+
+void test_watering_empty_selection_does_not_activate(void) {
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = false;
+        gState.zones[i].duration_min = 0;
+    }
+
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    TEST_ASSERT_FALSE(gState.watering.active);
+
+    bool noZones[NUM_ZONES] = { false, false, false, false };
+    wateringCtrl.startCustom(noZones, 10);
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -177,5 +299,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_watering_emergency_stop);
     RUN_TEST(test_watering_test_run_does_not_log_to_history);
     RUN_TEST(test_watering_blackout_recovery_resumes_interrupted_cycle);
+    RUN_TEST(test_watering_multi_zone_sequence_and_history_logging);
+    RUN_TEST(test_watering_emergency_stop_partial_duration_recorded);
+    RUN_TEST(test_watering_empty_selection_does_not_activate);
     return UNITY_END();
 }
