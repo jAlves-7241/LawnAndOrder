@@ -339,7 +339,7 @@ void UI::dispatchAction(const char* action) {
                 // Cabe numa linha: "H: 06:00+18:00"
                 char hbuf[32];
                 MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
-                snprintf(l2, sizeof(l2), "H: %s", hbuf);
+                snprintf(l2, sizeof(l2), "H: %.17s", hbuf);
                 if (cs.interval_days == 1) {
                     snprintf(l3, sizeof(l3), "%s", TXT_PROG_EVERY_1_DAY);
                 } else {
@@ -367,7 +367,7 @@ void UI::dispatchAction(const char* action) {
             // Modos fixos (Intenso, Médio, Fraco): no máximo 3 slots, sempre cabem
             char hbuf[32];
             MenuBuilder::modeHours((uint8_t)gState.mode, hbuf, sizeof(hbuf));
-            snprintf(l2, sizeof(l2), "H: %s", hbuf);
+            snprintf(l2, sizeof(l2), "H: %.17s", hbuf);
             snprintf(l3, sizeof(l3), "%s", TXT_PROG_DAILY);
         }
 

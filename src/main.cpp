@@ -44,6 +44,14 @@ void clearI2CBus() {
     delayMicroseconds(10000);
 }
 
+static inline void configureI2CTimeout() {
+#if defined(WIRE_HAS_TIMEOUT)
+    Wire.setWireTimeout(150000, true); // 150 ms com auto-reset do barramento por hardware
+#else
+    Wire.setTimeOut(150);
+#endif
+}
+
 void recoverI2C() {
     esp_task_wdt_reset();
     LOG_W("SYS", TXT_LOG_I2C_REC_START);
@@ -55,7 +63,7 @@ void recoverI2C() {
     rtclock.begin();
     esp_task_wdt_reset();
     display.recover();
-    Wire.setTimeOut(150); // Deve ser DEPOIS do display, pois a biblioteca LiquidCrystal faz Wire.begin() interno e limpa o timeout!
+    configureI2CTimeout(); // Deve ser DEPOIS do display, pois a biblioteca LiquidCrystal faz Wire.begin() interno e limpa o timeout!
     LOG_I("SYS", TXT_LOG_I2C_REC_DONE);
 }
 
@@ -77,15 +85,21 @@ void setup() {
         .trigger_panic = true
     };
     esp_err_t wdt_err = esp_task_wdt_init(&wdt_config);
+    if (wdt_err == ESP_ERR_INVALID_STATE) {
+        // No Arduino Core 3.x (ESP-IDF 5), o TWDT ja vem pre-inicializado pelo core.
+        // Reconfigurar para aplicar o timeout customizado de 8s.
+        wdt_err = esp_task_wdt_reconfigure(&wdt_config);
+    }
 #else
     esp_err_t wdt_err = esp_task_wdt_init(WDT_TIMEOUT_S, true);
 #endif
-    if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
+    if (wdt_err != ESP_OK) {
         LOG_E("SYS", TXT_LOG_WDT_INIT_FAIL, wdt_err);
     }
 
     wdt_err = esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
-    if (wdt_err != ESP_OK) {
+    // No Arduino Core 3.x, a loopTask pode ja vir subscrita ao TWDT (retorna ESP_ERR_INVALID_STATE)
+    if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
         LOG_E("SYS", TXT_LOG_WDT_ADD_FAIL, wdt_err);
     }
 
@@ -116,7 +130,7 @@ void setup() {
         LOG_I("I2C", TXT_LOG_I2C_SCAN_DONE, i2cCount);
     }
     display.begin();
-    Wire.setTimeOut(150); // DEPOIS do display.begin()
+    configureI2CTimeout(); // DEPOIS do display.begin()
     encoder.begin();
 
     rtclock.setErrorCallback(recoverI2C);

@@ -444,7 +444,7 @@ void ScreenTimeEdit::render(UI& ui) {
 
     ui.getDisplay().hdr(hbuf, title);
 
-    char vstr[12];
+    char vstr[16];
     if (_teField == 0) snprintf(vstr, sizeof(vstr), "[%02d] : %02d", _teHour, _teMin);
     else snprintf(vstr, sizeof(vstr), " %02d  :[%02d]", _teHour, _teMin);
     ui.getDisplay().cx(vbuf, vstr);

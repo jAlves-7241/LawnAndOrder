@@ -65,7 +65,7 @@ void ScreenIdle::fullRender(UI& ui) {
     char b0[LCD_COLS+1], b3[LCD_COLS+1];
 
     if (gState.rtc_valid) {
-        char tstr[6];
+        char tstr[8];
         snprintf(tstr, sizeof(tstr), "%02d:%02d", gState.now.hour, gState.now.min);
         ui.getDisplay().cx(b0, tstr);
     } else {

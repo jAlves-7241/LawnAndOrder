@@ -54,10 +54,11 @@ bool RTClock::begin() {
         return false;
     }
 
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localDt = DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
+    DateTime localDt(localUnix);
 
     _copyToState(localDt);
     gState.now.unix = utcDt.unixtime();
@@ -98,10 +99,11 @@ void RTClock::update() {
                 
                 DateTime utcDt = _rtc.now();
                 if (utcDt.year() >= 2020 && utcDt.year() <= 2099 && !_lostPower) {
-                    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+                    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
                     if (gState.auto_dst && _isEU_DST(utcDt)) {
-                        localDt = DateTime(localDt.unixtime() + 3600);
+                        localUnix += 3600;
                     }
+                    DateTime localDt(localUnix);
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
                     LOG_I("RTC", TXT_LOG_RTC_HOT_SYNC,
@@ -171,13 +173,14 @@ void RTClock::update() {
     }
 #endif
 
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
 
     if (gState.auto_dst && _isEU_DST(utcDt)) {
         // Apply +1 hour offset
-        localDt = DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
 
+    DateTime localDt(localUnix);
     _copyToState(localDt);
 
     // Override the Unix timestamp with the actual UTC timestamp.
@@ -194,10 +197,11 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // Preservar a suspensão mantendo a diferença de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
+    bool wasRtcValid = gState.rtc_valid;
 
     // A hora recebida do utilizador é HORA LOCAL.
     DateTime localDt(year, month, day, hour, minute, second);
-    DateTime utcDt = DateTime(localDt.unixtime() - TIMEZONE_OFFSET * 3600);
+    uint32_t utcUnix = localDt.unixtime() - TIMEZONE_OFFSET * 3600;
 
     // Converter para UTC se o DST estiver ativo e aplicável a esta hora
     if (gState.auto_dst) {
@@ -213,9 +217,11 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             }
         }
         if (isDstLocal) {
-            utcDt = DateTime(utcDt.unixtime() - 3600);
+            utcUnix -= 3600;
         }
     }
+
+    DateTime utcDt(utcUnix);
 
     if (_found) {
         _rtc.adjust(utcDt);
@@ -238,20 +244,31 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     // Forçar releitura para gState
     _lastReadMs = millis() - 30000UL;
 
-    // Reajustar o `suspended_until` com base no delta UTC (imune a saltos de fuso)
-    if (gState.suspended && gState.suspended_until > 0 && oldUnixUTC > 0) {
-        int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
-        int64_t newUntil = (int64_t)gState.suspended_until + delta;
-        // Se a nova hora ultrapassou a meta de suspensão, ou overflow negativo
-        if (newUntil > UINT32_MAX) {
-            gState.suspended_until = UINT32_MAX;
-        } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
-            gState.suspended = false;
-            gState.suspended_until = 0;
+    // Reajustar o `suspended_until`
+    if (gState.suspended && gState.suspended_until > 0) {
+        if (wasRtcValid && oldUnixUTC > 0) {
+            // Se o relogio anterior ja era valido, reajustar com base no delta UTC (imune a saltos de fuso)
+            int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
+            int64_t newUntil = (int64_t)gState.suspended_until + delta;
+            // Se a nova hora ultrapassou a meta de suspensao, ou overflow negativo
+            if (newUntil > UINT32_MAX) {
+                gState.suspended_until = UINT32_MAX;
+            } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
+                gState.suspended = false;
+                gState.suspended_until = 0;
+            } else {
+                gState.suspended_until = (uint32_t)newUntil;
+            }
+            storage.save();
         } else {
-            gState.suspended_until = (uint32_t)newUntil;
+            // Se o relogio anterior era invalido (placeholder de boot), avaliar o prazo contra a nova hora real
+            if (gState.now.unix >= gState.suspended_until) {
+                gState.suspended = false;
+                gState.suspended_until = 0;
+                storage.save();
+                LOG_I("SYS", TXT_LOG_SUSP_EXP_CLR);
+            }
         }
-        storage.save();
     }
 
     LOG_I("RTC", TXT_LOG_RTC_TIME_SET,
@@ -295,10 +312,11 @@ void RTClock::_incrementSoftwareClock() {
     if (currentUnix == gState.now.unix) return; // Sem avanço
 
     DateTime utcDt(currentUnix);
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localDt = DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
+    DateTime localDt(localUnix);
     _copyToState(localDt);
     gState.now.unix = currentUnix;
     lastKnownUnix = currentUnix;
@@ -335,9 +353,9 @@ bool RTClock::_isEU_DST(const DateTime& dt) {
 }
 
 DateTime RTClock::utcToLocal(const DateTime& utcDt) {
-    DateTime localDt = DateTime(utcDt.unixtime() + TIMEZONE_OFFSET * 3600);
+    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        return DateTime(localDt.unixtime() + 3600);
+        localUnix += 3600;
     }
-    return localDt;
+    return DateTime(localUnix);
 }

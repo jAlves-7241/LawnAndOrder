@@ -1,4 +1,5 @@
 #include "Encoder.h"
+#include <esp_timer.h>
 #include <driver/gpio.h>
 
 Encoder* volatile Encoder::_inst = nullptr;
