@@ -124,7 +124,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute full suite (43 tests)
+# Execute full suite (65 tests)
 pio test -e native
 
 # Filter by module (e.g. scheduler, watering, terminal)
