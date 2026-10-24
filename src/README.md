@@ -12,9 +12,9 @@ Este diretório contém o firmware do controlador ESP32. A execução é coopera
 - `Storage.h / .cpp`: configuração e estado de recuperação em NVS; exportação/importação hexadecimal validada.
 - `History.h / .cpp`: CSV em LittleFS, cache de entradas recentes em NVS e exportação série.
 - `Display.h / .cpp`, `Encoder.h / .cpp`, `UI.h / .cpp`: LCD com shadow buffer, encoder via ISR/debounce e encaminhamento dos ecrãs.
-- `Terminal.h / .cpp`: CLI Serial a 115200 baud, com leitura incremental de comandos.
+- `Terminal.h / .cpp`: CLI Serial a 115200 baud, com leitura incremental de comandos (incluindo `stop`, `reboot`, `i2c_scan`, gestão de configurações e histórico).
 - `log.h`, `i18n.h`, `config.h`: logs, idiomas e parâmetros/hardware.
-- `ui/`: ecrãs individuais e construção de menus. O `MenuBuilder` gera ações textuais que o gestor UI encaminha.
+- `ui/`: ecrãs individuais e construção de menus. O `MenuBuilder` gera ações textuais que o gestor UI encaminha (incluindo a injeção do botão "Parar Rega" quando há rega em curso).
 
 A separação por módulos é acompanhada por singletons e estado global partilhado (`gState`), uma escolha simples para este firmware de uma só aplicação, suportada para testes unitários isolados através da suite nativa com mocks em `test/` (ver [test/README.md](../test/README.md)). O encoder é o único serviço com entrada assíncrona por interrupção; o delta é protegido por secção crítica.
 
@@ -28,7 +28,7 @@ A separação por módulos é acompanhada por singletons e estado global partilh
 6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão e tenta recuperar um ciclo interrompido.
 7. Calcula o horário seguinte, inicia UI e terminal.
 
-`History::begin()` usa `LittleFS.begin(true)`: se a montagem falhar, a biblioteca pode formatar o filesystem. Isto permite recuperar a disponibilidade do controlador, mas o histórico local pode perder-se. A configuração NVS é separada.
+`History::begin()` tenta montar o sistema de ficheiros com `LittleFS.begin(false)`. Se a montagem falhar, consulta a cache na NVS; se já existirem registos conhecidos (`known > 0`), a formatação destrutiva é prevenida para salvaguardar o histórico para posterior recuperação. A formatação (`begin(true)`) só é executada se a cache estiver vazia (`known == 0`), garantindo que dados históricos não são apagados desnecessariamente. A configuração NVS permanece separada.
 
 ## Ciclo principal (`loop()`)
 

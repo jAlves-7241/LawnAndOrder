@@ -42,10 +42,10 @@ test/
 
 | Mock File | Implemented Functionality | State Reset Mechanism |
 |---|---|---|
-| `Arduino.h` | <ul><li>Time tracking: `millis()`, `micros()`, `delay()`, `setMockMillis()`, `advanceMockMillis()`, `setMockMicros()`, `advanceMockMicros()`</li><li>GPIO: Pin array `_mock_gpio[64]`, `pinMode()`, `digitalWrite()`, `digitalRead()`</li><li>Stream I/O: `MockSerial Serial` with input/output string buffers, formatted `printf()`, chunked `read()`, buffer bounds checking</li><li>Interrupts: `digitalPinToInterrupt()`, `attachInterrupt()`, `detachInterrupt()`, `FALLING`, `RISING`, `CHANGE`</li><li>Utilities: `strlcpy()`, `min()`, `max()`, `constrain()`, `abs()`, `String` adapter with indexing and slicing</li><li>Hardware stubs: `IRAM_ATTR`, `EspClass ESP` with `restart()` tracking and `reset()`</li><li>Critical sections: `portMUX_TYPE`, `portENTER_CRITICAL()`, `portEXIT_CRITICAL()`</li></ul> | `_mock_millis = 1000`<br>`_mock_micros = 1000000`<br>`memset(_mock_gpio, HIGH, 64)`<br>`Serial.reset()`<br>`ESP.reset()` |
+| `Arduino.h` | <ul><li>Time tracking: `millis()`, `micros()`, `delay()`, `setMockMillis()`, `advanceMockMillis()`, `setMockMicros()`, `advanceMockMicros()`</li><li>GPIO: Pin array `_mock_gpio[64]`, `pinMode()` (`OUTPUT`, `INPUT`, `INPUT_PULLUP`, `OUTPUT_OPEN_DRAIN`), `digitalWrite()`, `digitalRead()`</li><li>Stream I/O: `MockSerial Serial` with input/output string buffers, formatted `printf()`, chunked `read()`, buffer bounds checking</li><li>Interrupts: `digitalPinToInterrupt()`, `attachInterrupt()`, `detachInterrupt()`, `FALLING`, `RISING`, `CHANGE`</li><li>Utilities: `strlcpy()`, `min()`, `max()`, `constrain()`, `abs()`, `String` adapter with indexing and slicing</li><li>Hardware stubs: `IRAM_ATTR`, `EspClass ESP` with `restart()` tracking and `reset()`</li><li>Critical sections: `portMUX_TYPE`, `portENTER_CRITICAL()`, `portEXIT_CRITICAL()`</li></ul> | `_mock_millis = 1000`<br>`_mock_micros = 1000000`<br>`memset(_mock_gpio, HIGH, 64)`<br>`Serial.reset()`<br>`ESP.reset()` |
 | `RTClib.h` | <ul><li>Pure algorithmic `DateTime` and `TimeSpan` matching Adafruit RTClib interface</li><li>Leap year determination, days-in-month calculations, day-of-week calculation</li><li>Arithmetic operators (`+`, `-`, `<`, `==`)</li><li>Stubbed `RTC_DS3231` and `RTC_DS1307` classes</li></ul> | Stateless (value types) |
 | `Preferences.h` | <ul><li>In-memory NVS key-value store: `std::map<std::string, std::map<std::string, std::vector<uint8_t>>>`</li><li>Binary blob access: `getBytes()`, `putBytes()`</li><li>Type-specific access: `getUShort()`, `putUShort()`, `getUInt()`, `putUInt()`, `getBool()`, `putBool()`</li><li>Namespace management: `begin()`, `end()`, `clear()`</li></ul> | `Preferences::resetStorage()` |
-| `FS.h` / `LittleFS.h` | <ul><li>In-memory file table: `std::map<std::string, std::string>`</li><li>Stream operations: `seek()` (`SeekSet`, `SeekCur`, `SeekEnd`), `read()`, `println()`, `available()`, `size()`</li><li>Filesystem operations: `open()`, `remove()`, `rename()`, `exists()`, `begin()`</li></ul> | `LittleFS.reset()` |
+| `FS.h` / `LittleFS.h` | <ul><li>In-memory file table: `std::map<std::string, std::string>`</li><li>Stream operations: `seek()` (`SeekSet`, `SeekCur`, `SeekEnd`), `read()`, `println()`, `available()`, `size()`</li><li>Filesystem operations: `open()`, `remove()`, `rename()`, `exists()`, `begin(formatOnFail)`, `mountFail` simulation</li></ul> | `LittleFS.reset()` |
 | `Wire.h` | <ul><li>I2C address detection simulation via `detectedAddresses` vector</li><li>`beginTransmission()`, `endTransmission()` return codes</li><li>Bus address reset: `reset()`</li></ul> | `Wire.reset()` (via `resetAllTestMocks()`) |
 | `LiquidCrystal_I2C.h` | <ul><li>No-op stubs: `init()`, `clear()`, `setCursor()`, `print()`, `backlight()`, `noBacklight()`</li></ul> | Stateless |
 | `esp_task_wdt.h` | <ul><li>No-op stubs: `esp_task_wdt_reset()`, `esp_task_wdt_add()`, `esp_task_wdt_delete()`</li></ul> | Stateless |
@@ -73,6 +73,7 @@ test/
 * `test_utc_to_local_conversion`: Verifies offset computation (`TIMEZONE_OFFSET` and optional DST hour) and behavior when `auto_dst` is disabled.
 * `test_rtclock_leap_year_dst_calculation`: Verifies algorithmic DST calculation and Sunday transition boundaries across leap years (e.g. 2028).
 * `test_rtclock_year_end_rollover`: Tests calendar year-end boundary transitions (Dec 31 23:59:59 -> Jan 1 00:00:00) during UTC-to-local conversion.
+* `test_rtclock_throttle_after_internal_set`: Verifies internal clock setting/recovery maintains the 30-second read throttle interval and prevents RTC bus saturation.
 
 ### `test_scheduler`
 * `test_scheduler_medio_next_slot`: Slot selection for 2-slot daily schedule across morning, midday, and night rollovers.
@@ -111,10 +112,12 @@ test/
 * `test_history_cache_fifo_eviction`: Verifies that recording beyond `HISTORY_DISPLAY` (3) entries evicts the oldest entry in the RAM cache while maintaining correct temporal ordering.
 * `test_history_deferred_queue_when_busy`: Verifies that history records triggered while disk rotation or export is active are queued and not dropped.
 * `test_history_export_stream`: Verifies streaming export state machine, serial line emission, and return to idle.
+* `test_history_guarded_format_on_mount_failure`: Verifies that LittleFS mount failure refuses destructive reformatting (`formatOnFail`) when cached historical entries exist in NVS storage.
 
 ### `test_terminal`
 * `test_terminal_help_command`: Help menu formatting and command presence.
 * `test_terminal_status_command`: Real-time system report formatting via Serial stream.
+* `test_terminal_stop_command`: Verifies `stop` command immediately aborts active watering cycles via `WateringController` and reports idle status when inactive.
 * `test_terminal_set_time_command`: Time parsing, clock update, and RTC validity flag assignment.
 * `test_terminal_clear_history_confirmation_flow`: Interactive confirmation state machine (`y` proceeds to wipe).
 * `test_terminal_clear_history_cancellation`: Interactive confirmation abort (`n` leaves history intact).
@@ -129,7 +132,7 @@ test/
 ### `test_watering`
 * `test_watering_general_builds_queue_and_skips_disabled`: Queue compilation validating that disabled zones and zones with `duration_min == 0` are excluded.
 * `test_watering_custom_selection`: Selective zone execution with runtime duration overrides.
-* `test_watering_dead_time_and_relay_activation`: Verifies relay dead-time enforcement (50ms where all pins remain `HIGH`) before activating zone relay (`LOW`).
+* `test_watering_dead_time_and_relay_activation`: Verifies relay dead-time enforcement (20ms where all pins remain `HIGH`) before activating zone relay (`LOW`).
 * `test_watering_emergency_stop`: Immediate hardware deactivation (all pins forced `HIGH`), queue purging, and state synchronization.
 * `test_watering_test_run_does_not_log_to_history`: Verifies 30-second zone test runs are excluded from persistent history logging.
 * `test_watering_blackout_recovery_resumes_interrupted_cycle`: Verifies reboot recovery loads persisted `RecoveryState`, validates expiration window, and resumes from interrupted queue position.
@@ -142,7 +145,7 @@ test/
 ## 4. Usage & Execution Commands
 
 ```bash
-# Execute entire test suite (all 65 test cases)
+# Execute entire test suite (all 68 test cases)
 pio test -e native
 
 # Execute specific test suite
@@ -231,27 +234,27 @@ Continuous integration is defined in `.github/workflows/ci.yml` and executes on 
 
 ## 7. Test Case Necessity & Redundancy Audit
 
-A comprehensive evaluation across all 65 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
+A comprehensive evaluation across all 68 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
 
 | Suite | Tests | Analysis & Redundancy Assessment | Verdict |
 |---|---|---|---|
 | `test_appstate` | 3 | Checks compile-time struct alignment/padding (`sizeof`), uninitialized state defaults, and static mode schedule definitions. Does not overlap with dynamic scheduling. | **100% Essential** |
 | `test_encoder` | 3 | Covers 50ms pushbutton debounce, hold/release transitions, delta reset-on-read, ±127 clamping with remainder, and 2000µs ISR contact bounce rate limiting. Each test exercises a distinct state machine branch. | **100% Essential** |
-| `test_rtclock` | 6 | Covers non-boundary seasonal months, March spring-forward (01:00 UTC boundary), October fall-back (01:00 UTC boundary), UTC-to-local offset arithmetic with/without DST, leap-year Sunday calculation (2028), and year-end rollover (Dec 31 → Jan 1). | **100% Essential** |
+| `test_rtclock` | 7 | Covers non-boundary seasonal months, March spring-forward (01:00 UTC boundary), October fall-back (01:00 UTC boundary), UTC-to-local offset arithmetic with/without DST, leap-year Sunday calculation (2028), year-end rollover (Dec 31 → Jan 1), and 30-second throttle preservation after internal clock set/recovery. | **100% Essential** |
 | `test_scheduler` | 13 | Covers 1-slot, 2-slot, and 3-slot daily schedules, disabled mode guard, custom multi-day interval modular math, blackout duration expiration, auto-unsuspend, calendar month/leap-year rollovers, instant mode recomputation, day-of-week bitmasks, autumn DST fallback duplicate protection, cycle completion notification, and the exact minute `<=` boundary guard. Minor apparent overlap between `medio`, `intenso`, and `fraco` serves specifically to protect loop boundary logic against 1-element, 2-element, and 3-element off-by-one errors. | **100% Essential** |
 | `test_storage` | 10 | Covers hex string formatting, end-to-end round-trip, invalid hex/null rejection, recovery state binary persistence, NVS simulated cycles, corrupted boolean byte rejection, duration clamping, schema version guard, NVS namespace purge, and history cache buffer persistence. | **100% Essential** |
-| `test_history` | 9 | Covers CSV line serialization for all trigger types, CSV deserialization, 7 corruption rejection modes, RAM FIFO queue eviction, capacity rotation state machine (1500 lines), missing column padding, non-blocking deferred queueing during I/O, and streaming serial export. | **100% Essential** |
-| `test_terminal` | 12 | Covers CLI commands (`help`, `status`, `set_time`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`), 2-step confirmation flows (`y`/`n`), ANSI cursor sequence stripping, 256-byte chunked buffer overflow protection, and case/whitespace tolerance. | **100% Essential** |
+| `test_history` | 10 | Covers CSV line serialization for all trigger types, CSV deserialization, 7 corruption rejection modes, RAM FIFO queue eviction, capacity rotation state machine (1500 lines), missing column padding, non-blocking deferred queueing during I/O, streaming serial export, and LittleFS guarded format prevention on mount failure when cache exists. | **100% Essential** |
+| `test_terminal` | 13 | Covers CLI commands (`help`, `status`, `set_time`, `stop`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`), 2-step confirmation flows (`y`/`n`), ANSI cursor sequence stripping, 256-byte chunked buffer overflow protection, and case/whitespace tolerance. | **100% Essential** |
 | `test_watering` | 9 | Covers general queue compilation (skipping disabled/0-min zones), custom duration selection, relay dead-time enforcement, emergency stop hardware off, test run history exclusion, blackout recovery queue resume, multi-zone sequencing with inter-zone delays, partial duration rounding (>=30s vs <30s), and empty selection rejection. | **100% Essential** |
 
-**Conclusion**: All 65 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
+**Conclusion**: All 68 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
 
 ---
 
 ## 8. Performance & Speed Optimization
 
 ### Benchmark Profile
-* **Runtime Execution Time**: ~15–30 ms across all 65 test cases combined.
+* **Runtime Execution Time**: ~15–30 ms across all 68 test cases combined.
 * **Compilation Time**: ~5–8 s when compiling 8 distinct native binaries sequentially.
 
 ### Applied Optimizations

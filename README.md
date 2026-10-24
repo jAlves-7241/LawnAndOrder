@@ -124,7 +124,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute full suite (65 tests)
+# Execute full suite (68 tests)
 pio test -e native
 
 # Filter by module (e.g. scheduler, watering, terminal)
@@ -147,7 +147,9 @@ Disponível através de `pio device monitor` ou qualquer terminal série:
 | `import_config <hex>` | Importa configuração a partir de uma string hexadecimal |
 | `export_history` | Exporta todo o histórico de regas em CSV via Serial |
 | `clear_history` | Apaga permanentemente o histórico de regas (pede confirmação) |
+| `stop` | Aborta imediatamente a rega ativa |
 | `reboot` | Reinicia o controlador |
+| `i2c_scan` | Executa um scan ao barramento I2C |
 
 ---
 

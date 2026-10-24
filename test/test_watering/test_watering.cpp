@@ -79,7 +79,7 @@ void test_watering_dead_time_and_relay_activation(void) {
     wateringCtrl.startGeneral(WaterTrigger::MANUAL);
     TEST_ASSERT_TRUE(wateringCtrl._active);
 
-    // During dead-time (first 50ms), relay must be OFF (HIGH)
+    // During dead-time (first 20ms), relay must be OFF (HIGH)
     TEST_ASSERT_TRUE(wateringCtrl._isRelayDeadTimeWaiting);
     TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_1));
 
