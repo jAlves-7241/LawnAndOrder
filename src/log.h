@@ -48,7 +48,7 @@ void terminalAwareLog(const char* msg);
   #define LOG_PREF_WARN  "AVISO: "
 #else
   #define LOG_PREF_ERROR "ERROR: "
-  #define LOG_PREF_WARN  "WARN: "
+  #define LOG_PREF_WARN  "WARNING: "
 #endif
 
 // ── Macros ────────────────────────────────────────────────
