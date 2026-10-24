@@ -104,12 +104,12 @@ static char *trimWhitespace(char *str) {
 
 static const char *getModeStr(AppMode mode) {
     switch (mode) {
-    case AppMode::INTENSO:      return TXT_INTENSE;
-    case AppMode::MEDIO:        return TXT_MEDIUM;
-    case AppMode::FRACO:        return TXT_WEAK;
-    case AppMode::DESATIVADO:   return TXT_DISABLED;
-    case AppMode::PERSONALIZADO: return TXT_CUSTOM;
-    default:                     return TXT_UNKNOWN;
+    case AppMode::INTENSO:      return TXT_TERM_MODE_INTENSE;
+    case AppMode::MEDIO:        return TXT_TERM_MODE_MEDIUM;
+    case AppMode::FRACO:        return TXT_TERM_MODE_WEAK;
+    case AppMode::DESATIVADO:   return TXT_TERM_MODE_DISABLED;
+    case AppMode::PERSONALIZADO: return TXT_TERM_MODE_CUSTOM;
+    default:                     return TXT_TERM_MODE_UNKNOWN;
     }
 }
 

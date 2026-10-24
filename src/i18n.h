@@ -502,15 +502,35 @@
 #define TXT_TERM_REBOOT "Restarting Lawn & Order controller..."
 #define TXT_TERM_STOP_OK "Watering stopped successfully."
 #define TXT_TERM_STOP_IDLE "No watering currently active."
+
+// Modes for Terminal Status
+#define TXT_TERM_MODE_INTENSE "Intense"
+#define TXT_TERM_MODE_MEDIUM "Medium"
+#define TXT_TERM_MODE_WEAK "Weak"
+#define TXT_TERM_MODE_DISABLED "Disabled"
+#define TXT_TERM_MODE_CUSTOM "Custom"
+#define TXT_TERM_MODE_UNKNOWN "Unknown"
+
+// Days of Week for Serial Logs
+#define TXT_SER_DOW_SUN_SHORT "Sun"
+#define TXT_SER_DOW_MON_SHORT "Mon"
+#define TXT_SER_DOW_TUE_SHORT "Tue"
+#define TXT_SER_DOW_WED_SHORT "Wed"
+#define TXT_SER_DOW_THU_SHORT "Thu"
+#define TXT_SER_DOW_FRI_SHORT "Fri"
+#define TXT_SER_DOW_SAT_SHORT "Sat"
+
 // Logs
 #define TXT_LOG_UI_CONFIRM_TAG "Confirmed tag: %s"
+#define TXT_LOG_UI_UNKNOWN_ACTION "dispatchAction: unknown '%s'"
 #define TXT_LOG_REC_STATE_INV "Recovery state invalid, discarding"
 #define TXT_LOG_REC_ZONE_INV "Recovery zone_idx invalid"
 #define TXT_LOG_INTERRUPT_FOUND "Interrupted cycle found! Evaluating resume..."
+#define TXT_LOG_START_GEN "Starting general watering"
 #define TXT_LOG_START_CUSTOM "Starting custom watering - %d min"
 #define TXT_LOG_START_TEST "Starting test zone=%d"
 #define TXT_LOG_WATER_INT "Watering interrupted"
-#define TXT_LOG_ZONE_OOB "zone %d out of bounds!"
+#define TXT_LOG_ZONE_OOB "Zone %d out of bounds!"
 #define TXT_LOG_ZONE_DONE_WAIT "Zone %d completed - waiting %lu s"
 #define TXT_LOG_CYCLE_DONE "Cycle completed"
 #define TXT_LOG_CYCLE_NO_DUR "Cycle without effective duration. Ignore history."
@@ -526,7 +546,7 @@
 #define TXT_LOG_HIST_ROT_CORRUPT "Corrupted line purged from disk."
 #define TXT_LOG_HIST_ROT_DONE_NVS "Rotation complete + NVS updated. Entries: %d"
 #define TXT_LOG_HIST_ROT_DONE "Rotation complete. Entries: %d"
-#define TXT_LOG_HIST_RENAME_FAIL "rename failed - keeping original"
+#define TXT_LOG_HIST_RENAME_FAIL "Rename failed - keeping original"
 #define TXT_LOG_HIST_EXPORT_FAIL "Failed to open file for export"
 #define TXT_TERM_HIST_HDR "--- LAWN&ORDER HISTORY ---"
 #define TXT_TERM_HIST_CSV_HDR "Date,Type,Z1(min),Z2(min),Z3(min),Z4(min)"
@@ -583,6 +603,7 @@
 #define TXT_LOG_NVS_IMP_INV_VER "Import failed: incompatible version (%d vs %d)"
 #define TXT_LOG_NVS_IMP_OK "Config imported successfully via Hex String."
 #define TXT_LOG_NVS_IMP_INV_MODE "Import failed: invalid mode (%d)"
+#define TXT_LOG_NVS_OVERLAP "Custom schedule overlap detected"
 #elif defined(LANG_SERIAL_PT)
 #define TXT_LOG_START_EXPORT "A iniciar exportacao do historico..."
 #define TXT_LOG_EXPORT_DONE "Exportacao concluida: %d registos"
@@ -687,16 +708,36 @@
 #define TXT_TERM_REBOOT "A reiniciar o controlador Lawn & Order..."
 #define TXT_TERM_STOP_OK "Rega parada com sucesso."
 #define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
+
+// Modos para o Status do Terminal
+#define TXT_TERM_MODE_INTENSE "Intenso"
+#define TXT_TERM_MODE_MEDIUM "Medio"
+#define TXT_TERM_MODE_WEAK "Fraco"
+#define TXT_TERM_MODE_DISABLED "Desativado"
+#define TXT_TERM_MODE_CUSTOM "Personalizado"
+#define TXT_TERM_MODE_UNKNOWN "Desconhecido"
+
+// Dias da Semana para Logs Série
+#define TXT_SER_DOW_SUN_SHORT "Dom"
+#define TXT_SER_DOW_MON_SHORT "Seg"
+#define TXT_SER_DOW_TUE_SHORT "Ter"
+#define TXT_SER_DOW_WED_SHORT "Qua"
+#define TXT_SER_DOW_THU_SHORT "Qui"
+#define TXT_SER_DOW_FRI_SHORT "Sex"
+#define TXT_SER_DOW_SAT_SHORT "Sab"
+
 // Logs
 #define TXT_LOG_UI_CONFIRM_TAG "Confirmado tag: %s"
-#define TXT_LOG_REC_STATE_INV "Recovery state invalid, discarding"
-#define TXT_LOG_REC_ZONE_INV "Recovery zone_idx invalid"
+#define TXT_LOG_UI_UNKNOWN_ACTION "dispatchAction: acao desconhecida '%s'"
+#define TXT_LOG_REC_STATE_INV "Estado de recuperacao invalido, a descartar"
+#define TXT_LOG_REC_ZONE_INV "zone_idx de recuperacao invalido"
 #define TXT_LOG_INTERRUPT_FOUND                                                \
   "Encontrado ciclo interrompido! A avaliar retoma..."
+#define TXT_LOG_START_GEN "A iniciar rega geral"
 #define TXT_LOG_START_CUSTOM "Iniciar rega personalizada - %d min"
 #define TXT_LOG_START_TEST "Iniciar teste zona=%d"
 #define TXT_LOG_WATER_INT "Rega interrompida"
-#define TXT_LOG_ZONE_OOB "zona %d fora dos limites!"
+#define TXT_LOG_ZONE_OOB "Zona %d fora dos limites!"
 #define TXT_LOG_ZONE_DONE_WAIT "Zona %d concluida - aguardar %lu s"
 #define TXT_LOG_CYCLE_DONE "Ciclo concluido"
 #define TXT_LOG_CYCLE_NO_DUR "Ciclo sem duracao efetiva. Ignorar historico."
@@ -714,7 +755,7 @@
 #define TXT_LOG_HIST_ROT_DONE_NVS                                              \
   "Rotacao concluida + NVS atualizado. Entradas: %d"
 #define TXT_LOG_HIST_ROT_DONE "Rotacao concluida. Entradas: %d"
-#define TXT_LOG_HIST_RENAME_FAIL "rename falhou - manter original"
+#define TXT_LOG_HIST_RENAME_FAIL "Rename falhou - manter original"
 #define TXT_LOG_HIST_EXPORT_FAIL "Falha ao abrir ficheiro para exportacao"
 #define TXT_TERM_HIST_HDR "--- HISTORICO LAWN&ORDER ---"
 #define TXT_TERM_HIST_CSV_HDR "Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)"
@@ -779,4 +820,5 @@
 #define TXT_LOG_NVS_IMP_OK                                                     \
   "Configuracoes importadas com sucesso via Hex String."
 #define TXT_LOG_NVS_IMP_INV_MODE "Importacao falhou: modo invalido (%d)"
+#define TXT_LOG_NVS_OVERLAP "Detetada sobreposicao no horario personalizado"
 #endif

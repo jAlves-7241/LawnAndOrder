@@ -42,8 +42,17 @@ extern bool _log_suspended;
 // parcial do utilizador no terminal série (usa ANSI escapes).
 void terminalAwareLog(const char* msg);
 
+// ── Prefixo de severidade dependente do idioma ───────────
+#if defined(LANG_SERIAL_PT)
+  #define LOG_PREF_ERROR "ERRO: "
+  #define LOG_PREF_WARN  "AVISO: "
+#else
+  #define LOG_PREF_ERROR "ERROR: "
+  #define LOG_PREF_WARN  "WARN: "
+#endif
+
 // ── Macros ────────────────────────────────────────────────
-// A tag é uma string literal (ex: "NVS", "RTC", "REGA").
+// A tag é uma string literal (ex: "NVS", "RTC", "WATER").
 // O \n é adicionado automaticamente - não incluir no fmt.
 //
 // AVISO: Estas macros usam Serial.printf() e NÃO são seguras
@@ -54,7 +63,7 @@ void terminalAwareLog(const char* msg);
   #define LOG_E(tag, fmt, ...) do { \
     if (!_log_suspended) { \
       char _lb[LOG_FMT_BUF_SIZE]; \
-      snprintf(_lb, sizeof(_lb), "[" tag "] ERRO: " fmt, ##__VA_ARGS__); \
+      snprintf(_lb, sizeof(_lb), "[" tag "] " LOG_PREF_ERROR fmt, ##__VA_ARGS__); \
       terminalAwareLog(_lb); \
     } \
   } while(0)
@@ -66,7 +75,7 @@ void terminalAwareLog(const char* msg);
   #define LOG_W(tag, fmt, ...) do { \
     if (!_log_suspended) { \
       char _lb[LOG_FMT_BUF_SIZE]; \
-      snprintf(_lb, sizeof(_lb), "[" tag "] AVISO: " fmt, ##__VA_ARGS__); \
+      snprintf(_lb, sizeof(_lb), "[" tag "] " LOG_PREF_WARN fmt, ##__VA_ARGS__); \
       terminalAwareLog(_lb); \
     } \
   } while(0)
@@ -97,4 +106,3 @@ void terminalAwareLog(const char* msg);
 #else
   #define LOG_D(tag, fmt, ...) ((void)0)
 #endif
-

@@ -317,7 +317,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
                     if (diff < 0) diff = -diff;
                     if (diff > 720) diff = 1440 - diff;
                     if (diff < total_dur) {
-                        LOG_W("NVS", "Custom schedule overlap detected");
+                        LOG_W("NVS", TXT_LOG_NVS_OVERLAP);
                         gState = previousState;
                         MODE_SCHEDULES[customMode] = previousCustomSchedule;
                         return false;

@@ -445,7 +445,7 @@ void UI::dispatchAction(const char* action) {
         return;
     }
 
-    LOG_W("UI", "dispatchAction: unknown '%s'", action);
+    LOG_W("UI", TXT_LOG_UI_UNKNOWN_ACTION, action);
 }
 
 uint16_t UI::getTotalZoneDuration() {
