@@ -109,6 +109,7 @@ void RTClock::update() {
                     LOG_I("RTC", TXT_LOG_RTC_HOT_SYNC,
                           gState.now.year, gState.now.month, gState.now.day,
                           gState.now.hour, gState.now.min, gState.now.sec);
+
                 } else {
                     // Se o RTC tem hora inválida mas o utilizador já configurou hora no software
                     if (gState.rtc_valid) {
@@ -144,6 +145,7 @@ void RTClock::update() {
             LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
             set(gState.now.year, gState.now.month, gState.now.day,
                 gState.now.hour, gState.now.min, gState.now.sec);
+            _lastReadMs = nowMs;   // internal recovery must not defeat the 30 s throttle
         } else {
             LOG_E("RTC", TXT_LOG_RTC_BAT_FAIL_RAM);
         }
@@ -165,6 +167,9 @@ void RTClock::update() {
             if (_errorCb) {
                 _errorCb();
             }
+        } else {
+            // Retry faster with backoff (~5s) instead of waiting 30s
+            _lastReadMs = nowMs - (30000UL - 5000UL);
         }
         _incrementSoftwareClock(); // Impede que o relógio congele no display durante falhas I2C
         return; // Aborta o update para proteger o gState contra dados corrompidos

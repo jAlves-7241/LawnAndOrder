@@ -8,12 +8,21 @@ class MockLittleFS {
 public:
     std::map<std::string, std::string> files;
 
+    bool mountFail = false;
+
     void reset() {
+        mountFail = false;
         files.clear();
     }
 
     bool begin(bool formatOnFail = true) {
-        (void)formatOnFail;
+        if (mountFail) {
+            if (formatOnFail) {
+                mountFail = false;
+                return true;
+            }
+            return false;
+        }
         return true;
     }
 

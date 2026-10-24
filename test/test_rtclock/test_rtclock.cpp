@@ -148,6 +148,27 @@ void test_rtclock_year_end_rollover(void) {
     TEST_ASSERT_EQUAL_UINT8(0, newYearLocal.second());
 }
 
+void test_rtclock_throttle_after_internal_set(void) {
+    rtclock.begin();
+    gState.rtc_valid = true;
+    setMockMillis(100000);
+    rtclock._lastReadMs = 100000;
+
+    uint32_t nowMs = millis();
+    rtclock.set(gState.now.year, gState.now.month, gState.now.day,
+                gState.now.hour, gState.now.min, gState.now.sec);
+    rtclock._lastReadMs = nowMs;
+
+    advanceMockMillis(10000);
+    uint32_t savedMs = rtclock._lastReadMs;
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(savedMs, rtclock._lastReadMs);
+
+    advanceMockMillis(25000);
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(millis(), rtclock._lastReadMs);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
@@ -156,5 +177,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_utc_to_local_conversion);
     RUN_TEST(test_rtclock_leap_year_dst_calculation);
     RUN_TEST(test_rtclock_year_end_rollover);
+    RUN_TEST(test_rtclock_throttle_after_internal_set);
     return UNITY_END();
 }

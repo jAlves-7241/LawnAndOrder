@@ -16,7 +16,12 @@ bool _log_suspended = false;
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
     _log_suspended = false;
-    _ready = LittleFS.begin(formatOnFail);
+    _ready = LittleFS.begin(false);
+    if (!_ready) {
+        HistoryEntry tmp[HISTORY_DISPLAY]; uint16_t known = 0;
+        storage.loadHistoryCache(tmp, sizeof(tmp), known);
+        if (formatOnFail && known == 0) _ready = LittleFS.begin(true); // nothing to lose
+    }
     if (!_ready) {
         LOG_E("HIST", TXT_LOG_HIST_MOUNT_FAIL);
         _lineCount = 0;

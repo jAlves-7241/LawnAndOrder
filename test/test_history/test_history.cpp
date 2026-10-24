@@ -232,6 +232,26 @@ void test_history_export_stream(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-02T08:00,M,12,12,0,0") != std::string::npos);
 }
 
+void test_history_guarded_format_on_mount_failure(void) {
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    LittleFS.mountFail = true;
+
+    bool ok = history.begin(true);
+    TEST_ASSERT_TRUE(ok);
+
+    HistoryEntry sample[HISTORY_DISPLAY] = {};
+    sample[0].year = 2026;
+    sample[0].month = 5;
+    sample[0].day = 10;
+    storage.saveHistoryCache(sample, sizeof(sample), 5);
+
+    LittleFS.mountFail = true;
+    bool guarded = history.begin(true);
+    TEST_ASSERT_FALSE(guarded);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -243,5 +263,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_history_cache_fifo_eviction);
     RUN_TEST(test_history_deferred_queue_when_busy);
     RUN_TEST(test_history_export_stream);
+    RUN_TEST(test_history_guarded_format_on_mount_failure);
     return UNITY_END();
 }

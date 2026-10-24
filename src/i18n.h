@@ -1,7 +1,7 @@
 #pragma once
 
 // ---------------------------------------------------------
-// SECÇÃO 1: Interface Gráfica (Ecrã OLED)
+// SECÇÃO 1: Interface Gráfica (Ecrã LCD)
 // ---------------------------------------------------------
 
 #if !defined(LANG_UI_PT) && !defined(LANG_UI_EN)
@@ -17,6 +17,8 @@
 #define TXT_CONFIG_ZONES_SHORT "Config Zones"
 #define TXT_CHOOSE_ZONES "Choose Zones"
 #define TXT_MANUAL_WATERING "Manual Watering"
+#define TXT_STOP_WATERING "Stop Watering"
+#define TXT_WATERING_STOPPED "Watering Stopped"
 #define TXT_START_GEN_WATERING "Start Gen. Watering"
 #define TXT_SET_DURATION "-> Set Duration"
 #define TXT_BACK "<- Back"
@@ -209,6 +211,8 @@
 #define TXT_CONFIG_ZONES_SHORT "Config. Zonas"
 #define TXT_CHOOSE_ZONES "Escolher Zonas"
 #define TXT_MANUAL_WATERING "Rega Manual"
+#define TXT_STOP_WATERING "Parar Rega"
+#define TXT_WATERING_STOPPED "Rega Parada"
 #define TXT_START_GEN_WATERING "Iniciar rega geral"
 #define TXT_SET_DURATION "-> Definir duracao"
 #define TXT_BACK "<- Voltar"
@@ -449,6 +453,8 @@
   "  reboot                       - Restart the ESP32 controller"
 #define TXT_TERM_HELP_9                                                        \
   "  i2c_scan                     - Run an I2C bus scan"
+#define TXT_TERM_HELP_10                                                       \
+  "  stop                         - Immediately abort active watering"
 #define TXT_TERM_STAT_LOCAL "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
   "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n"
@@ -494,6 +500,8 @@
 #define TXT_TERM_WIPING "Clearing watering history..."
 #define TXT_TERM_WIPE_OK "Watering history cleared successfully!"
 #define TXT_TERM_REBOOT "Restarting Lawn & Order controller..."
+#define TXT_TERM_STOP_OK "Watering stopped successfully."
+#define TXT_TERM_STOP_IDLE "No watering currently active."
 // Logs
 #define TXT_LOG_UI_CONFIRM_TAG "Confirmed tag: %s"
 #define TXT_LOG_REC_STATE_INV "Recovery state invalid, discarding"
@@ -555,6 +563,7 @@
 #define TXT_LOG_SCHED_DUP_BLOCK                                                \
   "Duplicate activation blocked (DST fall-back) - slot %02d:%02d"
 #define TXT_LOG_SCHED_AUTO_START "Starting automatic watering %02d:%02d"
+#define TXT_LOG_SCHED_COLLISION_SKIP "Scheduled cycle skipped: watering currently active (Slot: %02d:%02d)"
 #define TXT_LOG_SCHED_MODE_CHG "Mode changed: Next watering %02d:%02d"
 #define TXT_LOG_SCHED_CYCLE_DONE "Cycle complete: Next watering %02d:%02d"
 #define TXT_LOG_SCHED_REC_HLIMIT "Recovery discarded: Hard limit exceeded."
@@ -628,6 +637,8 @@
   "  reboot                       - Reinicia o controlador ESP32"
 #define TXT_TERM_HELP_9                                                        \
   "  i2c_scan                     - Executa um scan ao barramento I2C"
+#define TXT_TERM_HELP_10                                                       \
+  "  stop                         - Aborta imediatamente a rega ativa"
 #define TXT_TERM_STAT_LOCAL "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
   "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n"
@@ -674,6 +685,8 @@
 #define TXT_TERM_WIPING "A limpar o historico de regas..."
 #define TXT_TERM_WIPE_OK "Historico de regas limpo com sucesso!"
 #define TXT_TERM_REBOOT "A reiniciar o controlador Lawn & Order..."
+#define TXT_TERM_STOP_OK "Rega parada com sucesso."
+#define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
 // Logs
 #define TXT_LOG_UI_CONFIRM_TAG "Confirmado tag: %s"
 #define TXT_LOG_REC_STATE_INV "Recovery state invalid, discarding"
@@ -741,6 +754,7 @@
 #define TXT_LOG_SCHED_DUP_BLOCK                                                \
   "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d"
 #define TXT_LOG_SCHED_AUTO_START "Iniciar rega automatica %02d:%02d"
+#define TXT_LOG_SCHED_COLLISION_SKIP "Ciclo agendado ignorado: rega ativa de momento (Slot: %02d:%02d)"
 #define TXT_LOG_SCHED_MODE_CHG "Modo alterado: Proxima rega %02d:%02d"
 #define TXT_LOG_SCHED_CYCLE_DONE "Ciclo concluido: Proxima rega %02d:%02d"
 #define TXT_LOG_SCHED_REC_HLIMIT "Recuperacao descartada: Hard limit excedido."

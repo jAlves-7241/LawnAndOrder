@@ -359,6 +359,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
         rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
                     ui.getDateEditDay(), _teHour, _teMin, 0);
+        scheduler.onModeChanged();
 
         if (ui.inSetup()) {
             ui.advanceSetup();

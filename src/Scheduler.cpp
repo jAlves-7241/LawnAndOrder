@@ -61,8 +61,8 @@ void Scheduler::update() {
                     gState.next_hour, gState.next_min);
         if (gState.custom_ref_day != old_ref) storage.save();
 
-        // Don't trigger while a cycle is already running
-        if (gState.watering.active) return;
+
+
 
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
         if (sched.slot_count > 0) {
@@ -73,6 +73,11 @@ void Scheduler::update() {
                 for (uint8_t i = 0; i < sched.slot_count; i++) {
                     if (t.hour == sched.slots[i].hour &&
                         t.min  == sched.slots[i].minute) {
+                        if (gState.watering.active) {
+                            LOG_W("SCHED", TXT_LOG_SCHED_COLLISION_SKIP,
+                                  sched.slots[i].hour, sched.slots[i].minute);
+                            break;
+                        }
                         // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
                         // 2 hours ago (UTC), this is a duplicate from the repeated hour.
                         // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
