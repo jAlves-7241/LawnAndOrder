@@ -36,7 +36,7 @@ void clearI2CBus() {
     }
     
     // Generate STOP condition
-    pinMode(PIN_SDA, OUTPUT);
+    pinMode(PIN_SDA, OUTPUT_OPEN_DRAIN);
     digitalWrite(PIN_SDA, LOW);
     digitalWrite(PIN_SCL, HIGH);
     delayMicroseconds(5);
@@ -108,7 +108,9 @@ void setup() {
     storage.begin();      // open NVS namespace
     storage.load();       // overwrite defaults with persisted values
 
+    esp_task_wdt_reset();
     history.begin();      // mount LittleFS, open/create history file
+    esp_task_wdt_reset();
 
     clearI2CBus();
     Wire.begin(PIN_SDA, PIN_SCL);
@@ -117,6 +119,7 @@ void setup() {
     // I2C bus scan — log all detected devices
     byte i2cCount = 0;
     for (byte i = 8; i < 120; i++) {
+        esp_task_wdt_reset();
         Wire.beginTransmission(i);
         if (Wire.endTransmission() == 0) {
             LOG_I("I2C", TXT_LOG_I2C_SCAN_FOUND, i);
@@ -129,7 +132,9 @@ void setup() {
     } else {
         LOG_I("I2C", TXT_LOG_I2C_SCAN_DONE, i2cCount);
     }
+    esp_task_wdt_reset();
     display.begin();
+    esp_task_wdt_reset();
     configureI2CTimeout(); // DEPOIS do display.begin()
     encoder.begin();
 

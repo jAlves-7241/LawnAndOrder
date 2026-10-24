@@ -254,7 +254,7 @@ void WateringController::update() {
             _syncState();
             
             if (_runTrigger != WaterTrigger::TEST) {
-                RecoveryState rs;
+                RecoveryState rs = {};
                 rs.active = true;
                 rs.start_unix_time = _cycleStart.unix;
                 rs.queuePos = _queuePos;
