@@ -47,6 +47,7 @@ void test_terminal_help_command(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("help") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("status") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("set_time") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("stop") != std::string::npos);
 }
 
 void test_terminal_status_command(void) {
@@ -222,6 +223,7 @@ void test_terminal_unknown_and_case_insensitive_commands(void) {
     terminal.update();
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("status") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("set_time") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("stop") != std::string::npos);
 
     // Blank line (only CRLF)
     Serial.reset();
@@ -230,10 +232,34 @@ void test_terminal_unknown_and_case_insensitive_commands(void) {
     // Must not crash
 }
 
+void test_terminal_stop_command(void) {
+    Serial.reset();
+    Serial.feedInput("stop\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("No") != std::string::npos ||
+                     Serial.outputBuffer.find("Nenhuma") != std::string::npos);
+
+    wateringCtrl.begin();
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_TRUE(gState.watering.active);
+
+    Serial.reset();
+    Serial.feedInput("stop\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_FALSE(gState.watering.active);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("stopped") != std::string::npos ||
+                     Serial.outputBuffer.find("parada") != std::string::npos);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
     RUN_TEST(test_terminal_status_command);
+    RUN_TEST(test_terminal_stop_command);
     RUN_TEST(test_terminal_set_time_command);
     RUN_TEST(test_terminal_clear_history_confirmation_flow);
     RUN_TEST(test_terminal_clear_history_cancellation);

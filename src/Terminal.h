@@ -43,6 +43,7 @@ private:
     void _cmdClearHistory(char* args);
     void _cmdReboot(char* args);
     void _cmdI2cScan(char* args);
+    void _cmdStop(char* args);
 
     // Input state machine helpers
     void _drainInput();

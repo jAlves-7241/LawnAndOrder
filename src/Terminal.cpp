@@ -6,6 +6,8 @@
 #include "Scheduler.h"
 #include "Storage.h"
 #include "UI.h"
+#include "WateringController.h"
+#include <esp_task_wdt.h>
 #include "log.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +38,7 @@ const Terminal::CmdEntry Terminal::CMD_TABLE[] = {
     { "clear_history",  &Terminal::_cmdClearHistory,  TXT_TERM_HELP_7,  nullptr           },
     { "reboot",         &Terminal::_cmdReboot,        TXT_TERM_HELP_8,  nullptr           },
     { "i2c_scan",       &Terminal::_cmdI2cScan,       TXT_TERM_HELP_9,  nullptr           },
+    { "stop",           &Terminal::_cmdStop,          TXT_TERM_HELP_10, nullptr           },
 };
 
 const uint8_t Terminal::CMD_COUNT = sizeof(Terminal::CMD_TABLE) / sizeof(Terminal::CMD_TABLE[0]);
@@ -692,6 +695,7 @@ void Terminal::_cmdReboot(char* /*args*/) {
 void Terminal::_cmdI2cScan(char* /*args*/) {
     byte i2cCount = 0;
     for (byte i = 8; i < 120; i++) {
+        esp_task_wdt_reset();
         Wire.beginTransmission(i);
         if (Wire.endTransmission() == 0) {
             Serial.printf(TXT_LOG_I2C_SCAN_FOUND, i);
@@ -705,5 +709,14 @@ void Terminal::_cmdI2cScan(char* /*args*/) {
     } else {
         Serial.printf(TXT_LOG_I2C_SCAN_DONE, i2cCount);
         Serial.println();
+    }
+}
+
+void Terminal::_cmdStop(char* /*args*/) {
+    if (gState.watering.active) {
+        wateringCtrl.stop();
+        Serial.println(TXT_TERM_STOP_OK);
+    } else {
+        Serial.println(TXT_TERM_STOP_IDLE);
     }
 }

@@ -38,6 +38,7 @@ typedef uint8_t byte;
 #define OUTPUT 1
 #define INPUT 0
 #define INPUT_PULLUP 2
+#define OUTPUT_OPEN_DRAIN 3
 
 #define DEC 10
 #define HEX 16

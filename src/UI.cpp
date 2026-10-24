@@ -313,6 +313,14 @@ void UI::dispatchAction(const char* action) {
         return;
     }
 
+    if (!strcmp(action, "stop_now")) {
+        wateringCtrl.stop();                 // no-op if already inactive
+        _screenDone.setup(TXT_WATERING_STOPPED, "");
+        _screenDone.setBackMenu(MenuID::MAIN);
+        changeScreen(&_screenDone);
+        return;
+    }
+
     if (!strcmp(action, "cancel_susp")) {
         gState.suspended = false;
         gState.suspended_until = 0;

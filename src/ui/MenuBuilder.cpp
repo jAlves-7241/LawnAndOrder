@@ -31,6 +31,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 
     switch (mid) {
     case MenuID::MAIN:
+        if (gState.watering.active) add_item(TXT_STOP_WATERING, "stop_now");
         add_item(TXT_MANUAL_WATERING,       "go:manual");
         add_item(TXT_PROG,       "go:prog");
         add_item(TXT_MB_SETTINGS,        "go:def");
