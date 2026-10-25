@@ -78,6 +78,7 @@ void WateringController::begin() {
                 _cycleStart.unix = utcDT.unixtime();
 
                 LOG_I(TAG_WATER, TXT_LOG_RESUME_ZONE, _queue[_queuePos].zone_idx + 1);
+                _zoneIdx = _queue[_queuePos].zone_idx;
                 if (_queuePos > 0) {
                     _isWaiting = true;
                     _waitStartMs = millis();
