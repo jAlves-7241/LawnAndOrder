@@ -686,6 +686,7 @@ void Terminal::_cmdClearHistory(char* /*args*/) {
 }
 
 void Terminal::_cmdReboot(char* /*args*/) {
+    ui.goIdle();
     Serial.println(TXT_TERM_REBOOT);
     Serial.flush();
     delay(100);

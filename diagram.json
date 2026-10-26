@@ -20,7 +20,7 @@
     [ "esp:GND.2", "lcd1:GND", "black", [ "v0", "h48", "v19.2" ] ],
     [ "esp:21", "lcd1:SDA", "green", [ "h28.8", "v-9.8" ] ],
     [ "esp:22", "lcd1:SCL", "yellow", [ "h38.4", "v28.8" ] ],
-    [ "encoder1:GND", "esp:CMD", "black", [ "h19.2", "v68" ] ],
+    [ "encoder1:GND", "esp:GND.1", "black", [ "h19.2", "v68" ] ],
     [ "esp:3V3", "encoder1:VCC", "green", [ "h-19.05", "v86.4" ] ],
     [ "encoder1:DT", "esp:33", "green", [ "h0" ] ],
     [ "esp:32", "encoder1:CLK", "green", [ "h0" ] ],

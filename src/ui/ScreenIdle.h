@@ -7,7 +7,8 @@ class ScreenIdle : public UIScreen {
 public:
     ScreenIdle() : _lastWateringActive(false), _lastProgress(255), _lastMinute(255),
                    _lastSuspended(false), _lastMode(AppMode::MEDIO),
-                   _lastNextH(0xFF), _lastNextM(0xFF) {}
+                   _lastNextH(0xFF), _lastNextM(0xFF),
+                   _lastZoneIdx(0xFF), _lastRtcValid(false) {}
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;
@@ -23,6 +24,8 @@ private:
     AppMode _lastMode;
     uint8_t _lastNextH;
     uint8_t _lastNextM;
+    uint8_t _lastZoneIdx;
+    bool _lastRtcValid;
     
     // Renders the entire screen
     void fullRender(UI& ui);

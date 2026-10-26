@@ -288,5 +288,5 @@ public:
     void reset() { rebooted = false; }
 };
 
-extern EspClass ESP;
+
 inline EspClass ESP;

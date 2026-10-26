@@ -86,17 +86,25 @@ void History::record(const HistoryEntry& entry) {
     _entryToLine(entry, line, sizeof(line));
 
     if (_lineCount >= HISTORY_MAX_ENTRIES) {
+        uint16_t prevCount = _lineCount;
         // Caminho assíncrono: guardar entrada pendente, NVS será salvo no FINISHING
         _rotateAndAppend(line);
-        _pendingCacheSave = true;
-        // Atualizar cache em RAM já (para UI imediata), mas NVS só no FINISHING
-        if (_cacheCount < HISTORY_DISPLAY) {
-            _cache[_cacheCount++] = entry;
-        } else {
-            for (int i = 0; i < HISTORY_DISPLAY - 1; i++) _cache[i] = _cache[i + 1];
-            _cache[HISTORY_DISPLAY - 1] = entry;
+        if (_rotState != RotState::IDLE || _lineCount > prevCount) {
+            // Atualizar cache em RAM já (para UI imediata), mas NVS só no FINISHING
+            if (_cacheCount < HISTORY_DISPLAY) {
+                _cache[_cacheCount++] = entry;
+            } else {
+                for (int i = 0; i < HISTORY_DISPLAY - 1; i++) _cache[i] = _cache[i + 1];
+                _cache[HISTORY_DISPLAY - 1] = entry;
+            }
+            if (_rotState != RotState::IDLE) {
+                _pendingCacheSave = true;
+                LOG_I("HIST", TXT_LOG_HIST_ROT_START);
+            } else {
+                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+                LOG_I("HIST", TXT_LOG_HIST_LOGGED, line);
+            }
         }
-        LOG_I("HIST", TXT_LOG_HIST_ROT_START);
         return;   // <-- NÃO salvar NVS aqui
     }
 
@@ -330,7 +338,10 @@ void History::_rotateAndAppend(const char* newLine) {
     if (!_rotSrc) {
         // Se falhar, tentamos apenas adicionar
         File f = LittleFS.open(HISTORY_FILE, "a");
-        if (f) { f.println(newLine); f.close(); }
+        if (f) {
+            if (f.println(newLine) > 0) _lineCount++;
+            f.close();
+        }
         return;
     }
 
@@ -339,7 +350,10 @@ void History::_rotateAndAppend(const char* newLine) {
         _rotSrc.close();
         // Fallback: append directly if we can't create tmp file
         File f = LittleFS.open(HISTORY_FILE, "a");
-        if (f) { f.println(newLine); f.close(); }
+        if (f) {
+            if (f.println(newLine) > 0) _lineCount++;
+            f.close();
+        }
         return;
     }
 

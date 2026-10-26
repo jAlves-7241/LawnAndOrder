@@ -54,6 +54,7 @@ private:
     void _activateRelay();
     void _deactivateAll();
     void _syncState();
+    void _saveRecoveryState(bool active);
 
     static const uint8_t _relayPins[NUM_ZONES];
 };

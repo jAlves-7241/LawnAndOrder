@@ -33,7 +33,10 @@ void WateringController::begin() {
     // Tentar resgatar ciclo interrompido por blackout
     RecoveryState rs;
     if (storage.loadRecoveryState(rs) && rs.active) {
-        if (rs.queueLen > NUM_ZONES || rs.queuePos >= rs.queueLen) {
+        const bool validTrigger = (rs.trigger == WaterTrigger::AUTO ||
+                                   rs.trigger == WaterTrigger::MANUAL ||
+                                   rs.trigger == WaterTrigger::CUSTOM);
+        if (rs.queueLen > NUM_ZONES || rs.queuePos >= rs.queueLen || !validTrigger) {
             LOG_W(TAG_WATER, TXT_LOG_REC_STATE_INV);
             rs.active = false;
             storage.saveRecoveryState(rs);
@@ -75,6 +78,7 @@ void WateringController::begin() {
                 _cycleStart.hour = startDT.hour();
                 _cycleStart.min = startDT.minute();
                 _cycleStart.sec = startDT.second();
+                _cycleStart.dow = startDT.dayOfTheWeek();
                 _cycleStart.unix = utcDT.unixtime();
 
                 LOG_I(TAG_WATER, TXT_LOG_RESUME_ZONE, _queue[_queuePos].zone_idx + 1);
@@ -127,20 +131,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _isRelayDeadTimeWaiting = false;
     
     // Gravação inicial do recovery state (única vez por ciclo)
-    if (_runTrigger != WaterTrigger::TEST) {
-        RecoveryState rs = {};
-        rs.active = true;
-        rs.start_unix_time = _cycleStart.unix;
-        rs.queuePos = _queuePos;
-        rs.queueLen = _queueLen;
-        rs.trigger = _runTrigger;
-        for (uint8_t i = 0; i < _queueLen; i++) {
-            rs.queue[i].zone_idx = _queue[i].zone_idx;
-            rs.queue[i].duration_ms = _queue[i].duration_ms;
-        }
-        memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
-        storage.saveRecoveryState(rs);
-    }
+    _saveRecoveryState(true);
 
     LOG_I(TAG_WATER, TXT_LOG_START_GEN);
     _startNextZone();
@@ -256,20 +247,7 @@ void WateringController::update() {
             LOG_D(TAG_WATER, TXT_LOG_ZONE_DONE_WAIT, _zoneIdx + 1, (unsigned long)ZONE_WAIT_DELAY_MS / 1000UL);
             _syncState();
             
-            if (_runTrigger != WaterTrigger::TEST) {
-                RecoveryState rs = {};
-                rs.active = true;
-                rs.start_unix_time = _cycleStart.unix;
-                rs.queuePos = _queuePos;
-                rs.queueLen = _queueLen;
-                rs.trigger = _runTrigger;
-                for (uint8_t i = 0; i < _queueLen; i++) {
-                    rs.queue[i].zone_idx = _queue[i].zone_idx;
-                    rs.queue[i].duration_ms = _queue[i].duration_ms;
-                }
-                memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
-                storage.saveRecoveryState(rs);
-            }
+            _saveRecoveryState(true);
         } else {
             _active = false;
             _queueLen = 0;
@@ -305,20 +283,7 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _isRelayDeadTimeWaiting = false;
 
     // Gravação inicial do recovery state (única vez por ciclo)
-    if (_runTrigger != WaterTrigger::TEST) {
-        RecoveryState rs = {};
-        rs.active = true;
-        rs.start_unix_time = _cycleStart.unix;
-        rs.queuePos = _queuePos;
-        rs.queueLen = _queueLen;
-        rs.trigger = _runTrigger;
-        for (uint8_t i = 0; i < _queueLen; i++) {
-            rs.queue[i].zone_idx = _queue[i].zone_idx;
-            rs.queue[i].duration_ms = _queue[i].duration_ms;
-        }
-        memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
-        storage.saveRecoveryState(rs);
-    }
+    _saveRecoveryState(true);
     return true;
 }
 
@@ -362,11 +327,25 @@ void WateringController::_finishCycle() {
     }
 
     // Limpar estado de recuperação na NVS (apenas se não for teste)
-    if (_runTrigger != WaterTrigger::TEST) {
-        RecoveryState rs = {};
-        rs.active = false;
-        storage.saveRecoveryState(rs);
+    _saveRecoveryState(false);
+}
+
+void WateringController::_saveRecoveryState(bool active) {
+    if (_runTrigger == WaterTrigger::TEST) return;
+    RecoveryState rs = {};
+    rs.active = active;
+    if (active) {
+        rs.start_unix_time = _cycleStart.unix;
+        rs.queuePos = _queuePos;
+        rs.queueLen = _queueLen;
+        rs.trigger = _runTrigger;
+        for (uint8_t i = 0; i < _queueLen; i++) {
+            rs.queue[i].zone_idx = _queue[i].zone_idx;
+            rs.queue[i].duration_ms = _queue[i].duration_ms;
+        }
+        memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
     }
+    storage.saveRecoveryState(rs);
 }
 
 void WateringController::_activateRelay() {

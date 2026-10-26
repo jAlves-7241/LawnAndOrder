@@ -285,7 +285,8 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
         uint32_t candidate_day_1970 = start_day_1970 + dayOffset;
 
         if (_dayMatches(sched, candidate_day_1970, writeBack)) {
-            // Scan slots in order
+            bool found = false;
+            uint16_t bestMins = 0xFFFF;
             for (uint8_t i = 0; i < sched.slot_count; i++) {
                 const ScheduleSlot& sl = sched.slots[i];
                 
@@ -294,8 +295,15 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                     if (sl.hour < now.hour) continue;
                     if (sl.hour == now.hour && sl.minute <= now.min) continue;
                 }
-                out_hour = sl.hour;
-                out_min  = sl.minute;
+                uint16_t slotMins = (uint16_t)sl.hour * 60U + sl.minute;
+                if (!found || slotMins < bestMins) {
+                    bestMins = slotMins;
+                    out_hour = sl.hour;
+                    out_min  = sl.minute;
+                    found    = true;
+                }
+            }
+            if (found) {
                 if (out_day_1970) *out_day_1970 = candidate_day_1970;
                 return true;
             }

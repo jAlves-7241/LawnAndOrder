@@ -139,6 +139,8 @@ bool Storage::loadRecoveryState(RecoveryState& rs) {
     size_t readBytes = prefs.getBytes("recv", &rs, sizeof(rs));
     if (readBytes != sizeof(rs)) return false;
     if (rs.version != NVS_VERSION) return false;
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&rs);
+    if (raw[offsetof(RecoveryState, active)] > 1) return false;
     return true;
 }
 

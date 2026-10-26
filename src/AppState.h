@@ -8,7 +8,7 @@
 
 enum class AppMode : uint8_t {
     INTENSO = 0,   // multiple daily slots - defaults set in config.h
-    MEDIO,         // one daily slot - default set in config.h
+    MEDIO,         // two daily slots - defaults set in config.h
     FRACO,         // one daily slot - default set in config.h
     DESATIVADO,    // no automatic watering
     PERSONALIZADO, // user-defined schedule (cycles, interval, times)
@@ -82,7 +82,7 @@ enum class DayPattern : uint8_t {
 };
 
 // Full schedule definition for one AppMode.
-// DESATIVADO and PERSONALIZADO have slot_count == 0 (no automatic watering).
+// DESATIVADO has slot_count == 0 (no automatic watering). Active slots are kept sorted chronologically.
 struct ModeSchedule {
     ScheduleSlot slots[MAX_SLOTS_PER_MODE];
     uint8_t      slot_count;   // 0 = no automatic watering
