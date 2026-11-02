@@ -45,6 +45,16 @@ public:
     // Convert UTC DateTime to Local DateTime using DST logic.
     static DateTime utcToLocal(const DateTime& utcDt);
 
+    // Convert Local DateTime to UTC DateTime using DST logic.
+    // When afterUtc > 0, resolves the October ambiguous repeated hour relative to afterUtc.
+    static DateTime localToUtc(const DateTime& localDt, uint32_t afterUtc = 0);
+
+    // Recompute gState.now local calendar/clock fields from gState.now.unix (e.g. after auto_dst changes).
+    void refreshLocalTime();
+
+    // Attempt immediate hardware detection when not yet found (e.g. during Setup Wizard).
+    bool probe();
+
     // True if the chip was found and the oscillator is running.
     bool isValid() const { return _found && !_lostPower; }
 
@@ -58,6 +68,11 @@ private:
     bool     _found;
     bool     _lostPower;
     uint32_t _lastReadMs;
+    uint32_t _lastRtcRetryMs;
+    uint8_t  _consecErrors;
+    uint32_t _anchorMs;
+    uint32_t _anchorUnix;
+    uint32_t _lastKnownUnix;
     ErrorCallback _errorCb;
 
     void _incrementSoftwareClock();

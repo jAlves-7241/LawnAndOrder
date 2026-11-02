@@ -10,13 +10,15 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _lastMin(0xFF)
+    : _lastMin(0xFF), _lastSec(0xFF)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
 }
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::begin() {
+    _lastSec = 0xFF;
+    _lastMin = 0xFF;
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
     computeNext(gState.mode, gState.now,
@@ -31,9 +33,8 @@ void Scheduler::update() {
     if (!gState.rtc_valid)  return;
 
     // Apenas processar se o segundo do relógio tiver mudado (redução de carga sobre o CPU)
-    static uint8_t lastSec = 0xFF;
-    if (gState.now.sec == lastSec) return;
-    lastSec = gState.now.sec;
+    if (gState.now.sec == _lastSec) return;
+    _lastSec = gState.now.sec;
 
     const SystemTime& t = gState.now;
 
@@ -103,6 +104,7 @@ void Scheduler::update() {
 void Scheduler::onModeChanged() {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+    _lastSec = 0xFF;
     if (gState.rtc_valid) {
         _lastMin = gState.now.min; // Align with current minute to prevent mid-minute double trigger
     } else {
@@ -131,23 +133,10 @@ void Scheduler::onModeChanged() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onWateringDone() {
     if (!gState.rtc_valid) return;
-    // Construct local DateTime from gState.now (which is local time)
-    DateTime localNow(gState.now.year, gState.now.month, gState.now.day,
-                      gState.now.hour, gState.now.min, gState.now.sec);
-    DateTime localNext = localNow + TimeSpan(0, 0, 1, 0); // add 1 minute
-
-    SystemTime advanced = {};
-    advanced.unix   = gState.now.unix + 60;
-    advanced.year   = localNext.year();
-    advanced.month  = localNext.month();
-    advanced.day    = localNext.day();
-    advanced.hour   = localNext.hour();
-    advanced.min    = localNext.minute();
-    advanced.sec    = localNext.second();
-    advanced.dow    = localNext.dayOfTheWeek();
-
+    // computeNext() already skips slots at or before now.hour:now.min (<=),
+    // so pass gState.now directly to avoid skipping an upcoming slot on the next minute.
     uint32_t old_ref = gState.custom_ref_day;
-    computeNext(gState.mode, advanced,
+    computeNext(gState.mode, gState.now,
                 gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
     LOG_I("SCHED", TXT_LOG_SCHED_CYCLE_DONE,
@@ -161,41 +150,20 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
     if (!computeNext(gState.mode, now, nextH, nextM, &nextDay1970, false)) {
         return 0xFFFFFFFF; // No next cycle
     }
-    
+
     DateTime dt(nextDay1970 * 86400UL);
     DateTime nextLocal(dt.year(), dt.month(), dt.day(), nextH, nextM, 0);
-    uint32_t nextLocalUnix = nextLocal.unixtime();
-    uint32_t nextUTCUnix = nextLocalUnix - (TIMEZONE_OFFSET * 3600);
-    
-    if (gState.auto_dst) {
-        // Fast heuristic for Local -> UTC DST check
-        // LIMITATION: During the ambiguous hour of October DST end (01:00-02:00 local),
-        // we default to assuming DST is still active without sub-hour history.
-        bool isDstLocal = false;
-        uint16_t year = nextLocal.year();
-        uint8_t month = nextLocal.month();
-        uint8_t day = nextLocal.day();
-        uint8_t hour = nextLocal.hour();
-        
-        if (month > 3 && month < 10) isDstLocal = true;
-        else if (month == 3 || month == 10) {
-            uint8_t ls = 31 - DateTime(year, month, 31, 0, 0, 0).dayOfTheWeek();
-            if (month == 3) {
-                if (day > ls || (day == ls && hour >= (1 + TIMEZONE_OFFSET))) isDstLocal = true;
-            } else {
-                if (day < ls || (day == ls && hour < (2 + TIMEZONE_OFFSET))) isDstLocal = true;
-            }
-        }
-        if (isDstLocal) {
-            nextUTCUnix = nextLocalUnix - (TIMEZONE_OFFSET * 3600) - 3600;
-        }
-    }
-    return nextUTCUnix;
+    return RTClock::localToUtc(nextLocal, now.unix).unixtime();
 }
 
 // ─────────────────────────────────────────────────────────
 bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_time, uint32_t remaining_duration_sec) {
     // 1. Hard Limits
+    const uint32_t max_cycle_sec = (uint32_t)NUM_ZONES * 20UL * 60UL;
+    if (remaining_duration_sec == 0 || remaining_duration_sec > max_cycle_sec) {
+        LOG_W("SCHED", TXT_LOG_SCHED_REC_HLIMIT);
+        return true;
+    }
     uint32_t current_unix = current_time.unix;
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return true;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
@@ -229,8 +197,8 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     
     // 3. Safety Gap
     if (next_cycle_unix != 0xFFFFFFFF) {
-        uint32_t estimated_end = current_unix + remaining_duration_sec;
-        if ((uint64_t)estimated_end + (uint64_t)SAFETY_GAP_SEC > (uint64_t)next_cycle_unix) {
+        uint64_t estimated_end = (uint64_t)current_unix + (uint64_t)remaining_duration_sec;
+        if (estimated_end + (uint64_t)SAFETY_GAP_SEC > (uint64_t)next_cycle_unix) {
             LOG_W("SCHED", TXT_LOG_SCHED_REC_GAP);
             return true;
         }

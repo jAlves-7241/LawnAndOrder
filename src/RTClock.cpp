@@ -13,14 +13,23 @@ static const char* DOW_NAMES[] = {
 
 // ─────────────────────────────────────────────────────────
 RTClock::RTClock()
-    : _found(false), _lostPower(false), _lastReadMs(0), _errorCb(nullptr)
+    : _found(false), _lostPower(false), _lastReadMs(0),
+      _lastRtcRetryMs(0), _consecErrors(0),
+      _anchorMs(0), _anchorUnix(0), _lastKnownUnix(0),
+      _errorCb(nullptr)
 {}
 
 bool RTClock::begin() {
+    const bool wasValid = gState.rtc_valid;
+    const SystemTime prevTime = gState.now;
+    _consecErrors = 0;
+
     if (!_rtc.begin()) {
         LOG_E("RTC", TXT_LOG_RTC_NOT_FOUND);
         _found = false;
-        gState.rtc_valid = false;
+        if (!wasValid) {
+            gState.rtc_valid = false;
+        }
         return false;
     }
 
@@ -35,11 +44,22 @@ bool RTClock::begin() {
     // DS3231: lostPower() is true when the oscillator stopped
     // (battery dead / first power-on).
     _lostPower = _rtc.lostPower();
-    gState.rtc_valid = !_lostPower;
 
     if (_lostPower) {
-        LOG_W("RTC", TXT_LOG_RTC_BAT_LOW);
-        _rtc.adjust(DateTime(2026, 1, 1, 0, 0, 0));
+        if (wasValid && prevTime.year >= 2020 && prevTime.year <= 2099) {
+            LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
+            DateTime restoredUtc = localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
+                                                       prevTime.hour, prevTime.min, prevTime.sec));
+            _rtc.adjust(restoredUtc);
+            _lostPower = false;
+            gState.rtc_valid = true;
+        } else {
+            LOG_W("RTC", TXT_LOG_RTC_BAT_LOW);
+            _rtc.adjust(DateTime(2026, 1, 1, 0, 0, 0));
+            gState.rtc_valid = false;
+        }
+    } else {
+        gState.rtc_valid = true;
     }
 #endif
 
@@ -50,24 +70,40 @@ bool RTClock::begin() {
         LOG_E("RTC", TXT_LOG_RTC_BOOT_CORRUPT,
               utcDt.year(), utcDt.month(), utcDt.day());
         _found = false;
-        gState.rtc_valid = false;
+        if (wasValid) {
+            gState.now = prevTime;
+            gState.rtc_valid = true;
+        } else {
+            gState.rtc_valid = false;
+        }
         return false;
     }
 
-    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
-    if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localUnix += 3600;
-    }
-    DateTime localDt(localUnix);
+    DateTime localDt = utcToLocal(utcDt);
 
     _copyToState(localDt);
     gState.now.unix = utcDt.unixtime();
+    _lastReadMs = millis();
+    _anchorMs = _lastReadMs;
+    _anchorUnix = gState.now.unix;
+    _lastKnownUnix = gState.now.unix;
 
     LOG_I("RTC", TXT_LOG_RTC_OK,
           gState.now.year,  gState.now.month,  gState.now.day,
           gState.now.hour,  gState.now.min,    gState.now.sec,
           DOW_NAMES[gState.now.dow % 7]);
     return true;
+}
+
+bool RTClock::probe() {
+    if (_found) return true;
+    return begin();
+}
+
+void RTClock::refreshLocalTime() {
+    if (gState.now.unix < 1577836800UL) return;
+    DateTime localDt = utcToLocal(DateTime(gState.now.unix));
+    _copyToState(localDt);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -81,9 +117,8 @@ void RTClock::update() {
 
     if (!_found) {
         // Tentar redetetar o RTC a quente (hotplug) a cada ~30 segundos
-        static uint32_t lastRtcRetryMs = 0;
-        if (nowMs - lastRtcRetryMs >= 10000UL) {
-            lastRtcRetryMs = nowMs;
+        if (nowMs - _lastRtcRetryMs >= 10000UL) {
+            _lastRtcRetryMs = nowMs;
             LOG_I("RTC", TXT_LOG_RTC_HOT_DETECT);
             if (_rtc.begin()) {
                 _found = true;
@@ -99,11 +134,7 @@ void RTClock::update() {
                 
                 DateTime utcDt = _rtc.now();
                 if (utcDt.year() >= 2020 && utcDt.year() <= 2099 && !_lostPower) {
-                    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
-                    if (gState.auto_dst && _isEU_DST(utcDt)) {
-                        localUnix += 3600;
-                    }
-                    DateTime localDt(localUnix);
+                    DateTime localDt = utcToLocal(utcDt);
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
                     LOG_I("RTC", TXT_LOG_RTC_HOT_SYNC,
@@ -156,13 +187,12 @@ void RTClock::update() {
 
 #ifndef WOKWI_SIM
     // Detetar barramento I2C preso ou corrompido (ano fora dos limites de 2020-2099)
-    static uint8_t consecErrors = 0;
     if (utcDt.year() < 2020 || utcDt.year() > 2099) {
-        consecErrors++;
-        if (consecErrors >= 3) {
+        _consecErrors++;
+        if (_consecErrors >= 3) {
             LOG_E("RTC", TXT_LOG_RTC_I2C_CORRUPT,
                   utcDt.year(), utcDt.month(), utcDt.day());
-            consecErrors = 0;
+            _consecErrors = 0;
             _found = false; // Força a re-deteção a quente (hotplug) no próximo ciclo
             if (_errorCb) {
                 _errorCb();
@@ -174,23 +204,19 @@ void RTClock::update() {
         _incrementSoftwareClock(); // Impede que o relógio congele no display durante falhas I2C
         return; // Aborta o update para proteger o gState contra dados corrompidos
     } else {
-        consecErrors = 0;
+        _consecErrors = 0;
     }
 #endif
 
-    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
-
-    if (gState.auto_dst && _isEU_DST(utcDt)) {
-        // Apply +1 hour offset
-        localUnix += 3600;
-    }
-
-    DateTime localDt(localUnix);
+    DateTime localDt = utcToLocal(utcDt);
     _copyToState(localDt);
 
     // Override the Unix timestamp with the actual UTC timestamp.
     // This makes time deltas (e.g., suspension) immune to DST transitions.
     gState.now.unix = utcDt.unixtime();
+    _anchorMs = nowMs;
+    _anchorUnix = gState.now.unix;
+    _lastKnownUnix = gState.now.unix;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -206,27 +232,8 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // A hora recebida do utilizador é HORA LOCAL.
     DateTime localDt(year, month, day, hour, minute, second);
-    uint32_t utcUnix = localDt.unixtime() - TIMEZONE_OFFSET * 3600;
-
-    // Converter para UTC se o DST estiver ativo e aplicável a esta hora
-    if (gState.auto_dst) {
-        bool isDstLocal = false;
-        if (month > 3 && month < 10) isDstLocal = true;
-        else if (month == 3 || month == 10) {
-            uint8_t ls = 31 - DateTime(year, month, 31, 0, 0, 0).dayOfTheWeek();
-            int8_t transHour = 1 + TIMEZONE_OFFSET; // Hora local standard em que ocorre a transição (01:00 UTC)
-            if (month == 3) {
-                if (day > ls || (day == ls && hour >= transHour)) isDstLocal = true;
-            } else {
-                if (day < ls || (day == ls && hour < transHour + 1)) isDstLocal = true;
-            }
-        }
-        if (isDstLocal) {
-            utcUnix -= 3600;
-        }
-    }
-
-    DateTime utcDt(utcUnix);
+    DateTime utcDt = localToUtc(localDt);
+    DateTime effectiveLocal = utcToLocal(utcDt);
 
     if (_found) {
         _rtc.adjust(utcDt);
@@ -243,8 +250,11 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     gState.rtc_valid = true;
 
     // Atualizar a RAM imediatamente (importante para fallback software)
-    _copyToState(localDt);
+    _copyToState(effectiveLocal);
     gState.now.unix = utcDt.unixtime();
+    _anchorMs = millis();
+    _anchorUnix = gState.now.unix;
+    _lastKnownUnix = gState.now.unix;
 
     // Forçar releitura para gState
     _lastReadMs = millis() - 30000UL;
@@ -287,44 +297,37 @@ void RTClock::setTime(uint8_t hour, uint8_t minute) {
 
 void RTClock::_incrementSoftwareClock() {
     // Ancorar ao millis() para não perder segundos durante stalls do loop
-    static uint32_t anchorMs   = millis();
-    static uint32_t anchorUnix = gState.now.unix;
-    static uint32_t lastKnownUnix = gState.now.unix;
-    
     // Recalibrar âncora se o unix foi alterado externamente (ex: set())
-    if (gState.now.unix != lastKnownUnix) {
-        anchorMs   = millis();
-        anchorUnix = gState.now.unix;
-        lastKnownUnix = gState.now.unix;
+    if (_anchorUnix == 0 || gState.now.unix != _lastKnownUnix) {
+        _anchorMs      = millis();
+        _anchorUnix    = gState.now.unix;
+        _lastKnownUnix = gState.now.unix;
     }
 
     uint32_t currentUnix = gState.now.unix;
     if (currentUnix < 1577836800UL) { // Menor que 2020-01-01
-        currentUnix = 1767225600UL;   // 2026-01-01 00:00:00 UTC
-        anchorMs   = millis();
-        anchorUnix = currentUnix;
+        currentUnix    = 1767225600UL; // 2026-01-01 00:00:00 UTC
+        _anchorMs      = millis();
+        _anchorUnix    = currentUnix;
+        _lastKnownUnix = currentUnix;
     }
     
     // Avançar a âncora a cada segundo para evitar o overflow de 49.7 dias do millis()
-    uint32_t elapsedMs = millis() - anchorMs;
+    uint32_t elapsedMs = millis() - _anchorMs;
     if (elapsedMs >= 1000) {
         uint32_t elapsedSec = elapsedMs / 1000;
-        anchorUnix += elapsedSec;
-        anchorMs += elapsedSec * 1000;
+        _anchorUnix += elapsedSec;
+        _anchorMs   += elapsedSec * 1000;
     }
     
-    currentUnix = anchorUnix;
+    currentUnix = _anchorUnix;
     if (currentUnix == gState.now.unix) return; // Sem avanço
 
     DateTime utcDt(currentUnix);
-    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
-    if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localUnix += 3600;
-    }
-    DateTime localDt(localUnix);
+    DateTime localDt = utcToLocal(utcDt);
     _copyToState(localDt);
     gState.now.unix = currentUnix;
-    lastKnownUnix = currentUnix;
+    _lastKnownUnix  = currentUnix;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -358,9 +361,36 @@ bool RTClock::_isEU_DST(const DateTime& dt) {
 }
 
 DateTime RTClock::utcToLocal(const DateTime& utcDt) {
-    uint32_t localUnix = utcDt.unixtime() + TIMEZONE_OFFSET * 3600;
+    uint32_t localUnix = (uint32_t)((int64_t)utcDt.unixtime() + (int64_t)TIMEZONE_OFFSET * 3600LL);
     if (gState.auto_dst && _isEU_DST(utcDt)) {
-        localUnix += 3600;
+        localUnix += 3600UL;
     }
     return DateTime(localUnix);
+}
+
+DateTime RTClock::localToUtc(const DateTime& localDt, uint32_t afterUtc) {
+    uint32_t stdUtcUnix = (uint32_t)((int64_t)localDt.unixtime() - (int64_t)TIMEZONE_OFFSET * 3600LL);
+    if (!gState.auto_dst) {
+        return DateTime(stdUtcUnix);
+    }
+
+    uint32_t dstUtcUnix = stdUtcUnix - 3600UL;
+    bool dstAtDst = _isEU_DST(DateTime(dstUtcUnix));
+    bool dstAtStd = _isEU_DST(DateTime(stdUtcUnix));
+
+    if (dstAtDst && dstAtStd) {
+        return DateTime(dstUtcUnix);
+    }
+    if (!dstAtDst && !dstAtStd) {
+        return DateTime(stdUtcUnix);
+    }
+    if (dstAtDst && !dstAtStd) {
+        // Ambiguous October fall-back hour (occurs twice: first at dstUtcUnix, then at stdUtcUnix).
+        if (afterUtc > 0 && dstUtcUnix <= afterUtc) {
+            return DateTime(stdUtcUnix);
+        }
+        return DateTime(dstUtcUnix);
+    }
+    // Spring-forward gap (!dstAtDst && dstAtStd): map into valid post-transition UTC.
+    return DateTime(stdUtcUnix);
 }

@@ -66,6 +66,7 @@ private:
 
     // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;
+    uint8_t _lastSec;
 
     // UTC unix timestamp of the last successful auto-trigger for each slot.
     // Prevents re-triggering the same slot when local time repeats (DST fall-back).
