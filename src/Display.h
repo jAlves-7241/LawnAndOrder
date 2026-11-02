@@ -49,6 +49,8 @@ private:
 
     // Shadow buffer - only writes row if content actually changed
     char _shadow[LCD_ROWS][LCD_COLS + 1];
+    bool _dirty[LCD_ROWS];
+    uint32_t _lastFullRefresh;
 
     void _writeRow(uint8_t row, const char* text);
     void _invalidateShadow();  // force full redraw on next setRows()

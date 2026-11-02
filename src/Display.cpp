@@ -4,9 +4,16 @@
 #include "log.h"
 #include "i18n.h"
 
-Display::Display() : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS), _backlightOn(false), _displayOn(false) {
+Display::Display()
+    : _lcd(LCD_ADDR, LCD_COLS, LCD_ROWS),
+      _backlightOn(false),
+      _displayOn(false),
+      _lastFullRefresh(0) {
     memset(_shadow, ' ', sizeof(_shadow));
-    for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
+    for (int r = 0; r < LCD_ROWS; r++) {
+        _shadow[r][LCD_COLS] = '\0';
+        _dirty[r] = true;
+    }
 }
 
 void Display::begin() {
@@ -17,7 +24,10 @@ void Display::begin() {
     _displayOn = true;
     _lcd.clear();
     delay(10); // Aguardar que o comando de limpeza termine no hardware real
+    memset(_shadow, ' ', sizeof(_shadow));
+    for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
     _invalidateShadow();
+    _lastFullRefresh = millis();
     LOG_I("LCD", TXT_LOG_LCD_READY);
 }
 
@@ -69,9 +79,9 @@ void Display::displayOff() {
 }
 
 void Display::_invalidateShadow() {
-    // Fill shadow with an impossible value so every row gets rewritten
-    memset(_shadow, 0xFF, sizeof(_shadow));
-    for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
+    // Mark all rows dirty while keeping valid ASCII in _shadow so nullptr rows
+    // and periodic full refreshes never emit invalid characters (e.g. 0xFF).
+    for (int r = 0; r < LCD_ROWS; r++) _dirty[r] = true;
 }
 
 void Display::setRows(const char* r0, const char* r1,
@@ -79,31 +89,46 @@ void Display::setRows(const char* r0, const char* r1,
     if (!_displayOn) return;
     const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
     for (int r = 0; r < LCD_ROWS; r++) {
-        if (rows[r]) _writeRow(r, rows[r]);
+        if (rows[r]) {
+            _writeRow(r, rows[r]);
+        } else if (_dirty[r]) {
+            _lcd.setCursor(0, r);
+            _lcd.print(_shadow[r]);
+            _dirty[r] = false;
+        }
     }
 
     // Forçar atualização total a cada 60 segundos para autocorrigir ruído no bus I2C (glitches físicos)
-    static uint32_t lastFullRefresh = 0;
     uint32_t now = millis();
-    if (now - lastFullRefresh >= 60000UL) {
+    if (now - _lastFullRefresh >= 60000UL) {
         for (int r = 0; r < LCD_ROWS; r++) {
             _lcd.setCursor(0, r);
             _lcd.print(_shadow[r]);
+            _dirty[r] = false;
         }
-        lastFullRefresh = now;
+        _lastFullRefresh = now;
     }
 }
 
 // Only send to LCD if the row content differs from shadow
 void Display::_writeRow(uint8_t row, const char* text) {
     if (row >= LCD_ROWS) return;  // bounds guard
+    if (!text) text = "";
     // Build padded version
     char padded[LCD_COLS + 1];
-    int len = strlen(text);
-    if (len > LCD_COLS) len = LCD_COLS;
+    size_t rawLen = strlen(text);
+    int len = (rawLen > LCD_COLS) ? LCD_COLS : (int)rawLen;
     memcpy(padded, text, len);
     memset(padded + len, ' ', LCD_COLS - len);
     padded[LCD_COLS] = '\0';
+
+    if (_dirty[row]) {
+        memcpy(_shadow[row], padded, LCD_COLS + 1);
+        _dirty[row] = false;
+        _lcd.setCursor(0, row);
+        _lcd.print(_shadow[row]);
+        return;
+    }
 
     if (memcmp(_shadow[row], padded, LCD_COLS) == 0) return;  // no change
 
@@ -134,6 +159,7 @@ void Display::_writeRow(uint8_t row, const char* text) {
 // Left-aligned, space-padded to LCD_COLS
 char* Display::_fx(char* buf, size_t n, const char* s) {
     if (n == 0) return buf;
+    if (!s) s = "";
     int len = strlen(s);
     if (len > LCD_COLS) len = LCD_COLS;
     if (len > (int)n - 1) len = n - 1;
@@ -148,6 +174,7 @@ char* Display::_fx(char* buf, size_t n, const char* s) {
 // Centred in LCD_COLS
 char* Display::_cx(char* buf, size_t n, const char* s) {
     if (n == 0) return buf;
+    if (!s) s = "";
     int maxCols = min((int)LCD_COLS, (int)n - 1);
     if (maxCols <= 0) {
         buf[0] = '\0';
@@ -168,6 +195,7 @@ char* Display::_cx(char* buf, size_t n, const char* s) {
 // "~~ TITLE ~~" - fills full LCD_COLS with tildes around centred text
 char* Display::_hdr(char* buf, size_t n, const char* s) {
     if (n == 0) return buf;
+    if (!s) s = "";
     int maxCols = min((int)LCD_COLS, (int)n - 1);
     if (maxCols <= 0) {
         buf[0] = '\0';

@@ -7,8 +7,9 @@ static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 // ─────────────────────────────────────────────────────────
 Encoder::Encoder(uint8_t pin_clk, uint8_t pin_dt, uint8_t pin_sw)
-    : _clk(pin_clk), _dt(pin_dt), _sw(pin_sw), _delta(0), 
-      _btn_prev(HIGH), _last_reading(HIGH), _btn_last_ms(0)
+    : _clk(pin_clk), _dt(pin_dt), _sw(pin_sw), _delta(0),
+      _btn_prev(false), _last_reading(false), _btn_last_ms(0),
+      _last_isr_us(0), _has_last_isr(false)
 {
     _inst = this;
 }
@@ -20,21 +21,29 @@ void Encoder::begin() {
 
     _btn_prev = (digitalRead(_sw) == LOW);
     _last_reading = _btn_prev;
+    _btn_last_ms = millis();
+
+    portENTER_CRITICAL(&mux);
+    _delta = 0;
+    _last_isr_us = 0;
+    _has_last_isr = false;
+    portEXIT_CRITICAL(&mux);
 
     attachInterrupt(digitalPinToInterrupt(_clk), _isr, FALLING);
 }
 
 void IRAM_ATTR Encoder::_isr() {
     if (!_inst) return;
-    static volatile uint64_t last_isr_us = 0;
-    
+
     portENTER_CRITICAL_ISR(&mux);
     uint64_t now_us = esp_timer_get_time();
-    if (now_us - last_isr_us < 2000ULL) {
+    if (_inst->_has_last_isr && now_us >= _inst->_last_isr_us &&
+        (now_us - _inst->_last_isr_us) < 2000ULL) {
         portEXIT_CRITICAL_ISR(&mux);
         return;
     }
-    last_isr_us = now_us;
+    _inst->_last_isr_us = now_us;
+    _inst->_has_last_isr = true;
 
     int16_t d = (gpio_get_level((gpio_num_t)_inst->_dt) == 0) ? 1 : -1;
     if (d > 0) {

@@ -25,6 +25,8 @@ private:
     bool     _btn_prev;
     bool     _last_reading;
     uint32_t _btn_last_ms;
+    volatile uint64_t _last_isr_us;
+    volatile bool     _has_last_isr;
 
     // Static ISR trampoline - only one Encoder instance is supported.
     static void   IRAM_ATTR _isr();
