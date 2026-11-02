@@ -77,6 +77,12 @@ bool Storage::load() {
 bool Storage::save() {
     if (!_ready) return false;
 
+    for (int i = 0; i < NUM_ZONES; i++) {
+        if (gState.zones[i].duration_min == 0) {
+            gState.zones[i].enabled = false;
+        }
+    }
+
     AppConfigBlob blob = {};
     _stateToBlob(blob);
 
@@ -229,7 +235,7 @@ void Storage::_stateToBlob(AppConfigBlob& blob) {
     blob.setup_done           = gState.setup_done;
 
     for (int i = 0; i < NUM_ZONES; i++) {
-        blob.zones[i].enabled      = gState.zones[i].enabled;
+        blob.zones[i].enabled      = gState.zones[i].enabled && (gState.zones[i].duration_min > 0);
         blob.zones[i].duration_min = gState.zones[i].duration_min;
     }
 
@@ -270,6 +276,9 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         gState.zones[i].enabled = !!blob.zones[i].enabled;
         gState.zones[i].duration_min =
             (blob.zones[i].duration_min <= 20) ? blob.zones[i].duration_min : 8;
+        if (gState.zones[i].duration_min == 0) {
+            gState.zones[i].enabled = false;
+        }
     }
 
     ModeSchedule& cs = MODE_SCHEDULES[customMode];
@@ -311,18 +320,45 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         if (enabledZones > 1) total_dur += enabledZones - 1;
 
         if (total_dur > 0) {
-            for (int i = 0; i < cs.slot_count; i++) {
+            bool hasOverlap = false;
+            for (int i = 0; i < cs.slot_count && !hasOverlap; i++) {
                 for (int j = i + 1; j < cs.slot_count; j++) {
                     uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
                     uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
                     int16_t diff = (int16_t)s1 - (int16_t)s2;
                     if (diff < 0) diff = -diff;
                     if (diff > 720) diff = 1440 - diff;
-                    if (diff < total_dur) {
-                        LOG_W("NVS", TXT_LOG_NVS_OVERLAP);
-                        gState = previousState;
-                        MODE_SCHEDULES[customMode] = previousCustomSchedule;
-                        return false;
+                    if ((uint32_t)diff < total_dur) {
+                        hasOverlap = true;
+                        break;
+                    }
+                }
+            }
+            if (hasOverlap) {
+                if (gState.mode == AppMode::PERSONALIZADO) {
+                    LOG_W("NVS", TXT_LOG_NVS_OVERLAP);
+                    gState = previousState;
+                    MODE_SCHEDULES[customMode] = previousCustomSchedule;
+                    return false;
+                }
+                // Dormant custom schedule overlaps current zone durations: respace evenly
+                // anchored at slots[0] and keep sorted so user settings are preserved.
+                uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
+                uint16_t stepMins = 1440 / cs.slot_count;
+                for (int i = 1; i < cs.slot_count; i++) {
+                    uint16_t nextMins = (baseMins + i * stepMins) % 1440;
+                    cs.slots[i].hour   = (uint8_t)(nextMins / 60);
+                    cs.slots[i].minute = (uint8_t)(nextMins % 60);
+                }
+                for (int i = 0; i < cs.slot_count - 1; i++) {
+                    for (int j = i + 1; j < cs.slot_count; j++) {
+                        uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                        uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                        if (mins_j < mins_i) {
+                            auto temp = cs.slots[i];
+                            cs.slots[i] = cs.slots[j];
+                            cs.slots[j] = temp;
+                        }
                     }
                 }
             }

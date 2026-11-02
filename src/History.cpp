@@ -13,8 +13,28 @@ History history;
 // Flag global para suspensão temporária de logs durante exportação Serial
 bool _log_suspended = false;
 
+static bool _isValidCachedEntry(const HistoryEntry& e) {
+    if (e.year < 2020 || e.year > 2099) return false;
+    if (e.month < 1 || e.month > 12 || e.day < 1 || e.day > 31) return false;
+    if (e.hour > 23 || e.min > 59) return false;
+    if (e.trigger != WaterTrigger::AUTO &&
+        e.trigger != WaterTrigger::MANUAL &&
+        e.trigger != WaterTrigger::CUSTOM) return false;
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────
 bool History::begin(bool formatOnFail) {
+    if (_rotSrc) _rotSrc.close();
+    if (_rotDst) _rotDst.close();
+    if (_exportFile) _exportFile.close();
+    _rotState = RotState::IDLE;
+    _exportState = ExportState::IDLE;
+    _pendingCacheSave = false;
+    _rotWriteErr = false;
+    _rotLineOverflow = false;
+    _defHead = 0;
+    _defTail = 0;
     _log_suspended = false;
     _ready = LittleFS.begin(false);
     if (!_ready) {
@@ -39,17 +59,33 @@ bool History::begin(bool formatOnFail) {
         } else if (_lineCount == 0) {
             fsConsistent = true;
         }
+        bool cacheValid = false;
+        uint8_t validCount = 0;
+        HistoryEntry tempCache[HISTORY_DISPLAY] = {};
         if (nvsOk && fsConsistent) {
-            // Cache e total recuperados instantaneamente da NVS!
-            // Compactar cache para eliminar possíveis lacunas/gaps resultantes de corrupção
-            uint8_t validCount = 0;
-            HistoryEntry tempCache[HISTORY_DISPLAY] = {};
+            cacheValid = true;
             for (int i = 0; i < HISTORY_DISPLAY; i++) {
-                if (_cache[i].year > 0) {
+                if (_cache[i].year == 0) {
+                    if (_cache[i].month != 0 || _cache[i].day != 0) {
+                        cacheValid = false;
+                        break;
+                    }
+                } else if (_isValidCachedEntry(_cache[i])) {
                     tempCache[validCount++] = _cache[i];
+                } else {
+                    cacheValid = false;
+                    break;
                 }
             }
-            memcpy(_cache, tempCache, sizeof(_cache));
+            uint8_t maxExpected = (_lineCount < HISTORY_DISPLAY) ? (uint8_t)_lineCount : HISTORY_DISPLAY;
+            if ((_lineCount == 0 && validCount != 0) ||
+                (_lineCount > 0 && (validCount == 0 || validCount > maxExpected))) {
+                cacheValid = false;
+            }
+        }
+        if (cacheValid) {
+            // Cache e total recuperados instantaneamente da NVS!
+            for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = tempCache[i];
             _cacheCount = validCount;
             LOG_I("HIST", TXT_LOG_HIST_NVS_LOAD, _lineCount);
         } else {
@@ -129,7 +165,7 @@ void History::record(const HistoryEntry& entry) {
 
 // ─────────────────────────────────────────────────────────
 uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
-    if (!_ready || count == 0 || _cacheCount == 0) return 0;
+    if (!_ready || !out || count == 0 || _cacheCount == 0) return 0;
     
     // Apenas copiamos da RAM (zero acessos ao disco!)
     uint8_t n = (_cacheCount < count) ? _cacheCount : count;
@@ -162,7 +198,7 @@ void History::clear() {
     _pendingCacheSave = false;
     _defHead = 0;
     _defTail = 0;
-    memset(_cache, 0, sizeof(_cache));
+    for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = HistoryEntry{};
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
     LOG_I("HIST", TXT_LOG_HIST_WIPED);
 }
@@ -187,6 +223,7 @@ void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
 }
 
 bool History::_lineToEntry(const char* line, HistoryEntry& out) {
+    if (!line) return false;
     int yr, mo, dy, hh, mm;
     char tc = 0;
 
@@ -196,7 +233,7 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
 
     // Rejeitar valores cronológicos impossíveis
     if (yr < 2020 || yr > 2099 || mo < 1 || mo > 12 ||
-        dy < 1 || dy > 31 || hh > 23 || mm > 59) return false;
+        dy < 1 || dy > 31 || hh < 0 || hh > 23 || mm < 0 || mm > 59) return false;
 
     out.year  = (uint16_t)yr;
     out.month = (uint8_t)mo;
@@ -216,7 +253,11 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     while (*p && commas < 2) { if (*p++ == ',') commas++; }
     for (int i = 0; i < NUM_ZONES; i++) {
         if (*p) {
-            out.zone_dur[i] = (uint8_t)atoi(p);
+            char* endp = nullptr;
+            long val = strtol(p, &endp, 10);
+            if (endp == p || val < 0) val = 0;
+            if (val > 255) val = 255;
+            out.zone_dur[i] = (uint8_t)val;
             while (*p && *p != ',') p++;
             if (*p == ',') p++;
         } else {
@@ -244,17 +285,25 @@ uint16_t History::_countLines() const {
     if (!_ready) return 0;
     File f = LittleFS.open(HISTORY_FILE, "r");
     if (!f) return 0;
-    uint16_t n = 0;
+    uint32_t n = 0;
+    bool hasNonEmptyTail = false;
     uint8_t buf[256];
     while (f.available()) {
         esp_task_wdt_reset();
         int len = f.read(buf, sizeof(buf));
+        if (len <= 0) break;
         for (int i = 0; i < len; i++) {
-            if (buf[i] == '\n') n++;
+            if (buf[i] == '\n') {
+                if (n < 0xFFFFUL) n++;
+                hasNonEmptyTail = false;
+            } else if (buf[i] != '\r' && buf[i] != ' ') {
+                hasNonEmptyTail = true;
+            }
         }
     }
+    if (hasNonEmptyTail && n < 0xFFFFUL) n++;
     f.close();
-    return n;
+    return (uint16_t)n;
 }
 
 void History::_populateCache() {
@@ -361,6 +410,8 @@ void History::_rotateAndAppend(const char* newLine) {
     _rotSkipped = 0;
     _rotCopied = 0;
     _rotLinePos = 0;
+    _rotWriteErr = false;
+    _rotLineOverflow = false;
     _rotState = RotState::COPYING;
 }
 
@@ -375,6 +426,12 @@ void History::update() {
             for (int i = 0; i < bytesRead; i++) {
                 char c = chunk[i];
                 if (c == '\n') {
+                    if (_rotLineOverflow) {
+                        _rotLinePos = 0;
+                        _rotLineOverflow = false;
+                        LOG_W("HIST", TXT_LOG_HIST_ROT_CORRUPT);
+                        continue;
+                    }
                     char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
                     
                     if (strlen(p) > 0) {
@@ -383,7 +440,11 @@ void History::update() {
                             if (_rotSkipped < _rotDiscard) {
                                 _rotSkipped++;
                             } else {
-                                _rotDst.println(p);
+                                if (_rotDst.println(p) == 0) {
+                                    _rotWriteErr = true;
+                                    _rotState = RotState::FINISHING;
+                                    return;
+                                }
                                 _rotCopied++;
                                 if (_rotCopied >= _rotKeep) {
                                     _rotState = RotState::FINISHING;
@@ -394,13 +455,21 @@ void History::update() {
                             LOG_W("HIST", TXT_LOG_HIST_ROT_CORRUPT);
                         }
                     }
-                } else if (c != '\r' && _rotLinePos < sizeof(_rotLineBuf) - 1) {
-                    _rotLineBuf[_rotLinePos++] = c;
+                } else if (c != '\r') {
+                    if (_rotLinePos < sizeof(_rotLineBuf) - 1) {
+                        _rotLineBuf[_rotLinePos++] = c;
+                    } else {
+                        _rotLineOverflow = true;
+                    }
                 }
             }
         } else {
             // EOF
-            if (_rotLinePos > 0) {
+            if (_rotLineOverflow) {
+                _rotLinePos = 0;
+                _rotLineOverflow = false;
+                LOG_W("HIST", TXT_LOG_HIST_ROT_CORRUPT);
+            } else if (_rotLinePos > 0) {
                 char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
                 if (strlen(p) > 0) {
                     HistoryEntry temp = {};
@@ -408,8 +477,11 @@ void History::update() {
                         if (_rotSkipped < _rotDiscard) {
                             _rotSkipped++;
                         } else {
-                            _rotDst.println(p);
-                            _rotCopied++;
+                            if (_rotDst.println(p) == 0) {
+                                _rotWriteErr = true;
+                            } else {
+                                _rotCopied++;
+                            }
                         }
                     } else {
                         LOG_W("HIST", TXT_LOG_HIST_ROT_CORRUPT);
@@ -423,10 +495,12 @@ void History::update() {
 
     if (_rotState == RotState::FINISHING) {
         _rotSrc.close();
-        _rotDst.println(_rotPendingLine);
+        if (!_rotWriteErr && _rotDst.println(_rotPendingLine) == 0) {
+            _rotWriteErr = true;
+        }
         _rotDst.close();
 
-        if (LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
+        if (!_rotWriteErr && LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
             _lineCount = _rotCopied + 1;
 
             // Salvar NVS agora que _lineCount é correto E cache já foi atualizado
@@ -554,8 +628,8 @@ bool History::isExporting() const {
 }
 
 uint8_t History::exportProgress() const {
-    if (_exportTotal == 0) return 100;
-    return (uint8_t)(((uint32_t)_exportSent * 100) / _exportTotal);
+    if (_exportTotal == 0 || _exportSent >= _exportTotal) return 100;
+    return (uint8_t)(((uint32_t)_exportSent * 100UL) / _exportTotal);
 }
 
 uint16_t History::exportSent() const {

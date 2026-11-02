@@ -53,6 +53,8 @@ private:
 
     char _rotLineBuf[LINE_BUF] = {};
     size_t _rotLinePos = 0;
+    bool _rotWriteErr = false;
+    bool _rotLineOverflow = false;
     char _rotPendingLine[LINE_BUF] = {};
 
     // Cache for UI display
