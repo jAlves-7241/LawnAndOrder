@@ -143,9 +143,7 @@ void setup() {
         LOG_E("SYS", TXT_LOG_RTC_UNAVAIL);
     }
 
-    wateringCtrl.begin();
-
-    // Evaluate active suspension against the real RTC time
+    // Evaluate active suspension against the real RTC time before resuming interrupted cycles
     if (gState.suspended_until > 0) {
         if (!gState.rtc_valid) {
             // Transient RTC error: retain suspended_until so subsequent NVS saves do not wipe it.
@@ -163,6 +161,8 @@ void setup() {
     } else {
         gState.suspended = false;
     }
+
+    wateringCtrl.begin();
 
     scheduler.begin();    // computes next_hour/min from live RTC + current mode
     ui.begin();

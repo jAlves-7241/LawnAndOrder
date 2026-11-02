@@ -18,6 +18,7 @@ public:
     void startCustom(const bool zones[NUM_ZONES], uint8_t dur_min);
     void startTest(int8_t zone_idx);
     void stop();
+    void deenergizeRelays();
     void update();
 
     bool    isActive()    const { return _active; }
