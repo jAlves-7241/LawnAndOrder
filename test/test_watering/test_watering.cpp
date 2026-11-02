@@ -291,7 +291,94 @@ void test_watering_empty_selection_does_not_activate(void) {
     TEST_ASSERT_FALSE(wateringCtrl._active);
 }
 
-int main(int argc, char **argv) {
+void test_watering_recovery_rejects_corrupted_and_suspended_states(void) {
+    DateTime slotDT(2026, 6, 15, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0);
+    uint32_t startUnix = slotDT.unixtime() - 3600;
+    gState.mode = AppMode::MEDIO;
+    gState.auto_dst = true;
+    gState.now = { 2026, 6, 15, SCHED_MEDIO_SLOT0_H, (uint8_t)(SCHED_MEDIO_SLOT0_M + 2), 0, 1, startUnix + 120 };
+
+    // 1. Zero duration_ms must be rejected
+    RecoveryState rs = {};
+    rs.version = NVS_VERSION;
+    rs.active = true;
+    rs.start_unix_time = startUnix;
+    rs.queuePos = 0;
+    rs.queueLen = 1;
+    rs.queue[0] = { 0, 0 }; // Corrupted 0ms!
+    rs.trigger = WaterTrigger::MANUAL;
+    storage.saveRecoveryState(rs);
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    // 2. Duration > 20 min (1,200,000 ms) must be rejected
+    rs.queue[0] = { 0, 2000000UL };
+    storage.saveRecoveryState(rs);
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    // 3. Duplicate zone_idx in queue must be rejected
+    rs.queueLen = 2;
+    rs.queue[0] = { 1, 600000UL };
+    rs.queue[1] = { 1, 600000UL }; // Duplicate Zone 1!
+    storage.saveRecoveryState(rs);
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    // 4. AUTO recovery while system is suspended must be skipped
+    gState.suspended = true;
+    rs.queueLen = 1;
+    rs.queue[0] = { 0, 600000UL };
+    rs.trigger = WaterTrigger::AUTO;
+    storage.saveRecoveryState(rs);
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    RecoveryState cleared = {};
+    storage.loadRecoveryState(cleared);
+    TEST_ASSERT_FALSE(cleared.active);
+}
+
+void test_watering_inter_zone_wait_updates_upcoming_zone_index(void) {
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 1;
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = true;
+    gState.zones[2].duration_min = 2;
+    gState.zones[3].enabled = false;
+
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(0, gState.watering.zone_idx);
+
+    // Finish Zone 0 -> enters inter-zone wait before Zone 2
+    advanceMockMillis(60000);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+    TEST_ASSERT_EQUAL_UINT8(2, gState.watering.zone_idx);
+    TEST_ASSERT_EQUAL_UINT8(0, gState.watering.progress_pct);
+}
+
+void test_watering_deenergize_relays_preserves_recovery_state(void) {
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1));
+
+    wateringCtrl.deenergizeRelays();
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_2));
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_3));
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_4));
+
+    RecoveryState rs = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_TRUE(rs.active);
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
     RUN_TEST(test_watering_custom_selection);
@@ -302,5 +389,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_watering_multi_zone_sequence_and_history_logging);
     RUN_TEST(test_watering_emergency_stop_partial_duration_recorded);
     RUN_TEST(test_watering_empty_selection_does_not_activate);
+    RUN_TEST(test_watering_recovery_rejects_corrupted_and_suspended_states);
+    RUN_TEST(test_watering_inter_zone_wait_updates_upcoming_zone_index);
+    RUN_TEST(test_watering_deenergize_relays_preserves_recovery_state);
     return UNITY_END();
 }

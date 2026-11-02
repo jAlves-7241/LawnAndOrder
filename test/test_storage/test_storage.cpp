@@ -234,7 +234,53 @@ void test_storage_history_cache_persistence(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, loaded[2].trigger);
 }
 
-int main(int argc, char **argv) {
+void test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected(void) {
+    // 1. Fixed mode (MEDIO) with dormant overlapping PERSONALIZADO slots + edited 20m zones
+    gState.mode = AppMode::MEDIO;
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = true;
+        gState.zones[i].duration_min = 20; // Total cycle ~81 min
+    }
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.interval_days = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 30 }; // Overlaps 81-min cycle!
+
+    TEST_ASSERT_TRUE(storage.save());
+    initAppState();
+
+    // Must NOT wipe user config on load when PERSONALIZADO is dormant; must auto-respace
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::MEDIO, gState.mode);
+    const ModeSchedule& loadedCs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    uint16_t m0 = loadedCs.slots[0].hour * 60 + loadedCs.slots[0].minute;
+    uint16_t m1 = loadedCs.slots[1].hour * 60 + loadedCs.slots[1].minute;
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT16(81, m1 - m0);
+
+    // 2. When PERSONALIZADO IS the active mode, overlapping slots in imported hex MUST be rejected
+    gState.mode = AppMode::PERSONALIZADO;
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slot_count = 2;
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0] = { 8, 0 };
+    MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[1] = { 8, 10 };
+    char badHex[128] = {};
+    storage.exportConfigHex(badHex, sizeof(badHex));
+    TEST_ASSERT_FALSE(storage.importConfigHex(badHex));
+}
+
+void test_storage_zero_duration_normalizes_enabled_false(void) {
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 0;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_FALSE(gState.zones[0].enabled);
+
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_FALSE(gState.zones[0].enabled);
+    TEST_ASSERT_EQUAL_UINT8(0, gState.zones[0].duration_min);
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
     RUN_TEST(test_storage_export_and_import_roundtrip);
@@ -246,5 +292,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_storage_import_rejects_version_mismatch);
     RUN_TEST(test_storage_clear_wipes_all);
     RUN_TEST(test_storage_history_cache_persistence);
+    RUN_TEST(test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected);
+    RUN_TEST(test_storage_zero_duration_normalizes_enabled_false);
     return UNITY_END();
 }

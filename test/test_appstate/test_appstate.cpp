@@ -79,7 +79,7 @@ void test_mode_schedules_table(void) {
     TEST_ASSERT_EQUAL_UINT8(SCHED_CUSTOM_INTERVAL, custom.interval_days);
 }
 
-int main(int argc, char **argv) {
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_struct_sizes_and_alignment);
     RUN_TEST(test_init_app_state_defaults);

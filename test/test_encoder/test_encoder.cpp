@@ -125,10 +125,32 @@ void test_encoder_isr_rate_limiting(void) {
     TEST_ASSERT_EQUAL_INT16(2, encoder._delta);
 }
 
-int main(int argc, char **argv) {
+void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
+    // Simulate boot at micros() = 500 (< 2000us rate-limit window)
+    setMockMillis(50);
+    setMockMicros(500);
+    encoder._delta = 42;
+    digitalWrite(PIN_DT, LOW);
+
+    encoder.begin();
+    TEST_ASSERT_EQUAL_INT16(0, encoder._delta);
+    TEST_ASSERT_FALSE(encoder._has_last_isr);
+
+    // First ISR pulse immediately at boot (micros=500) must be accepted
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT16(1, encoder._delta);
+
+    // Bounce 200us later must still be rate-limited
+    advanceMockMicros(200);
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT16(1, encoder._delta);
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_encoder_click_debounce_and_single_trigger);
     RUN_TEST(test_encoder_rotation_delta_and_clamping);
     RUN_TEST(test_encoder_isr_rate_limiting);
+    RUN_TEST(test_encoder_begin_resets_isr_and_accepts_early_boot_pulse);
     return UNITY_END();
 }

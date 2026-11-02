@@ -14,6 +14,7 @@ bool _log_suspended = false;
 
 void setUp(void) {
     resetAllTestMocks();
+    rtclock = RTClock();
 }
 
 void tearDown(void) {}
@@ -169,7 +170,72 @@ void test_rtclock_throttle_after_internal_set(void) {
     TEST_ASSERT_EQUAL_UINT32(millis(), rtclock._lastReadMs);
 }
 
-int main(int argc, char **argv) {
+void test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour(void) {
+    gState.auto_dst = true;
+
+    // Winter round-trip: 2026-01-15 08:00 local -> UTC -> local
+    DateTime winterLocal(2026, 1, 15, 8, 0, 0);
+    DateTime winterUtc = RTClock::localToUtc(winterLocal);
+    DateTime winterBack = RTClock::utcToLocal(winterUtc);
+    TEST_ASSERT_EQUAL_UINT8(8, winterBack.hour());
+    TEST_ASSERT_EQUAL_UINT8(0, winterBack.minute());
+
+    // Summer round-trip: 2026-07-15 08:00 local -> 07:00 UTC (for PT/UTC+0) -> 08:00 local
+    DateTime summerLocal(2026, 7, 15, 8, 0, 0);
+    DateTime summerUtc = RTClock::localToUtc(summerLocal);
+    DateTime summerBack = RTClock::utcToLocal(summerUtc);
+    TEST_ASSERT_EQUAL_UINT8(8, summerBack.hour());
+    TEST_ASSERT_EQUAL_UINT8(0, summerBack.minute());
+
+    // October fall-back ambiguous local hour: 2026-10-25 (last Sunday of Oct 2026)
+    // Local repeated hour is (01:00 + TIMEZONE_OFFSET)..(01:59 + TIMEZONE_OFFSET).
+    DateTime ambigLocal(2026, 10, 25, (uint8_t)(1 + TIMEZONE_OFFSET), 30, 0);
+
+    // Before first occurrence (00:00 UTC): picks summer-time occurrence (00:30 UTC)
+    DateTime beforeFirst(2026, 10, 25, 0, 0, 0);
+    DateTime firstUtc = RTClock::localToUtc(ambigLocal, beforeFirst.unixtime());
+    TEST_ASSERT_EQUAL_UINT8(0, firstUtc.hour());
+    TEST_ASSERT_EQUAL_UINT8(30, firstUtc.minute());
+
+    // After first occurrence (00:45 UTC): picks standard-time occurrence (01:30 UTC)
+    DateTime afterFirst(2026, 10, 25, 0, 45, 0);
+    DateTime secondUtc = RTClock::localToUtc(ambigLocal, afterFirst.unixtime());
+    TEST_ASSERT_EQUAL_UINT8(1, secondUtc.hour());
+    TEST_ASSERT_EQUAL_UINT8(30, secondUtc.minute());
+}
+
+void test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power(void) {
+    TEST_ASSERT_TRUE(rtclock.begin());
+    rtclock.set(2026, 6, 15, 14, 30, 0);
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+
+    // 1. Mid-run I2C bus recovery when RTC temporarily NACKs must preserve RAM validity
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.begin());
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+
+    // 2. Mid-run RTC power glitch (lostPower=true) when RAM time is valid restores RTC hardware
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = true;
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_FALSE(rtclock._rtc.mockLostPower);
+}
+
+void test_rtclock_refresh_local_time_on_dst_toggle(void) {
+    gState.auto_dst = true;
+    rtclock.begin();
+    // Summer local 11:00 (with DST+1 in UTC+0 -> 10:00 UTC)
+    rtclock.set(2026, 7, 15, 11, 0, 0);
+    TEST_ASSERT_EQUAL_UINT8(11, gState.now.hour);
+
+    // Disable auto_dst and refresh immediately without waiting 30s hardware poll
+    gState.auto_dst = false;
+    rtclock.refreshLocalTime();
+    TEST_ASSERT_EQUAL_UINT8(10, gState.now.hour);
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
     RUN_TEST(test_eu_dst_march_transition_boundary);
@@ -178,5 +244,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_rtclock_leap_year_dst_calculation);
     RUN_TEST(test_rtclock_year_end_rollover);
     RUN_TEST(test_rtclock_throttle_after_internal_set);
+    RUN_TEST(test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour);
+    RUN_TEST(test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power);
+    RUN_TEST(test_rtclock_refresh_local_time_on_dst_toggle);
     return UNITY_END();
 }

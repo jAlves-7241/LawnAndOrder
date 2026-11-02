@@ -9,9 +9,11 @@ public:
     std::map<std::string, std::string> files;
 
     bool mountFail = false;
+    bool writeFail = false;
 
     void reset() {
         mountFail = false;
+        writeFail = false;
         files.clear();
     }
 
@@ -19,6 +21,7 @@ public:
         if (mountFail) {
             if (formatOnFail) {
                 mountFail = false;
+                writeFail = false;
                 return true;
             }
             return false;
@@ -33,12 +36,12 @@ public:
 
         if (m == "w") {
             files[p] = "";
-            return File(p, m, &files[p]);
+            return File(p, m, &files[p], &writeFail);
         } else if (m == "a") {
             if (files.find(p) == files.end()) {
                 files[p] = "";
             }
-            return File(p, m, &files[p]);
+            return File(p, m, &files[p], &writeFail);
         } else {
             // Read mode
             auto it = files.find(p);

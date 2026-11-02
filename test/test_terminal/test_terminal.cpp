@@ -255,7 +255,74 @@ void test_terminal_stop_command(void) {
                      Serial.outputBuffer.find("parada") != std::string::npos);
 }
 
-int main(int argc, char **argv) {
+void test_terminal_set_time_rejects_trailing_garbage_and_plus_sign(void) {
+    rtclock = RTClock();
+    gState.rtc_valid = false;
+
+    // 1. Trailing garbage after valid timestamp
+    Serial.reset();
+    Serial.feedInput("set_time 2026-07-20 15:45:00PM\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+
+    // 2. Leading '+' sign in numeric token
+    Serial.reset();
+    Serial.feedInput("set_time +2026-07-20 15:45:00\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+
+    // 3. 5-digit year overflow
+    Serial.reset();
+    Serial.feedInput("set_time 20260-07-20 15:45:00\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+}
+
+void test_terminal_status_truthful_when_rtc_invalid(void) {
+    gState.rtc_valid = false;
+    gState.mode = AppMode::MEDIO;
+    gState.suspended = true;
+    gState.suspended_until = 1781510000UL;
+    gState.next_hour = 8;
+    gState.next_min = 0;
+
+    // 1. Suspended without valid RTC -> prints SUSP_NO_RTC instead of bogus million-hour countdown
+    Serial.reset();
+    Serial.feedInput("status\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_SUSP_NO_RTC) != std::string::npos);
+
+    // 2. Active mode without valid RTC (not suspended) -> prints AWAIT_RTC instead of active schedule
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    Serial.reset();
+    Serial.feedInput("status\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_AWAIT_RTC) != std::string::npos);
+}
+
+void test_terminal_reboot_deenergizes_active_relays_preserving_recovery(void) {
+    wateringCtrl.begin();
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1));
+
+    Serial.reset();
+    Serial.feedInput("reboot\r\n");
+    terminal.update();
+
+    TEST_ASSERT_TRUE(ESP.rebooted);
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_1));
+
+    RecoveryState rs = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_TRUE(rs.active);
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
     RUN_TEST(test_terminal_status_command);
@@ -270,5 +337,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_terminal_export_and_import_config_commands);
     RUN_TEST(test_terminal_export_history_command);
     RUN_TEST(test_terminal_unknown_and_case_insensitive_commands);
+    RUN_TEST(test_terminal_set_time_rejects_trailing_garbage_and_plus_sign);
+    RUN_TEST(test_terminal_status_truthful_when_rtc_invalid);
+    RUN_TEST(test_terminal_reboot_deenergizes_active_relays_preserving_recovery);
     return UNITY_END();
 }

@@ -6,7 +6,9 @@
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
+#ifndef LOG_LEVEL
 #define LOG_LEVEL LVL_INFO
+#endif
 
 // ── LCD ───────────────────────────────────────────────────
 #define PIN_SDA 21
@@ -77,7 +79,9 @@
 
 // ── Application ───────────────────────────────────────────
 // Se 1, os menus dão a volta quando chegam ao fim. Se 0, param nos limites.
+#ifndef MENU_WRAP_AROUND
 #define MENU_WRAP_AROUND 1
+#endif
 
 #define NUM_ZONES 4
 #define MAX_SLOTS_PER_MODE 4 // Personalizado can have up to 4 cycles

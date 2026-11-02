@@ -18,10 +18,11 @@ public:
     std::string* contentPtr = nullptr;
     size_t readPos = 0;
     bool isOpen = false;
+    bool* writeFailPtr = nullptr;
 
-    File() : isOpen(false), readPos(0), contentPtr(nullptr) {}
-    File(const std::string& p, const std::string& m, std::string* ptr)
-        : path(p), mode(m), contentPtr(ptr), readPos(0), isOpen(true) {}
+    File() : contentPtr(nullptr), readPos(0), isOpen(false), writeFailPtr(nullptr) {}
+    File(const std::string& p, const std::string& m, std::string* ptr, bool* wfPtr = nullptr)
+        : path(p), mode(m), contentPtr(ptr), readPos(0), isOpen(true), writeFailPtr(wfPtr) {}
 
     operator bool() const { return isOpen && contentPtr != nullptr; }
 
@@ -45,6 +46,7 @@ public:
 
     size_t println(const char* s) {
         if (!isOpen || !contentPtr) return 0;
+        if (writeFailPtr && *writeFailPtr) return 0;
         size_t prevLen = contentPtr->size();
         if (s) contentPtr->append(s);
         contentPtr->append("\r\n");

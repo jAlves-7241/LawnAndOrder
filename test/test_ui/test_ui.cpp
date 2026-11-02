@@ -1,0 +1,371 @@
+#include <unity.h>
+#include <new>
+#include "TestCommon.h"
+#include "../../test/mocks/TestCommon.cpp"
+#include "../../src/AppState.cpp"
+#include "../../src/Storage.cpp"
+
+#define private public
+#include "RTClock.h"
+#include "Display.h"
+#include "Encoder.h"
+#include "WateringController.h"
+#include "Scheduler.h"
+#include "UI.h"
+#undef private
+
+#include "../../src/RTClock.cpp"
+#include "../../src/History.cpp"
+#include "../../src/WateringController.cpp"
+#include "../../src/Scheduler.cpp"
+#include "../../src/Display.cpp"
+#include "../../src/Encoder.cpp"
+#include "../../src/ui/MenuBuilder.cpp"
+#include "../../src/ui/ScreenCommon.cpp"
+#include "../../src/ui/ScreenEditors.cpp"
+#include "../../src/ui/ScreenIdle.cpp"
+#include "../../src/ui/ScreenMenu.cpp"
+#include "../../src/ui/ScreenSetup.cpp"
+#include "../../src/UI.cpp"
+
+static Display testDisp;
+static Encoder testEnc(PIN_CLK, PIN_DT, PIN_SW);
+static UI      testUi(testDisp, testEnc);
+
+static void simulateClick(UI& u) {
+    digitalWrite(PIN_SW, LOW);
+    u.update();
+    advanceMockMillis(60);
+    u.update();
+    digitalWrite(PIN_SW, HIGH);
+    u.update();
+    advanceMockMillis(60);
+    u.update();
+}
+
+static void simulateRotate(UI& u, int8_t steps) {
+    testEnc._delta = steps;
+    u.update();
+}
+
+void setUp(void) {
+    resetAllTestMocks();
+    rtclock = RTClock();
+    storage.begin();
+    history.begin();
+    wateringCtrl.begin();
+    digitalWrite(PIN_CLK, HIGH);
+    digitalWrite(PIN_DT, HIGH);
+    digitalWrite(PIN_SW, HIGH);
+    testDisp = Display();
+    testDisp.begin();
+    testEnc.begin();
+    testUi.~UI();
+    new (&testUi) UI(testDisp, testEnc);
+}
+
+void tearDown(void) {
+    wateringCtrl.stop();
+}
+
+void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
+    testDisp.setRows("Row0", "Row1", "Row2", "Row3");
+    TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
+    TEST_ASSERT_EQUAL_STRING("Row1                ", testDisp._lcd.getRow(1));
+    TEST_ASSERT_EQUAL_STRING("Row2                ", testDisp._lcd.getRow(2));
+    TEST_ASSERT_EQUAL_STRING("Row3                ", testDisp._lcd.getRow(3));
+
+    // Identical content must perform zero LCD print calls
+    testDisp._lcd.printCalls = 0;
+    testDisp.setRows("Row0", "Row1", "Row2", "Row3");
+    TEST_ASSERT_EQUAL_UINT32(0, testDisp._lcd.printCalls);
+
+    // Partial update with nullptr rows updates only the changed row
+    testDisp.setRows(nullptr, "Changed1", nullptr, nullptr);
+    TEST_ASSERT_EQUAL_UINT32(1, testDisp._lcd.printCalls);
+    TEST_ASSERT_EQUAL_STRING("Changed1            ", testDisp._lcd.getRow(1));
+    TEST_ASSERT_EQUAL_STRING("Row2                ", testDisp._lcd.getRow(2));
+
+    // Hardware glitch + recover() followed by nullptr rows must restore shadow (no 0xFF bytes!)
+    testDisp._lcd.clear();
+    testDisp.recover();
+    testDisp.setRows("New0", nullptr, nullptr, nullptr);
+    TEST_ASSERT_EQUAL_STRING("New0                ", testDisp._lcd.getRow(0));
+    TEST_ASSERT_EQUAL_STRING("Changed1            ", testDisp._lcd.getRow(1));
+    TEST_ASSERT_EQUAL_STRING("Row2                ", testDisp._lcd.getRow(2));
+    TEST_ASSERT_EQUAL_STRING("Row3                ", testDisp._lcd.getRow(3));
+
+    // 60s anti-corruption refresh with nullptr rows must also preserve all rows cleanly
+    advanceMockMillis(61000);
+    testDisp.setRows(nullptr, nullptr, nullptr, "Tick3");
+    for (uint8_t r = 0; r < LCD_ROWS; r++) {
+        const char* rowStr = testDisp._lcd.getRow(r);
+        for (size_t c = 0; c < LCD_COLS; c++) {
+            TEST_ASSERT_NOT_EQUAL((char)0xFF, rowStr[c]);
+        }
+    }
+    TEST_ASSERT_EQUAL_STRING("Tick3               ", testDisp._lcd.getRow(3));
+}
+
+void test_display_formatting_helpers_and_null_safety(void) {
+    char buf[21] = {};
+
+    TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::fx(buf, "Hello")));
+    TEST_ASSERT_EQUAL_STRING("Hello               ", buf);
+
+    TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::fx(buf, nullptr)));
+    TEST_ASSERT_EQUAL_STRING("                    ", buf);
+
+    TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::cx(buf, "ABCD")));
+    TEST_ASSERT_EQUAL_STRING("        ABCD        ", buf);
+
+    TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::hdr(buf, "MENU")));
+    TEST_ASSERT_EQUAL_CHAR('~', buf[0]);
+    TEST_ASSERT_EQUAL_CHAR('~', buf[19]);
+
+    TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::pbar(buf, 50)));
+    TEST_ASSERT_TRUE(strstr(buf, " 50%") != nullptr);
+
+    // Clamp > 100% safely
+    TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::pbar(buf, 250)));
+    TEST_ASSERT_TRUE(strstr(buf, "100%") != nullptr);
+}
+
+void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    testUi.begin();
+
+    // Start manual watering and open MAIN menu -> item 0 must offer stop_now
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    testUi.goMenu(MenuID::MAIN);
+
+    TEST_ASSERT_TRUE(strstr(testUi.getScreenMenu()._items[0].action, "stop_now") != nullptr);
+
+    // Watering stops externally while user stays in MAIN menu -> live update removes stale Stop item
+    wateringCtrl.stop();
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testUi.getScreenMenu()._items[0].action, "stop_now") == nullptr);
+}
+
+void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
+    gState.rtc_valid = true;
+    history.clear();
+    strncpy(gState.zones[0].name, "Front|Lawn", sizeof(gState.zones[0].name));
+    gState.zones[0].name[sizeof(gState.zones[0].name) - 1] = '\0';
+
+    HistoryEntry e = { 2026, 6, 15, 8, 30, { 10, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e);
+
+    MenuItem items[MenuBuilder::MAX_ITEMS] = {};
+    uint8_t count = 0;
+    MenuBuilder::build(MenuID::HISTORICO, items, count);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(2, count);
+    TEST_ASSERT_TRUE(strstr(items[0].label, TXT_HIST_TRIG_MANUAL) != nullptr);
+
+    // TESTES menu must format ZONE_TEST_DURATION_S dynamically and sanitize '|' in zone names
+    MenuBuilder::build(MenuID::TESTES, items, count);
+    char expectedDur[16];
+    snprintf(expectedDur, sizeof(expectedDur), "%ds", (int)ZONE_TEST_DURATION_S);
+    TEST_ASSERT_TRUE(strstr(items[0].label, expectedDur) != nullptr);
+    TEST_ASSERT_TRUE(strstr(items[0].action, expectedDur) != nullptr);
+    TEST_ASSERT_TRUE(strstr(items[1].action, "Front/Lawn") != nullptr);
+}
+
+void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
+    gState.setup_done = false;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+
+    testUi.begin();
+    TEST_ASSERT_TRUE(testUi.inSetup());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+
+    // 1. Welcome -> Date editor
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDateEdit(), testUi._currentScreen);
+
+    // 2. Date editor: Day -> Month -> Year -> Time editor
+    simulateClick(testUi);
+    simulateClick(testUi);
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenTimeEdit(), testUi._currentScreen);
+
+    // 3. Time editor: Hour -> Minute -> SETUP_MODE
+    simulateClick(testUi);
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL(SetupStep::MODE_SELECT, testUi.getSetupStep());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenMenu(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::SETUP_MODE, testUi.getScreenMenu()._mid);
+
+    // 4. Selecting "Skip >" (setup_advance) on SETUP_MODE MUST advance to ZONE_CONFIG, NOT finish setup!
+    testUi.dispatchAction("setup_advance");
+    TEST_ASSERT_FALSE(gState.setup_done);
+    TEST_ASSERT_TRUE(testUi.inSetup());
+    TEST_ASSERT_EQUAL(SetupStep::ZONE_CONFIG, testUi.getSetupStep());
+    TEST_ASSERT_EQUAL(MenuID::SETUP_ZONES, testUi.getScreenMenu()._mid);
+
+    // 5. Selecting "Save & Finish" (setup_advance) on SETUP_ZONES shows Setup Complete screen, click enters Idle
+    testUi.dispatchAction("setup_advance");
+    TEST_ASSERT_EQUAL(SetupStep::COMPLETE, testUi.getSetupStep());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+    simulateClick(testUi);
+    TEST_ASSERT_TRUE(gState.setup_done);
+    TEST_ASSERT_FALSE(testUi.inSetup());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
+}
+
+void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
+    rtclock._rtc.mockPresent = false;
+    gState.rtc_valid = false;
+    gState.setup_done = false;
+
+    testUi.begin();
+    simulateClick(testUi); // Welcome -> DateEdit
+    simulateClick(testUi); // Year
+    simulateClick(testUi); // Month
+    simulateClick(testUi); // Day -> TimeEdit
+    simulateClick(testUi); // Hour
+    simulateClick(testUi); // Minute -> RTC missing -> Confirm(skip_clock)
+
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenConfirm(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL_STRING("skip_clock", testUi.getScreenConfirm()._tag);
+
+    // Default selection is >Back (_selectionOk == false): clicking must return to DateEdit!
+    TEST_ASSERT_FALSE(testUi.getScreenConfirm()._selectionOk);
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL(SetupStep::DATE_TIME, testUi.getSetupStep());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDateEdit(), testUi._currentScreen);
+
+    // Advance again to Confirm(skip_clock), rotate to >OK, and click -> advances to SETUP_MODE
+    simulateClick(testUi);
+    simulateClick(testUi);
+    simulateClick(testUi);
+    simulateClick(testUi);
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenConfirm(), testUi._currentScreen);
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_TRUE(testUi.getScreenConfirm()._selectionOk);
+    simulateClick(testUi);
+
+    TEST_ASSERT_EQUAL(SetupStep::MODE_SELECT, testUi.getSetupStep());
+    TEST_ASSERT_EQUAL(MenuID::SETUP_MODE, testUi.getScreenMenu()._mid);
+}
+
+void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
+    gState.setup_done = true;
+    testUi.begin();
+
+    testUi.getScreenInfo().setup("H", "L1", "L2", "L3", MenuID::MAIN);
+    testUi.changeScreen(&testUi.getScreenInfo());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+
+    // Mechanical rotation bounce 100ms after enter (< 350ms) must NOT dismiss ScreenInfo
+    advanceMockMillis(100);
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+
+    // Deliberate rotation after 400ms (>= 350ms) dismisses ScreenInfo back to MenuID::MAIN
+    advanceMockMillis(300);
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenMenu(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::MAIN, testUi.getScreenMenu()._mid);
+}
+
+void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) {
+    gState.setup_done = true;
+    gState.auto_dst = true;
+    rtclock.begin();
+    rtclock.set(2026, 7, 15, 11, 0, 0); // Summer 11:00 local (10:00 UTC)
+    testUi.begin();
+
+    // 1. toggle_dst immediately refreshes gState.now.hour without waiting 30s
+    testUi.dispatchAction("toggle_dst");
+    TEST_ASSERT_FALSE(gState.auto_dst);
+    TEST_ASSERT_EQUAL_UINT8(10, gState.now.hour);
+
+    // 2. sel:4 (PERSONALIZADO) auto-respaces overlapping custom slots
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = true;
+        gState.zones[i].duration_min = 20; // 81-min cycle
+    }
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 15 };
+    testUi.dispatchAction("sel:4");
+    TEST_ASSERT_EQUAL(AppMode::PERSONALIZADO, gState.mode);
+    uint16_t m0 = cs.slots[0].hour * 60 + cs.slots[0].minute;
+    uint16_t m1 = cs.slots[1].hour * 60 + cs.slots[1].minute;
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT16(81, m1 - m0);
+
+    // 3. "general" when enabled=true but duration_min=0 must show Info warning, NOT start watering
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = true;
+        gState.zones[i].duration_min = 0;
+    }
+    TEST_ASSERT_TRUE(testUi.executeConfirmed("general"));
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+
+    // 4. "reset" while watering is active must stop relays before rebooting
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1));
+
+    testUi.executeConfirmed("reset");
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_TRUE(ESP.rebooted);
+}
+
+void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.zones[0] = { "Zone 1", true, 1 };
+    gState.zones[1] = { "Zone 2", true, 2 };
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    testUi.begin();
+    testUi.goIdle();
+
+    // Start watering, finish Zone 0 -> inter-zone pause renders TXT_IDLE_WAITING on LCD row 2
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    advanceMockMillis(60000);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_WAITING) != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "Z2 Zone 2") != nullptr);
+
+    // Backlight NEVER mode must still wake display if display was turned off
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    testDisp.backlightOff();
+    testDisp.displayOff();
+    TEST_ASSERT_FALSE(testDisp.isBacklightOn());
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_TRUE(testDisp.isBacklightOn());
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+}
+
+int main(void) {
+    UNITY_BEGIN();
+    RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
+    RUN_TEST(test_display_formatting_helpers_and_null_safety);
+    RUN_TEST(test_menubuilder_dynamic_stop_watering_and_live_menu_refresh);
+    RUN_TEST(test_menubuilder_history_localization_and_dynamic_test_duration);
+    RUN_TEST(test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete);
+    RUN_TEST(test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow);
+    RUN_TEST(test_ui_info_and_done_post_enter_rotation_bounce_guard);
+    RUN_TEST(test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety);
+    RUN_TEST(test_ui_idle_screen_waiting_between_zones_and_backlight_never);
+    return UNITY_END();
+}

@@ -35,15 +35,8 @@ public:
         _unix = _toUnix(year, month, day, hour, min, sec);
     }
 
-    DateTime(const DateTime& copy) {
-        _unix = copy._unix;
-        _y = copy._y;
-        _m = copy._m;
-        _d = copy._d;
-        _hh = copy._hh;
-        _mm = copy._mm;
-        _ss = copy._ss;
-    }
+    DateTime(const DateTime& copy) = default;
+    DateTime& operator=(const DateTime& copy) = default;
 
     uint16_t year() const { return _y; }
     uint8_t month() const { return _m; }
@@ -138,19 +131,36 @@ private:
 
 class RTC_DS3231 {
 public:
-    bool begin() { return true; }
-    bool lostPower() { return false; }
-    void adjust(const DateTime& dt) { _current = dt; }
+    bool mockPresent = true;
+    bool mockLostPower = false;
+
+    bool begin() { return mockPresent; }
+    bool lostPower() { return mockLostPower; }
+    void adjust(const DateTime& dt) {
+        _current = dt;
+        mockLostPower = false;
+    }
     DateTime now() { return _current; }
+    void resetMock() {
+        mockPresent = true;
+        mockLostPower = false;
+        _current = DateTime(2026, 1, 1, 0, 0, 0);
+    }
 private:
     DateTime _current = DateTime(2026, 1, 1, 0, 0, 0);
 };
 
 class RTC_DS1307 {
 public:
-    bool begin() { return true; }
+    bool mockPresent = true;
+
+    bool begin() { return mockPresent; }
     void adjust(const DateTime& dt) { _current = dt; }
     DateTime now() { return _current; }
+    void resetMock() {
+        mockPresent = true;
+        _current = DateTime(2026, 1, 1, 0, 0, 0);
+    }
 private:
     DateTime _current = DateTime(2026, 1, 1, 0, 0, 0);
 };

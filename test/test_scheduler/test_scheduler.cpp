@@ -312,7 +312,38 @@ void test_scheduler_exact_minute_boundary(void) {
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_M, nextM);
 }
 
-int main(int argc, char **argv) {
+void test_scheduler_on_watering_done_does_not_skip_adjacent_minute_slot(void) {
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slots[0] = { 7, 58 };
+    cs.slots[1] = { 8, 0 };
+
+    gState.mode = AppMode::PERSONALIZADO;
+    // Slot 0 finishes at 07:59:15; next slot at 08:00 MUST NOT be skipped!
+    gState.now = { 2026, 6, 15, 7, 59, 15, 1, 1781500755UL };
+    scheduler.onWateringDone();
+
+    TEST_ASSERT_EQUAL_UINT8(8, gState.next_hour);
+    TEST_ASSERT_EQUAL_UINT8(0, gState.next_min);
+}
+
+void test_scheduler_cycle_expired_bounds_and_overflow_safety(void) {
+    gState.mode = AppMode::MEDIO;
+    uint32_t startUnix = 1781500000UL;
+    SystemTime current = { 2026, 6, 15, 8, 5, 0, 1, startUnix + 300UL };
+
+    // 0s remaining duration is invalid -> treated as expired
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, current, 0));
+
+    // Corrupted huge remaining_duration_sec (0xFFFFFFFF) must not wrap uint32_t and pass
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, current, 0xFFFFFFFFUL));
+
+    // Valid 600s remaining duration 5 minutes after start is NOT expired
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, current, 600));
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
     RUN_TEST(test_scheduler_intenso_next_slot);
@@ -327,5 +358,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_scheduler_dst_fallback_duplicate_block);
     RUN_TEST(test_scheduler_on_watering_done_advances_slot);
     RUN_TEST(test_scheduler_exact_minute_boundary);
+    RUN_TEST(test_scheduler_on_watering_done_does_not_skip_adjacent_minute_slot);
+    RUN_TEST(test_scheduler_cycle_expired_bounds_and_overflow_safety);
     return UNITY_END();
 }

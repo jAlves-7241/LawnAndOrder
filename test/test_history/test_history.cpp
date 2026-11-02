@@ -252,7 +252,81 @@ void test_history_guarded_format_on_mount_failure(void) {
     TEST_ASSERT_FALSE(guarded);
 }
 
-int main(int argc, char **argv) {
+void test_history_line_to_entry_negative_and_overflow_bounds(void) {
+    HistoryEntry e = {};
+
+    // Negative hour or minute must be rejected
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-05-10T-1:00,A,10,10,10,10", e));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-05-10T10:-5,A,10,10,10,10", e));
+
+    // Negative and >255 zone durations must clamp to [0, 255] without uint8_t wraparound
+    TEST_ASSERT_TRUE(History::_lineToEntry("2026-05-10T10:30,M,-5,999,20,0", e));
+    TEST_ASSERT_EQUAL_UINT8(0, e.zone_dur[0]);
+    TEST_ASSERT_EQUAL_UINT8(255, e.zone_dur[1]);
+    TEST_ASSERT_EQUAL_UINT8(20, e.zone_dur[2]);
+    TEST_ASSERT_EQUAL_UINT8(0, e.zone_dur[3]);
+
+    // Null output buffer guard
+    TEST_ASSERT_EQUAL_UINT8(0, history.readLast(3, nullptr));
+}
+
+void test_history_rotation_write_failure_preserves_original_file(void) {
+    history.clear();
+
+    std::string fullFile;
+    fullFile.reserve(HISTORY_MAX_ENTRIES * 32);
+    for (int i = 0; i < HISTORY_MAX_ENTRIES; i++) {
+        fullFile.append("2026-06-01T08:00,A,10,10,0,0\r\n");
+    }
+    const size_t origSize = fullFile.size();
+    LittleFS.files[HISTORY_FILE] = std::move(fullFile);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    HistoryEntry e = { 2026, 6, 2, 8, 0, { 15, 15, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e);
+    TEST_ASSERT_TRUE(history._rotState != History::RotState::IDLE);
+
+    // Simulate flash write failure mid-rotation
+    LittleFS.writeFail = true;
+    int safetyLimit = 500;
+    while (history._rotState != History::RotState::IDLE && safetyLimit-- > 0) {
+        history.update();
+    }
+    LittleFS.writeFail = false;
+
+    TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
+    // Original file must still exist intact; temp file must be cleaned up
+    TEST_ASSERT_TRUE(LittleFS.exists(HISTORY_FILE));
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_tmp.csv"));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(origSize, LittleFS.files[HISTORY_FILE].size());
+}
+
+void test_history_corrupted_nvs_cache_rebuilds_from_fs(void) {
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+
+    LittleFS.files[HISTORY_FILE] =
+        "2026-07-01T07:00,A,10,0,0,0\r\n"
+        "2026-07-02T07:00,M,12,5,0,0\r\n";
+
+    // Corrupt NVS cache entry (year = 9999)
+    HistoryEntry badCache[HISTORY_DISPLAY] = {};
+    badCache[0] = { 9999, 99, 99, 99, 99, { 1, 1, 1, 1 }, WaterTrigger::AUTO, 0 };
+    storage.saveHistoryCache(badCache, sizeof(badCache), 50);
+
+    TEST_ASSERT_TRUE(history.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+
+    HistoryEntry out[3] = {};
+    uint8_t n = history.readLast(3, out);
+    TEST_ASSERT_EQUAL_UINT8(2, n);
+    TEST_ASSERT_EQUAL_UINT16(2026, out[0].year);
+    TEST_ASSERT_EQUAL_UINT8(1, out[0].day);
+    TEST_ASSERT_EQUAL_UINT8(2, out[1].day);
+}
+
+int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
     RUN_TEST(test_history_line_to_entry_valid);
@@ -264,5 +338,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_history_deferred_queue_when_busy);
     RUN_TEST(test_history_export_stream);
     RUN_TEST(test_history_guarded_format_on_mount_failure);
+    RUN_TEST(test_history_line_to_entry_negative_and_overflow_bounds);
+    RUN_TEST(test_history_rotation_write_failure_preserves_original_file);
+    RUN_TEST(test_history_corrupted_nvs_cache_rebuilds_from_fs);
     return UNITY_END();
 }
