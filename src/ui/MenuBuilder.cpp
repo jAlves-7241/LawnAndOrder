@@ -7,6 +7,9 @@
 #include <stdlib.h>
 
 void MenuBuilder::makeItem(MenuItem* it, const char* label, const char* action) {
+    if (!it) return;
+    if (!label) label = "";
+    if (!action) action = "";
     strncpy(it->label, label, sizeof(it->label) - 1);
     it->label[sizeof(it->label) - 1] = '\0';
     strncpy(it->action, action, sizeof(it->action) - 1);
@@ -143,7 +146,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                 snprintf(lbuf, sizeof(lbuf), "%02d%s %02d:%02d %s",
                          e.day, MON[m], e.hour, e.min,
                          e.trigger == WaterTrigger::AUTO ? "AUTO" :
-                         (e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : "GERAL"));
+                         (e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : TXT_HIST_TRIG_MANUAL));
 
                 char l1[24], l2[24];
                 snprintf(l1, sizeof(l1), TXT_MB_Z1_Z2, e.zone_dur[0], e.zone_dur[1]);
@@ -187,22 +190,26 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
     }
 
-    case MenuID::TESTES:
-        add_item(TXT_TEST_ALL_5S, TXT_ACT_CONFIRM_TEST_ALL);
+    case MenuID::TESTES: {
+        char actAll[80];
+        snprintf(lbuf, sizeof(lbuf), TXT_TEST_ALL_FMT, (int)ZONE_TEST_DURATION_S);
+        snprintf(actAll, sizeof(actAll), TXT_ACT_CONFIRM_TEST_ALL, (int)ZONE_TEST_DURATION_S);
+        add_item(lbuf, actAll);
         for (int i = 0; i < NUM_ZONES; i++) {
             char safe_name[16];
             strncpy(safe_name, gState.zones[i].name, sizeof(safe_name));
             safe_name[sizeof(safe_name)-1] = '\0';
             for (int k = 0; safe_name[k]; k++) if (safe_name[k] == '|') safe_name[k] = '/';
-            snprintf(lbuf, sizeof(lbuf), "Z%d %-8s   5s", i+1, safe_name);
+            snprintf(lbuf, sizeof(lbuf), TXT_TEST_ZONE_ITEM_FMT, i+1, safe_name, (int)ZONE_TEST_DURATION_S);
             char act[80];
             snprintf(act, sizeof(act),
                      TXT_ACT_CONFIRM_TEST_ZONE,
-                     i+1, safe_name, i);
+                     i+1, safe_name, (int)ZONE_TEST_DURATION_S, i);
             add_item(lbuf, act);
         }
         add_item(TXT_BACK, "go:def");
         break;
+    }
 
     case MenuID::SETUP_MODE:
         add_item(TXT_INTENSE,       "sel:0");
@@ -254,6 +261,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 }
 
 MenuID MenuBuilder::parseMenuID(const char* s) {
+    if (!s) return MenuID::MAIN;
     if (!strcmp(s,"main"))   return MenuID::MAIN;
     if (!strcmp(s,"manual")) return MenuID::MANUAL;
     if (!strcmp(s,"prog"))   return MenuID::PROG;
@@ -284,6 +292,7 @@ const char* MenuBuilder::modeName(uint8_t m) {
 }
 
 void MenuBuilder::modeHours(uint8_t m, char* dest, size_t maxLen) {
+    if (!dest || maxLen == 0) return;
     if (m >= (uint8_t)AppMode::_COUNT) {
         snprintf(dest, maxLen, "?");
         return;

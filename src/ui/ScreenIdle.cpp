@@ -8,6 +8,7 @@
 
 void ScreenIdle::onEnter(UI& ui) {
     _lastWateringActive = false;
+    _lastIsWaiting = false;
     _lastProgress = 255;
     _lastMinute = 255;
     _lastSuspended = false;
@@ -19,7 +20,7 @@ void ScreenIdle::onEnter(UI& ui) {
     render(ui);
 }
 
-void ScreenIdle::handleRotation(UI& ui, int8_t dir) {
+void ScreenIdle::handleRotation(UI& /*ui*/, int8_t /*dir*/) {
     // Rotation doesn't do anything on idle
 }
 
@@ -30,9 +31,10 @@ void ScreenIdle::handleClick(UI& ui) {
 void ScreenIdle::update(UI& ui) {
     bool needsRender = false;
 
-    if (_lastWateringActive != gState.watering.active) {
+    if (_lastWateringActive != gState.watering.active ||
+        _lastIsWaiting != gState.watering.is_waiting) {
         needsRender = true;
-    } else if (gState.watering.active && !gState.watering.is_waiting) {
+    } else if (gState.watering.active) {
         if (_lastProgress != gState.watering.progress_pct ||
             _lastZoneIdx != gState.watering.zone_idx) {
             needsRender = true;
@@ -59,6 +61,7 @@ void ScreenIdle::render(UI& ui) {
 
 void ScreenIdle::fullRender(UI& ui) {
     _lastWateringActive = gState.watering.active;
+    _lastIsWaiting = gState.watering.is_waiting;
     _lastProgress = gState.watering.progress_pct;
     _lastMinute = gState.now.min;
     _lastSuspended = gState.suspended;
@@ -87,7 +90,8 @@ void ScreenIdle::fullRender(UI& ui) {
             snprintf(zrow, sizeof(zrow), "Z%d %s", zi + 1, gState.zones[zi].name);
         }
         ui.getDisplay().pbar(pb, _lastProgress);
-        ui.getDisplay().setRows(b0, TXT_IDLE_WATERING, zrow, pb);
+        const char* statusLine = gState.watering.is_waiting ? TXT_IDLE_WAITING : TXT_IDLE_WATERING;
+        ui.getDisplay().setRows(b0, statusLine, zrow, pb);
     } else {
         if (!gState.rtc_valid) {
             ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, TXT_IDLE_SET_TIME));
@@ -114,11 +118,7 @@ void ScreenIdle::fullRender(UI& ui) {
                 }
                 snprintf(nxstr, sizeof(nxstr), TXT_NEXT_DAY_TIME, dayStr, h, m);
             } else {
-                if (gState.next_hour == 255) {
-                    snprintf(nxstr, sizeof(nxstr), TXT_NEXT_NONE);
-                } else {
-                    snprintf(nxstr, sizeof(nxstr), TXT_NEXT_TIME, gState.next_hour, gState.next_min);
-                }
+                snprintf(nxstr, sizeof(nxstr), TXT_NEXT_NONE);
             }
             ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, nxstr));
         }

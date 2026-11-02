@@ -17,7 +17,7 @@ void ScreenSetupWelcome::onEnter(UI& ui) {
     render(ui);
 }
 
-void ScreenSetupWelcome::handleRotation(UI& ui, int8_t dir) {
+void ScreenSetupWelcome::handleRotation(UI& /*ui*/, int8_t /*dir*/) {
     // Ignorar rotacao
 }
 

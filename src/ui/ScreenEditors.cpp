@@ -344,7 +344,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
     }
 
     if (_teContext == TimeEditContext::RTC) {
-        if (!rtclock.isPresent()) {
+        if (!rtclock.isPresent() && !rtclock.probe()) {
             if (ui.inSetup()) {
                 ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
                                             MenuID::SETUP_MODE, "skip_clock");

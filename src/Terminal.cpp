@@ -127,6 +127,7 @@ Terminal::Terminal()
 void Terminal::begin() {
     _bufLen = 0;
     _cursorPos = 0;
+    _pendingClearHistory = false;
     _in_ansi = false;
     _ansi_bytes = 0;
     _ignore_rest = false;
@@ -218,6 +219,9 @@ void Terminal::_drainInput() {
     }
     _bufLen = 0;
     _cursorPos = 0;
+    _pendingClearHistory = false;
+    _in_ansi = false;
+    _ignore_rest = false;
 }
 
 // Feed a character into the ANSI sequence accumulator.
@@ -420,6 +424,7 @@ void Terminal::_insertChar(char c) {
         Serial.println(TXT_TERM_ERR_OVERFLOW);
         _bufLen = 0;
         _cursorPos = 0;
+        _pendingClearHistory = false;
         _ignore_rest = true;
     }
 
@@ -546,14 +551,20 @@ void Terminal::_cmdStatus(char* /*args*/) {
     Serial.printf(TXT_TERM_STAT_MODE, getModeStr(gState.mode));
 
     if (gState.suspended) {
-        uint32_t remaining = (gState.suspended_until > gState.now.unix)
-                                 ? (gState.suspended_until - gState.now.unix)
-                                 : 0;
-        uint32_t hours = remaining / 3600;
-        uint32_t mins  = (remaining % 3600) / 60;
-        Serial.printf(TXT_TERM_STAT_SUSP, hours, mins);
+        if (gState.rtc_valid) {
+            uint32_t remaining = (gState.suspended_until > gState.now.unix)
+                                     ? (gState.suspended_until - gState.now.unix)
+                                     : 0;
+            uint32_t hours = remaining / 3600;
+            uint32_t mins  = (remaining % 3600) / 60;
+            Serial.printf(TXT_TERM_STAT_SUSP, hours, mins);
+        } else {
+            Serial.println(TXT_TERM_STAT_SUSP_NO_RTC);
+        }
     } else if (gState.mode == AppMode::DESATIVADO) {
         Serial.println(TXT_TERM_STAT_INACTIVE);
+    } else if (!gState.rtc_valid) {
+        Serial.println(TXT_TERM_STAT_AWAIT_RTC);
     } else {
         Serial.printf(TXT_TERM_STAT_ACTIVE,
                       gState.next_hour, gState.next_min);
@@ -590,8 +601,16 @@ void Terminal::_cmdSetTime(char *args) {
         return;
     }
 
+    for (const char* p = args; *p; ++p) {
+        if (*p == '+') {
+            Serial.println(TXT_TERM_ERR_FORMAT);
+            return;
+        }
+    }
+
     int yr, mo, dy, hh, mm, ss;
-    if (sscanf(args, "%d-%d-%d %d:%d:%d", &yr, &mo, &dy, &hh, &mm, &ss) != 6) {
+    char extra = 0;
+    if (sscanf(args, "%4d-%2d-%2d %2d:%2d:%2d %c", &yr, &mo, &dy, &hh, &mm, &ss, &extra) != 6) {
         Serial.println(TXT_TERM_ERR_FORMAT);
         return;
     }
@@ -658,7 +677,10 @@ void Terminal::_cmdImportConfig(char *args) {
     }
 
     if (storage.importConfigHex(args)) {
-        // Sucesso na importação - recalcular agendamento do Scheduler
+        // Sucesso na importação - atualizar hora local (caso auto_dst tenha mudado) e agendamento
+        if (gState.rtc_valid) {
+            rtclock.refreshLocalTime();
+        }
         scheduler.onModeChanged();
         // Reposicionar ecrã físico para Idle para refletir as novas configurações
         // imediatamente
@@ -686,6 +708,7 @@ void Terminal::_cmdClearHistory(char* /*args*/) {
 }
 
 void Terminal::_cmdReboot(char* /*args*/) {
+    wateringCtrl.deenergizeRelays();
     ui.goIdle();
     Serial.println(TXT_TERM_REBOOT);
     Serial.flush();

@@ -7,11 +7,26 @@ void ScreenMenu::setup(MenuID mid) {
     _mid = mid;
     _cur = 0;
     _off = 0;
+    _lastWateringActive = gState.watering.active;
     MenuBuilder::build(mid, _items, _itemCount);
 }
 
 void ScreenMenu::onEnter(UI& ui) {
     render(ui);
+}
+
+void ScreenMenu::update(UI& ui) {
+    if (_mid == MenuID::MAIN && _lastWateringActive != gState.watering.active) {
+        _lastWateringActive = gState.watering.active;
+        MenuBuilder::build(_mid, _items, _itemCount);
+        if (_itemCount == 0) {
+            _cur = 0;
+            _off = 0;
+        } else if (_cur >= _itemCount) {
+            _cur = _itemCount - 1;
+        }
+        render(ui);
+    }
 }
 
 void ScreenMenu::handleRotation(UI& ui, int8_t dir) {

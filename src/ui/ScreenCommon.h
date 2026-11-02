@@ -18,6 +18,7 @@ public:
 private:
     char _rows[4][LCD_COLS + 1] = {};
     MenuID _backMenu = MenuID::MAIN;
+    uint32_t _enterMs = 0;
 };
 
 // ─────────────────────────────────────────────────────────
@@ -56,4 +57,5 @@ public:
 private:
     char _rows[4][LCD_COLS + 1] = {};
     MenuID _backMenu = MenuID::MAIN; // inherited dynamically based on previous state
+    uint32_t _enterMs = 0;
 };

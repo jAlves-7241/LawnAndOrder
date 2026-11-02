@@ -5,7 +5,7 @@
 
 class ScreenIdle : public UIScreen {
 public:
-    ScreenIdle() : _lastWateringActive(false), _lastProgress(255), _lastMinute(255),
+    ScreenIdle() : _lastWateringActive(false), _lastIsWaiting(false), _lastProgress(255), _lastMinute(255),
                    _lastSuspended(false), _lastMode(AppMode::MEDIO),
                    _lastNextH(0xFF), _lastNextM(0xFF),
                    _lastZoneIdx(0xFF), _lastRtcValid(false) {}
@@ -18,6 +18,7 @@ public:
 
 private:
     bool _lastWateringActive;
+    bool _lastIsWaiting;
     uint8_t _lastProgress;
     uint8_t _lastMinute;
     bool _lastSuspended;

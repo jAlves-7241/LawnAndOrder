@@ -16,10 +16,12 @@ void ScreenInfo::setup(const char* l0, const char* l1, const char* l2, const cha
 }
 
 void ScreenInfo::onEnter(UI& ui) {
+    _enterMs = millis();
     render(ui);
 }
 
-void ScreenInfo::handleRotation(UI& ui, int8_t dir) {
+void ScreenInfo::handleRotation(UI& ui, int8_t /*dir*/) {
+    if (millis() - _enterMs < 350UL) return;
     ui.goMenu(_backMenu);
 }
 
@@ -49,7 +51,7 @@ void ScreenConfirm::onEnter(UI& ui) {
     render(ui);
 }
 
-void ScreenConfirm::handleRotation(UI& ui, int8_t dir) {
+void ScreenConfirm::handleRotation(UI& ui, int8_t /*dir*/) {
     _selectionOk = !_selectionOk;
     render(ui);
 }
@@ -68,6 +70,11 @@ void ScreenConfirm::handleClick(UI& ui) {
             ui.changeScreen(&ui.getScreenDone());
         }
     } else {
+        if (!strcmp(_tag, "skip_clock") && ui.inSetup()) {
+            ui.getScreenDateEdit().setup(MenuID::MAIN);
+            ui.changeScreen(&ui.getScreenDateEdit());
+            return;
+        }
         ui.goMenu(_backMenu);
     }
 }
@@ -93,10 +100,12 @@ void ScreenDone::setup(const char* l1, const char* l2, MenuID back) {
 }
 
 void ScreenDone::onEnter(UI& ui) {
+    _enterMs = millis();
     render(ui);
 }
 
-void ScreenDone::handleRotation(UI& ui, int8_t dir) {
+void ScreenDone::handleRotation(UI& ui, int8_t /*dir*/) {
+    if (millis() - _enterMs < 350UL) return;
     ui.goMenu(_backMenu);
 }
 

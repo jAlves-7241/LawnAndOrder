@@ -13,6 +13,19 @@
 // Nota: extern wateringCtrl, rtclock, scheduler, storage, history
 // já declarados nos respectivos headers (.h) incluídos acima.
 
+static char* nextToken(char** strp, char delim) {
+    if (!strp || !*strp) return nullptr;
+    char* start = *strp;
+    char* p = strchr(start, delim);
+    if (p) {
+        *p = '\0';
+        *strp = p + 1;
+    } else {
+        *strp = nullptr;
+    }
+    return start;
+}
+
 // ─────────────────────────────────────────────────────────
 // Constructor / begin
 // ─────────────────────────────────────────────────────────
@@ -103,6 +116,9 @@ void UI::update() {
         if (_d.isDisplayOn() && elapsed > DISPLAY_OFF_DELAY_MS && (elapsed - DISPLAY_OFF_DELAY_MS) >= gState.backlight_timeout_ms) {
             _d.displayOff();
         }
+    } else if (gState.backlight_timeout_ms == BACKLIGHT_TIMEOUT_NEVER) {
+        if (!_d.isDisplayOn()) _d.displayOn();
+        if (!_d.isBacklightOn()) _d.backlightOn();
     }
 
     if (_currentScreen) {
@@ -134,9 +150,8 @@ void UI::advanceSetup() {
             break;
 
         case SetupStep::MODE_SELECT:
-            _setupStep = SetupStep::COMPLETE;
-            _screenSetupWelcome.setup(true);
-            changeScreen(&_screenSetupWelcome);
+            _setupStep = SetupStep::ZONE_CONFIG;
+            goMenu(MenuID::SETUP_ZONES);
             break;
 
         case SetupStep::CUSTOM_CONFIG:
@@ -159,9 +174,11 @@ void UI::advanceSetup() {
 // Dispatch / Actions
 // ─────────────────────────────────────────────────────────
 bool UI::executeConfirmed(const char* tag) {
+    if (!tag) return false;
     LOG_I("UI", TXT_LOG_UI_CONFIRM_TAG, tag);
 
     if (!strcmp(tag, "reset")) {
+        wateringCtrl.stop();
         history.clear();
         storage.clear();
         Serial.flush();   // Garantir que logs pendentes no buffer UART são transmitidos
@@ -178,7 +195,7 @@ bool UI::executeConfirmed(const char* tag) {
     if (!strcmp(tag, "general")) {
         bool any = false;
         for (int i = 0; i < NUM_ZONES; i++) {
-            if (gState.zones[i].enabled) any = true;
+            if (gState.zones[i].enabled && gState.zones[i].duration_min > 0) any = true;
         }
         if (!any) {
             _screenInfo.setup(TXT_ERR_ACTIVE_ZONES, TXT_NO_ACTIVE_ZONES,
@@ -222,9 +239,50 @@ void UI::dispatchAction(const char* action) {
     }
 
     if (strncmp(action, "sel:", 4) == 0) {
-        uint8_t m = atoi(action+4);
-        if (m >= (uint8_t)AppMode::_COUNT) return;
+        char* endp = nullptr;
+        long m = strtol(action + 4, &endp, 10);
+        if (endp == action + 4 || *endp != '\0' || m < 0 || m >= (long)AppMode::_COUNT) return;
         gState.mode = (AppMode)m;
+        if (gState.mode == AppMode::PERSONALIZADO) {
+            ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+            if (cs.slot_count > 1) {
+                uint16_t total_dur = getTotalZoneDuration();
+                uint8_t enCount = 0;
+                for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
+                if (enCount > 1) total_dur += (enCount - 1);
+                bool overlap = false;
+                for (int i = 0; i < cs.slot_count && !overlap; i++) {
+                    for (int j = i + 1; j < cs.slot_count; j++) {
+                        uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                        uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                        int16_t diff = (int16_t)s1 - (int16_t)s2;
+                        if (diff < 0) diff = -diff;
+                        if (diff > 720) diff = 1440 - diff;
+                        if ((uint16_t)diff < total_dur) { overlap = true; break; }
+                    }
+                }
+                if (overlap) {
+                    uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
+                    uint16_t stepMins = 1440 / cs.slot_count;
+                    for (int i = 1; i < cs.slot_count; i++) {
+                        uint16_t nextMins = (baseMins + i * stepMins) % 1440;
+                        cs.slots[i].hour   = (uint8_t)(nextMins / 60);
+                        cs.slots[i].minute = (uint8_t)(nextMins % 60);
+                    }
+                    for (int i = 0; i < cs.slot_count - 1; i++) {
+                        for (int j = i + 1; j < cs.slot_count; j++) {
+                            uint16_t t1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                            uint16_t t2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                            if (t2 < t1) {
+                                ScheduleSlot temp = cs.slots[i];
+                                cs.slots[i] = cs.slots[j];
+                                cs.slots[j] = temp;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         _configChanged = true;
         scheduler.onModeChanged();
         
@@ -298,6 +356,10 @@ void UI::dispatchAction(const char* action) {
     if (!strcmp(action, "toggle_dst")) {
         gState.auto_dst = !gState.auto_dst;
         _configChanged = true;
+        if (gState.rtc_valid) {
+            rtclock.refreshLocalTime();
+        }
+        scheduler.onModeChanged();
         goMenu(MenuID::DEF_AVANCADO);
         return;
     }
@@ -392,11 +454,11 @@ void UI::dispatchAction(const char* action) {
         strncpy(buf, action + 5, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
         char* saveptr = buf;
-        char* t0 = strsep(&saveptr, "|");
-        char* t1 = strsep(&saveptr, "|");
-        char* t2 = strsep(&saveptr, "|");
-        char* t3 = strsep(&saveptr, "|");
-        char* back = strsep(&saveptr, "|");
+        char* t0 = nextToken(&saveptr, '|');
+        char* t1 = nextToken(&saveptr, '|');
+        char* t2 = nextToken(&saveptr, '|');
+        char* t3 = nextToken(&saveptr, '|');
+        char* back = nextToken(&saveptr, '|');
         if (t0 && t1 && t2 && t3 && back) {
             _screenInfo.setup(t0, t1, t2, t3, MenuBuilder::parseMenuID(back));
             changeScreen(&_screenInfo);
@@ -409,10 +471,10 @@ void UI::dispatchAction(const char* action) {
         strncpy(buf, action + 8, sizeof(buf) - 1);
         buf[sizeof(buf)-1] = '\0';
         char* saveptr = buf;
-        char* t1 = strsep(&saveptr, "|");
-        char* t2 = strsep(&saveptr, "|");
-        char* back = strsep(&saveptr, "|");
-        char* tag = strsep(&saveptr, "|");
+        char* t1 = nextToken(&saveptr, '|');
+        char* t2 = nextToken(&saveptr, '|');
+        char* back = nextToken(&saveptr, '|');
+        char* tag = nextToken(&saveptr, '|');
         if (t1 && t2 && back && tag) {
             _screenConfirm.setup(t1, t2, MenuBuilder::parseMenuID(back), tag);
             changeScreen(&_screenConfirm);
