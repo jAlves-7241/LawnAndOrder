@@ -33,6 +33,7 @@ test/
 ├── test_scheduler/         # Slot computation, patterns (DAILY, DOW_MASK, EVERY_X_DAYS), DST guards
 ├── test_storage/           # Hex config codec, validation, NVS persistence, cache round-trip
 ├── test_terminal/          # Serial CLI tokenizer, ANSI filter, buffer protection, commands
+├── test_ui/                # Display shadow buffer, MenuBuilder, Setup Wizard, UI screens & actions
 └── test_watering/          # Valve sequencing, relay dead-time, stop, recovery, multi-zone runs
 ```
 
@@ -43,11 +44,11 @@ test/
 | Mock File | Implemented Functionality | State Reset Mechanism |
 |---|---|---|
 | `Arduino.h` | <ul><li>Time tracking: `millis()`, `micros()`, `delay()`, `setMockMillis()`, `advanceMockMillis()`, `setMockMicros()`, `advanceMockMicros()`</li><li>GPIO: Pin array `_mock_gpio[64]`, `pinMode()` (`OUTPUT`, `INPUT`, `INPUT_PULLUP`, `OUTPUT_OPEN_DRAIN`), `digitalWrite()`, `digitalRead()`</li><li>Stream I/O: `MockSerial Serial` with input/output string buffers, formatted `printf()`, chunked `read()`, buffer bounds checking</li><li>Interrupts: `digitalPinToInterrupt()`, `attachInterrupt()`, `detachInterrupt()`, `FALLING`, `RISING`, `CHANGE`</li><li>Utilities: `strlcpy()`, `min()`, `max()`, `constrain()`, `abs()`, `String` adapter with indexing and slicing</li><li>Hardware stubs: `IRAM_ATTR`, `EspClass ESP` with `restart()` tracking and `reset()`</li><li>Critical sections: `portMUX_TYPE`, `portENTER_CRITICAL()`, `portEXIT_CRITICAL()`</li></ul> | `_mock_millis = 1000`<br>`_mock_micros = 1000000`<br>`memset(_mock_gpio, HIGH, 64)`<br>`Serial.reset()`<br>`ESP.reset()` |
-| `RTClib.h` | <ul><li>Pure algorithmic `DateTime` and `TimeSpan` matching Adafruit RTClib interface</li><li>Leap year determination, days-in-month calculations, day-of-week calculation</li><li>Arithmetic operators (`+`, `-`, `<`, `==`)</li><li>Stubbed `RTC_DS3231` and `RTC_DS1307` classes</li></ul> | Stateless (value types) |
+| `RTClib.h` | <ul><li>Pure algorithmic `DateTime` and `TimeSpan` matching Adafruit RTClib interface</li><li>Leap year determination, days-in-month calculations, day-of-week calculation</li><li>Arithmetic operators (`+`, `-`, `<`, `==`)</li><li>Configurable `RTC_DS3231` (`mockPresent`, `mockLostPower`, `adjust()`, `now()`, `resetMock()`) and `RTC_DS1307` mocks</li></ul> | `resetMock()` / `RTClock()` |
 | `Preferences.h` | <ul><li>In-memory NVS key-value store: `std::map<std::string, std::map<std::string, std::vector<uint8_t>>>`</li><li>Binary blob access: `getBytes()`, `putBytes()`</li><li>Type-specific access: `getUShort()`, `putUShort()`, `getUInt()`, `putUInt()`, `getBool()`, `putBool()`</li><li>Namespace management: `begin()`, `end()`, `clear()`</li></ul> | `Preferences::resetStorage()` |
-| `FS.h` / `LittleFS.h` | <ul><li>In-memory file table: `std::map<std::string, std::string>`</li><li>Stream operations: `seek()` (`SeekSet`, `SeekCur`, `SeekEnd`), `read()`, `println()`, `available()`, `size()`</li><li>Filesystem operations: `open()`, `remove()`, `rename()`, `exists()`, `begin(formatOnFail)`, `mountFail` simulation</li></ul> | `LittleFS.reset()` |
+| `FS.h` / `LittleFS.h` | <ul><li>In-memory file table: `std::map<std::string, std::string>`</li><li>Stream operations: `seek()` (`SeekSet`, `SeekCur`, `SeekEnd`), `read()`, `println()`, `available()`, `size()`</li><li>Filesystem operations: `open()`, `remove()`, `rename()`, `exists()`, `begin(formatOnFail)`, `mountFail` and `writeFail` simulation</li></ul> | `LittleFS.reset()` |
 | `Wire.h` | <ul><li>I2C address detection simulation via `detectedAddresses` vector</li><li>`beginTransmission()`, `endTransmission()` return codes</li><li>Bus address reset: `reset()`</li></ul> | `Wire.reset()` (via `resetAllTestMocks()`) |
-| `LiquidCrystal_I2C.h` | <ul><li>No-op stubs: `init()`, `clear()`, `setCursor()`, `print()`, `backlight()`, `noBacklight()`</li></ul> | Stateless |
+| `LiquidCrystal_I2C.h` | <ul><li>20×4 character grid buffer (`screen[4][21]`, `getRow()`) with cursor tracking</li><li>Call counters (`printCalls`, `clearCalls`) and state flags (`backlightState`, `displayState`) for `init()`, `clear()`, `setCursor()`, `print()`, `backlight()`, `noBacklight()`, `display()`, `noDisplay()`</li></ul> | `Display()` / `clear()` |
 | `esp_task_wdt.h` | <ul><li>No-op stubs: `esp_task_wdt_reset()`, `esp_task_wdt_add()`, `esp_task_wdt_delete()`</li></ul> | Stateless |
 | `esp_timer.h` | <ul><li>High-resolution microsecond timer stub: `esp_timer_get_time()` backed by mock `micros()`</li></ul> | Tied to `_mock_micros` |
 | `driver/gpio.h` | <ul><li>ESP-IDF GPIO query stub: `gpio_get_level()` backed by mock `digitalRead()`</li></ul> | Tied to `_mock_gpio` |
@@ -65,6 +66,7 @@ test/
 * `test_encoder_click_debounce_and_single_trigger`: Verifies 50ms pushbutton debounce, single click emission per physical press, immunity to held buttons, and release transition handling.
 * `test_encoder_rotation_delta_and_clamping`: Tests positive/negative rotation tracking via ISR, delta consumption on read, and clamp-and-preserve arithmetic at ±127 bounds.
 * `test_encoder_isr_rate_limiting`: Verifies 2000µs ISR debounce filter drops pulses arriving faster than 2ms.
+* `test_encoder_begin_resets_isr_and_accepts_early_boot_pulse`: Verifies `begin()` clears stale deltas and accepts immediate boot-time pulses (`micros() < 2000`) without unsigned underflow.
 
 ### `test_rtclock`
 * `test_eu_dst_winter_and_summer_months`: Tests DST state classification across non-boundary months.
@@ -74,6 +76,9 @@ test/
 * `test_rtclock_leap_year_dst_calculation`: Verifies algorithmic DST calculation and Sunday transition boundaries across leap years (e.g. 2028).
 * `test_rtclock_year_end_rollover`: Tests calendar year-end boundary transitions (Dec 31 23:59:59 -> Jan 1 00:00:00) during UTC-to-local conversion.
 * `test_rtclock_throttle_after_internal_set`: Verifies internal clock setting/recovery maintains the 30-second read throttle interval and prevents RTC bus saturation.
+* `test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour`: Verifies `localToUtc()` winter/summer round-trips and October fall-back repeated-hour disambiguation via `afterUtc`.
+* `test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power`: Verifies mid-run `begin()` (during I2C recovery) preserves valid RAM time and restores RTC hardware after power loss.
+* `test_rtclock_refresh_local_time_on_dst_toggle`: Verifies immediate local hour recalculation when `auto_dst` is toggled.
 
 ### `test_scheduler`
 * `test_scheduler_medio_next_slot`: Slot selection for 2-slot daily schedule across morning, midday, and night rollovers.
@@ -89,6 +94,8 @@ test/
 * `test_scheduler_dst_fallback_duplicate_block`: Verifies 2-hour duplicate suppression guard prevents duplicate auto-cycles during autumn DST fallback.
 * `test_scheduler_on_watering_done_advances_slot`: Verifies that cycle completion notification immediately recomputes and advances `next_hour`/`next_min` to the subsequent slot.
 * `test_scheduler_exact_minute_boundary`: Asserts that `computeNext` evaluates boundary minutes (e.g. 08:00:00) as already triggered and selects the subsequent slot.
+* `test_scheduler_on_watering_done_does_not_skip_adjacent_minute_slot`: Verifies completing a cycle at `07:59:15` does not skip an upcoming `08:00` slot.
+* `test_scheduler_cycle_expired_bounds_and_overflow_safety`: Verifies `isCycleExpired()` rejects zero or out-of-range `remaining_duration_sec` without `uint32_t` wraparound.
 
 ### `test_storage`
 * `test_storage_export_hex_length_and_format`: Verifies exported string length equals `sizeof(AppConfigBlob) * 2` (68 bytes) with valid uppercase hexadecimal representation.
@@ -101,6 +108,8 @@ test/
 * `test_storage_import_rejects_version_mismatch`: Verifies defensive rejection of hex imports containing unrecognised binary schema versions.
 * `test_storage_clear_wipes_all`: Verifies that `storage.clear()` purges the NVS namespace and causes subsequent loads to fail cleanly.
 * `test_storage_history_cache_persistence`: Validates direct NVS persistence and retrieval of `HistoryEntry` RAM cache buffers and line counts.
+* `test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected`: Verifies dormant `PERSONALIZADO` slot overlaps are auto-respaced on load when another mode is active, while active `PERSONALIZADO` overlaps are rejected.
+* `test_storage_zero_duration_normalizes_enabled_false`: Verifies zones with `duration_min == 0` normalize `enabled` to `false` across save/load.
 
 ### `test_history`
 * `test_history_entry_to_line_format`: Validates ISO 8601 formatting (`YYYY-MM-DDTHH:MM,<trigger>,d0,d1,d2,d3`) across `AUTO` ('A'), `MANUAL` ('M'), and `CUSTOM` ('C') triggers.
@@ -113,6 +122,9 @@ test/
 * `test_history_deferred_queue_when_busy`: Verifies that history records triggered while disk rotation or export is active are queued and not dropped.
 * `test_history_export_stream`: Verifies streaming export state machine, serial line emission, and return to idle.
 * `test_history_guarded_format_on_mount_failure`: Verifies that LittleFS mount failure refuses destructive reformatting (`formatOnFail`) when cached historical entries exist in NVS storage.
+* `test_history_line_to_entry_negative_and_overflow_bounds`: Verifies negative hour/minute rejection, `[0, 255]` clamping on zone durations, and null buffer safety on `readLast()`.
+* `test_history_rotation_write_failure_preserves_original_file`: Verifies LittleFS write failures during rotation abort `rename()` and preserve the existing `/history.csv`.
+* `test_history_corrupted_nvs_cache_rebuilds_from_fs`: Verifies corrupted NVS cache entries fall back to rebuilding the cache from LittleFS.
 
 ### `test_terminal`
 * `test_terminal_help_command`: Help menu formatting and command presence.
@@ -128,24 +140,41 @@ test/
 * `test_terminal_export_and_import_config_commands`: Verifies CLI configuration export to hex, chunked input parsing of `import_config`, UI synchronization, and validation error messages.
 * `test_terminal_export_history_command`: Verifies CLI history export command behavior on empty and populated logs.
 * `test_terminal_unknown_and_case_insensitive_commands`: Verifies unknown command dispatch, case insensitivity (`HeLp`), and whitespace tolerance.
+* `test_terminal_set_time_rejects_trailing_garbage_and_plus_sign`: Verifies `set_time` rejects trailing characters, `+` prefixes, and >4-digit years.
+* `test_terminal_status_truthful_when_rtc_invalid`: Verifies `status` reports suspended/awaiting-RTC states truthfully when `!gState.rtc_valid`.
+* `test_terminal_reboot_deenergizes_active_relays_preserving_recovery`: Verifies `reboot` forces active relay pins `HIGH` (OFF) while preserving NVS `RecoveryState`.
+
+### `test_ui`
+* `test_display_delta_rows_and_nullptr_preservation_across_refresh`: Verifies shadow-buffer delta writes, `nullptr` row preservation across `recover()` and 60s full refreshes, and absence of `0xFF` corruption bytes.
+* `test_display_formatting_helpers_and_null_safety`: Verifies 20-column formatting (`fx`, `cx`, `hdr`, `pbar`), percentage clamping, and `nullptr` input safety.
+* `test_menubuilder_dynamic_stop_watering_and_live_menu_refresh`: Verifies dynamic `"stop_now"` injection in `MenuID::MAIN` and live removal when watering finishes while viewing the menu.
+* `test_menubuilder_history_localization_and_dynamic_test_duration`: Verifies localized `TXT_HIST_TRIG_MANUAL` label, dynamic `ZONE_TEST_DURATION_S` formatting, and `|` delimiter sanitization in zone names.
+* `test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete`: Verifies full first-boot Setup Wizard flow and ensures skipping mode selection advances to `SETUP_ZONES` rather than skipping zone configuration.
+* `test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow`: Verifies missing-RTC `"skip_clock"` confirmation returns to `ScreenDateEdit` on `>Back` and advances to `SETUP_MODE` on `>OK`.
+* `test_ui_info_and_done_post_enter_rotation_bounce_guard`: Verifies 350ms post-enter rotation bounce guard on `ScreenInfo`/`ScreenDone`.
+* `test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety`: Verifies immediate DST refresh, custom slot auto-respacing on `"sel:4"`, 0-min zone guard on `"general"`, and relay shutdown on `"reset"`.
+* `test_ui_idle_screen_waiting_between_zones_and_backlight_never`: Verifies `TXT_IDLE_WAITING` rendering during inter-zone pauses and display wake-up under `BACKLIGHT_TIMEOUT_NEVER`.
 
 ### `test_watering`
 * `test_watering_general_builds_queue_and_skips_disabled`: Queue compilation validating that disabled zones and zones with `duration_min == 0` are excluded.
 * `test_watering_custom_selection`: Selective zone execution with runtime duration overrides.
 * `test_watering_dead_time_and_relay_activation`: Verifies relay dead-time enforcement (20ms where all pins remain `HIGH`) before activating zone relay (`LOW`).
 * `test_watering_emergency_stop`: Immediate hardware deactivation (all pins forced `HIGH`), queue purging, and state synchronization.
-* `test_watering_test_run_does_not_log_to_history`: Verifies 30-second zone test runs are excluded from persistent history logging.
+* `test_watering_test_run_does_not_log_to_history`: Verifies zone test runs are excluded from persistent history logging.
 * `test_watering_blackout_recovery_resumes_interrupted_cycle`: Verifies reboot recovery loads persisted `RecoveryState`, validates expiration window, and resumes from interrupted queue position.
 * `test_watering_multi_zone_sequence_and_history_logging`: Verifies full end-to-end multi-zone execution: dead-time, valve activation, inter-zone delay (`ZONE_WAIT_DELAY_MS` = 5000ms), subsequent zone execution, cycle completion, history record logging, and recovery state clearance.
 * `test_watering_emergency_stop_partial_duration_recorded`: Verifies that aborting a cycle after >= 30 seconds records rounded duration to history, while aborting under 30 seconds records 0 duration.
 * `test_watering_empty_selection_does_not_activate`: Verifies controller refuses activation when all zones are disabled or zero-duration.
+* `test_watering_recovery_rejects_corrupted_and_suspended_states`: Verifies `begin()` rejects out-of-range durations, duplicate zone indices, and `AUTO` recovery while `gState.suspended` is active.
+* `test_watering_inter_zone_wait_updates_upcoming_zone_index`: Verifies `gState.watering.zone_idx` and `progress_pct` update to the upcoming zone immediately upon entering inter-zone wait.
+* `test_watering_deenergize_relays_preserves_recovery_state`: Verifies `deenergizeRelays()` turns all relays OFF while leaving NVS `RecoveryState` intact.
 
 ---
 
 ## 4. Usage & Execution Commands
 
 ```bash
-# Execute entire test suite (all 68 test cases)
+# Execute entire test suite (all 94 test cases across 9 suites)
 pio test -e native
 
 # Execute specific test suite
@@ -157,6 +186,7 @@ pio test -e native -f test_storage
 pio test -e native -f test_history
 pio test -e native -f test_rtclock
 pio test -e native -f test_appstate
+pio test -e native -f test_ui
 
 # Verbose output (detailed assertion logs)
 pio test -e native -vv
@@ -204,7 +234,7 @@ RUN_TEST(test_specific_condition);
 
    // Test cases...
 
-   int main(int argc, char **argv) {
+   int main(void) {
        UNITY_BEGIN();
        RUN_TEST(test_case_name);
        return UNITY_END();
@@ -234,28 +264,29 @@ Continuous integration is defined in `.github/workflows/ci.yml` and executes on 
 
 ## 7. Test Case Necessity & Redundancy Audit
 
-A comprehensive evaluation across all 68 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
+A comprehensive evaluation across all 94 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
 
 | Suite | Tests | Analysis & Redundancy Assessment | Verdict |
 |---|---|---|---|
 | `test_appstate` | 3 | Checks compile-time struct alignment/padding (`sizeof`), uninitialized state defaults, and static mode schedule definitions. Does not overlap with dynamic scheduling. | **100% Essential** |
-| `test_encoder` | 3 | Covers 50ms pushbutton debounce, hold/release transitions, delta reset-on-read, ±127 clamping with remainder, and 2000µs ISR contact bounce rate limiting. Each test exercises a distinct state machine branch. | **100% Essential** |
-| `test_rtclock` | 7 | Covers non-boundary seasonal months, March spring-forward (01:00 UTC boundary), October fall-back (01:00 UTC boundary), UTC-to-local offset arithmetic with/without DST, leap-year Sunday calculation (2028), year-end rollover (Dec 31 → Jan 1), and 30-second throttle preservation after internal clock set/recovery. | **100% Essential** |
-| `test_scheduler` | 13 | Covers 1-slot, 2-slot, and 3-slot daily schedules, disabled mode guard, custom multi-day interval modular math, blackout duration expiration, auto-unsuspend, calendar month/leap-year rollovers, instant mode recomputation, day-of-week bitmasks, autumn DST fallback duplicate protection, cycle completion notification, and the exact minute `<=` boundary guard. Minor apparent overlap between `medio`, `intenso`, and `fraco` serves specifically to protect loop boundary logic against 1-element, 2-element, and 3-element off-by-one errors. | **100% Essential** |
-| `test_storage` | 10 | Covers hex string formatting, end-to-end round-trip, invalid hex/null rejection, recovery state binary persistence, NVS simulated cycles, corrupted boolean byte rejection, duration clamping, schema version guard, NVS namespace purge, and history cache buffer persistence. | **100% Essential** |
-| `test_history` | 10 | Covers CSV line serialization for all trigger types, CSV deserialization, 7 corruption rejection modes, RAM FIFO queue eviction, capacity rotation state machine (1500 lines), missing column padding, non-blocking deferred queueing during I/O, streaming serial export, and LittleFS guarded format prevention on mount failure when cache exists. | **100% Essential** |
-| `test_terminal` | 13 | Covers CLI commands (`help`, `status`, `set_time`, `stop`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`), 2-step confirmation flows (`y`/`n`), ANSI cursor sequence stripping, 256-byte chunked buffer overflow protection, and case/whitespace tolerance. | **100% Essential** |
-| `test_watering` | 9 | Covers general queue compilation (skipping disabled/0-min zones), custom duration selection, relay dead-time enforcement, emergency stop hardware off, test run history exclusion, blackout recovery queue resume, multi-zone sequencing with inter-zone delays, partial duration rounding (>=30s vs <30s), and empty selection rejection. | **100% Essential** |
+| `test_encoder` | 4 | Covers 50ms pushbutton debounce, hold/release transitions, delta reset-on-read, ±127 clamping with remainder, 2000µs ISR contact bounce rate limiting, and early-boot ISR acceptance after `begin()`. | **100% Essential** |
+| `test_rtclock` | 10 | Covers seasonal months, March/October DST boundaries, UTC/local round-trips, October repeated-hour disambiguation, leap-year Sundays, year-end rollover, 30s throttle preservation, mid-run `begin()` RAM preservation/power-loss restore, and instant DST toggle refresh. | **100% Essential** |
+| `test_scheduler` | 15 | Covers 1/2/3-slot daily schedules, disabled guard, custom multi-day modular math, blackout expiration & overflow bounds, auto-unsuspend, month/leap-year rollovers, instant mode recomputation, DOW bitmasks, autumn DST duplicate suppression, adjacent-minute slot preservation on completion, and exact minute boundary guard. | **100% Essential** |
+| `test_storage` | 12 | Covers hex codec, end-to-end round-trip, invalid input rejection, recovery state binary persistence, NVS cycles, corrupted boolean byte rejection, duration clamping, zero-duration `enabled` normalization, dormant vs active custom overlap handling, schema version guard, namespace purge, and history cache persistence. | **100% Essential** |
+| `test_history` | 13 | Covers CSV serialization/deserialization, corruption/negative/overflow bounds, RAM FIFO eviction, capacity rotation (1500 lines), write-failure atomic preservation during rotation, missing column padding, deferred queueing during I/O, streaming serial export, guarded LittleFS format, and corrupted NVS cache fallback. | **100% Essential** |
+| `test_terminal` | 16 | Covers CLI commands (`help`, `status`, `set_time`, `stop`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`), strict `set_time` token validation, truthful no-RTC `status`, relay de-energizing on `reboot`, confirmation flows (`y`/`n`), ANSI filtering, 256-byte overflow protection, and case/whitespace tolerance. | **100% Essential** |
+| `test_ui` | 9 | Covers `Display` delta shadow buffer & `nullptr` row preservation across refreshes, formatting helpers, `MenuBuilder` dynamic `"stop_now"` & live menu updates, i18n/sanitization, Setup Wizard end-to-end & missing-RTC flows, 350ms post-enter rotation bounce guard, UI action safety guards, and `ScreenIdle` inter-zone status. | **100% Essential** |
+| `test_watering` | 12 | Covers queue compilation, custom selection, relay dead-time, emergency stop, test-run history exclusion, blackout recovery & corrupted/suspended state rejection, multi-zone sequencing, inter-zone upcoming index sync, partial duration rounding, empty selection guard, and `deenergizeRelays()`. | **100% Essential** |
 
-**Conclusion**: All 68 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
+**Conclusion**: All 94 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
 
 ---
 
 ## 8. Performance & Speed Optimization
 
 ### Benchmark Profile
-* **Runtime Execution Time**: ~15–30 ms across all 68 test cases combined.
-* **Compilation Time**: ~5–8 s when compiling 8 distinct native binaries sequentially.
+* **Runtime Execution Time**: ~20–35 ms across all 94 test cases combined.
+* **Compilation Time**: ~6–10 s when compiling 9 distinct native binaries sequentially.
 
 ### Applied Optimizations
 1. **Bulk Buffer Mock File Population (`test_history`)**:

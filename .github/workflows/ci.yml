@@ -69,5 +69,10 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
-      - name: Build firmware
+      - name: Build firmware (alternate flags / EN UI + PT Serial + Wokwi + Debug)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DWOKWI_SIM -DLOG_LEVEL=LVL_DEBUG -DMENU_WRAP_AROUND=0"
+        run: pio run -e esp32dev
+
+      - name: Build firmware (default release configuration)
         run: pio run -e esp32dev
