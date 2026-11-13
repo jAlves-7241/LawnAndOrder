@@ -17,7 +17,8 @@ Display::Display()
 }
 
 void Display::begin() {
-    _lcd.init();
+    _lcd.clearError();
+    _lcd.init(false);
     _lcd.backlight();
     _lcd.display();
     _backlightOn = true;
@@ -28,11 +29,14 @@ void Display::begin() {
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
     _invalidateShadow();
     _lastFullRefresh = millis();
+    _busFault = (_lcd.lastError() != 0);
+    _consecErrors = _busFault ? 1 : 0;
     LOG_I("LCD", TXT_LOG_LCD_READY);
 }
 
 void Display::recover() {
-    _lcd.init();
+    _lcd.clearError();
+    _lcd.init(false);
     if (_backlightOn) {
         _lcd.backlight();
     } else {
@@ -48,6 +52,8 @@ void Display::recover() {
     _lcd.clear();
     delay(10);
     _invalidateShadow();
+    _busFault = (_lcd.lastError() != 0);
+    _consecErrors = 0;
     LOG_I("LCD", TXT_LOG_LCD_RECOVERED);
 }
 
@@ -87,32 +93,74 @@ void Display::_invalidateShadow() {
 void Display::setRows(const char* r0, const char* r1,
                       const char* r2, const char* r3) {
     if (!_displayOn) return;
+    _lcd.clearError();
+    bool frameError = false;
+    bool wroteAny = false;
     const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
     for (int r = 0; r < LCD_ROWS; r++) {
         if (rows[r]) {
-            _writeRow(r, rows[r]);
+            wroteAny = true;
+            if (!_writeRow(r, rows[r])) {
+                frameError = true;
+                break;
+            }
         } else if (_dirty[r]) {
+            wroteAny = true;
             _lcd.setCursor(0, r);
             _lcd.print(_shadow[r]);
+            if (_lcd.lastError() != 0) {
+                frameError = true;
+                break;
+            }
             _dirty[r] = false;
         }
     }
 
     // Forçar atualização total a cada 60 segundos para autocorrigir ruído no bus I2C (glitches físicos)
-    uint32_t now = millis();
-    if (now - _lastFullRefresh >= 60000UL) {
-        for (int r = 0; r < LCD_ROWS; r++) {
-            _lcd.setCursor(0, r);
-            _lcd.print(_shadow[r]);
-            _dirty[r] = false;
+    if (!frameError) {
+        uint32_t now = millis();
+        if (now - _lastFullRefresh >= 60000UL) {
+            for (int r = 0; r < LCD_ROWS; r++) {
+                wroteAny = true;
+                _lcd.setCursor(0, r);
+                _lcd.print(_shadow[r]);
+                if (_lcd.lastError() != 0) {
+                    frameError = true;
+                    break;
+                }
+                _dirty[r] = false;
+            }
+            if (!frameError) {
+                _lastFullRefresh = now;
+            }
         }
-        _lastFullRefresh = now;
+    }
+
+    if (frameError) {
+        _invalidateShadow();
+        _busFault = true;
+        if (_consecErrors < 255) _consecErrors++;
+        if (_consecErrors >= 3) {
+            uint32_t now = millis();
+            if (_lastRecoverMs == 0 || (now - _lastRecoverMs) >= 10000UL) {
+                _lastRecoverMs = now;
+                _consecErrors = 0;
+                if (_onError) {
+                    _onError();
+                } else {
+                    recover();
+                }
+            }
+        }
+    } else if (wroteAny) {
+        _busFault = false;
+        _consecErrors = 0;
     }
 }
 
 // Only send to LCD if the row content differs from shadow
-void Display::_writeRow(uint8_t row, const char* text) {
-    if (row >= LCD_ROWS) return;  // bounds guard
+bool Display::_writeRow(uint8_t row, const char* text) {
+    if (row >= LCD_ROWS) return true;  // bounds guard
     if (!text) text = "";
     // Build padded version
     char padded[LCD_COLS + 1];
@@ -124,13 +172,16 @@ void Display::_writeRow(uint8_t row, const char* text) {
 
     if (_dirty[row]) {
         memcpy(_shadow[row], padded, LCD_COLS + 1);
-        _dirty[row] = false;
         _lcd.setCursor(0, row);
         _lcd.print(_shadow[row]);
-        return;
+        if (_lcd.lastError() != 0) {
+            return false;
+        }
+        _dirty[row] = false;
+        return true;
     }
 
-    if (memcmp(_shadow[row], padded, LCD_COLS) == 0) return;  // no change
+    if (memcmp(_shadow[row], padded, LCD_COLS) == 0) return true;  // no change
 
     // Detetar limites do delta
     int diffStart = 0;
@@ -152,6 +203,11 @@ void Display::_writeRow(uint8_t row, const char* text) {
     memcpy(chunk, padded + diffStart, writeLen);
     chunk[writeLen] = '\0';
     _lcd.print(chunk);
+    if (_lcd.lastError() != 0) {
+        _dirty[row] = true;
+        return false;
+    }
+    return true;
 }
 
 // ── Static formatting helpers ──────────────────────────────

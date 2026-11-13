@@ -8,8 +8,9 @@
 
 #define printIIC(args)	Wire.write(args)
 inline size_t LiquidCrystal_I2C::write(uint8_t value) {
+	if (_i2cErr != 0) return 0;
 	send(value, Rs);
-	return 1;
+	return (_i2cErr == 0) ? 1 : 0;
 }
 
 #else
@@ -54,16 +55,23 @@ LiquidCrystal_I2C::LiquidCrystal_I2C(uint8_t lcd_Addr,uint8_t lcd_cols,uint8_t l
 
 void LiquidCrystal_I2C::oled_init(){
   _oled = true;
-	init_priv();
+	init_priv(false);
 }
 
 void LiquidCrystal_I2C::init(){
-	init_priv();
+	init_priv(false);
 }
 
-void LiquidCrystal_I2C::init_priv()
+void LiquidCrystal_I2C::init(bool initWire){
+	init_priv(initWire);
+}
+
+void LiquidCrystal_I2C::init_priv(bool initWire)
 {
-	Wire.begin();
+	if (initWire) {
+		Wire.begin();
+	}
+	_i2cErr = 0;
 	_displayfunction = LCD_4BITMODE | LCD_1LINE | LCD_5x8DOTS;
 	begin(_cols, _rows);  
 }
@@ -259,6 +267,7 @@ inline void LiquidCrystal_I2C::command(uint8_t value) {
 
 // write either command or data
 void LiquidCrystal_I2C::send(uint8_t value, uint8_t mode) {
+	if (_i2cErr != 0) return;
 	uint8_t highnib=value&0xf0;
 	uint8_t lownib=(value<<4)&0xf0;
        write4bits((highnib)|mode);
@@ -266,21 +275,29 @@ void LiquidCrystal_I2C::send(uint8_t value, uint8_t mode) {
 }
 
 void LiquidCrystal_I2C::write4bits(uint8_t value) {
+	if (_i2cErr != 0) return;
 	expanderWrite(value);
 	pulseEnable(value);
 }
 
 void LiquidCrystal_I2C::expanderWrite(uint8_t _data){                                        
+	if (_i2cErr != 0) return;
 	Wire.beginTransmission(_Addr);
 	printIIC((int)(_data) | _backlightval);
-	Wire.endTransmission();   
+	uint8_t err = Wire.endTransmission();
+	if (err != 0) {
+		_i2cErr = err;
+	}
 }
 
 void LiquidCrystal_I2C::pulseEnable(uint8_t _data){
+	if (_i2cErr != 0) return;
 	expanderWrite(_data | En);	// En high
+	if (_i2cErr != 0) return;
 	delayMicroseconds(1);		// enable pulse must be >450ns
 	
 	expanderWrite(_data & ~En);	// En low
+	if (_i2cErr != 0) return;
 	delayMicroseconds(50);		// commands need > 37us to settle
 } 
 

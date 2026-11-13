@@ -20,39 +20,54 @@ Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 UI             ui(display, encoder);
 
-void clearI2CBus() {
+bool clearI2CBus() {
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
-    pinMode(PIN_SCL, OUTPUT); // Push-pull to guarantee clock pulses
+    pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN); // Open-drain evita curto push-pull no barramento
     digitalWrite(PIN_SCL, HIGH);
     
+    delayMicroseconds(25);
     // Toggle SCL up to 9 times while SDA is LOW
     for (int i = 0; i < 9; i++) {
-        esp_task_wdt_reset();
         if (digitalRead(PIN_SDA) == HIGH) break; 
         digitalWrite(PIN_SCL, LOW);
-        delayMicroseconds(5);
+        delayMicroseconds(25);
         digitalWrite(PIN_SCL, HIGH);
-        delayMicroseconds(5);
+        delayMicroseconds(25);
     }
     
     // Generate STOP condition
+    digitalWrite(PIN_SCL, LOW);
+    delayMicroseconds(25);
     pinMode(PIN_SDA, OUTPUT_OPEN_DRAIN);
     digitalWrite(PIN_SDA, LOW);
+    delayMicroseconds(25);
     digitalWrite(PIN_SCL, HIGH);
-    delayMicroseconds(5);
+    delayMicroseconds(25);
     digitalWrite(PIN_SDA, HIGH); 
-    delayMicroseconds(10000);
+    pinMode(PIN_SDA, INPUT_PULLUP);
+    delayMicroseconds(2000);
+    bool sdaHigh = (digitalRead(PIN_SDA) == HIGH);
+    if (!sdaHigh) {
+        LOG_W("SYS", "I2C SDA held low after bus clear");
+    }
+    return sdaHigh;
 }
 
 static inline void configureI2CTimeout() {
 #if defined(WIRE_HAS_TIMEOUT)
-    Wire.setWireTimeout(150000, true); // 150 ms com auto-reset do barramento por hardware
+    Wire.setWireTimeout(50000, true); // 50 ms com auto-reset do barramento por hardware
 #else
-    Wire.setTimeOut(150);
+    Wire.setTimeOut(50);
 #endif
 }
 
 void recoverI2C() {
+    static uint32_t lastRecoverMs = 0;
+    uint32_t now = millis();
+    if (lastRecoverMs != 0 && (now - lastRecoverMs) < 10000UL) {
+        return;
+    }
+    lastRecoverMs = now;
     esp_task_wdt_reset();
     LOG_W("SYS", TXT_LOG_I2C_REC_START);
     Wire.end();
@@ -60,10 +75,11 @@ void recoverI2C() {
     clearI2CBus();
     
     Wire.begin(PIN_SDA, PIN_SCL);
+    configureI2CTimeout();
     rtclock.begin();
     esp_task_wdt_reset();
     display.recover();
-    configureI2CTimeout(); // Deve ser DEPOIS do display, pois a biblioteca LiquidCrystal faz Wire.begin() interno e limpa o timeout!
+    // Timeout ja configurado antes de rtclock.begin() e preservado por Display::_lcd.init(false)
     LOG_I("SYS", TXT_LOG_I2C_REC_DONE);
 }
 
@@ -114,6 +130,7 @@ void setup() {
 
     clearI2CBus();
     Wire.begin(PIN_SDA, PIN_SCL);
+    configureI2CTimeout();
     delay(200); // Allow LCD to boot fully
 
     // I2C bus scan — log all detected devices
@@ -135,7 +152,7 @@ void setup() {
     esp_task_wdt_reset();
     display.begin();
     esp_task_wdt_reset();
-    configureI2CTimeout(); // DEPOIS do display.begin()
+    display.setErrorCallback(recoverI2C);
     encoder.begin();
 
     rtclock.setErrorCallback(recoverI2C);

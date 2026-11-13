@@ -8,6 +8,9 @@ public:
     std::vector<uint8_t> detectedAddresses;
 
     void begin() {}
+    void begin(int sda, int scl) { (void)sda; (void)scl; }
+    void end() {}
+    void setTimeOut(uint16_t ms) { (void)ms; }
     void beginTransmission(uint8_t addr) {
         _lastAddr = addr;
     }

@@ -15,6 +15,9 @@ public:
     bool displayState = false;
     uint32_t printCalls = 0;
     uint32_t clearCalls = 0;
+    uint32_t initWireCalls = 0;
+    uint8_t mockI2cError = 0;
+    uint8_t _i2cErr = 0;
     char screen[4][21];
 
     LiquidCrystal_I2C(uint8_t addr = 0x27, uint8_t cols = 20, uint8_t rows = 4)
@@ -26,9 +29,18 @@ public:
     }
 
     void init() {
+        init(false);
+    }
+
+    void init(bool initWire) {
         lastInstance = this;
+        if (initWire) initWireCalls++;
+        _i2cErr = mockI2cError;
         displayState = true;
     }
+
+    uint8_t lastError() const { return _i2cErr; }
+    void clearError() { _i2cErr = 0; }
 
     void backlight() { backlightState = true; }
     void noBacklight() { backlightState = false; }
@@ -36,6 +48,10 @@ public:
     void noDisplay() { displayState = false; }
 
     void clear() {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            return;
+        }
         for (int r = 0; r < 4; r++) {
             memset(screen[r], ' ', 20);
             screen[r][20] = '\0';
@@ -46,11 +62,20 @@ public:
     }
 
     void setCursor(uint8_t col, uint8_t row) {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            return;
+        }
         cursorCol = col;
         cursorRow = (row < 4) ? row : 3;
     }
 
     void print(const char* s) {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            printCalls++;
+            return;
+        }
         printCalls++;
         if (!s || cursorRow >= 4) return;
         for (size_t i = 0; s[i] != '\0' && cursorCol < 20; i++) {

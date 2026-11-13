@@ -88,7 +88,10 @@ public:
 #endif
   void command(uint8_t);
   void init();
+  void init(bool initWire);
   void oled_init();
+  uint8_t lastError() const { return _i2cErr; }
+  void clearError() { _i2cErr = 0; }
 
 ////compatibility API function aliases
 void blink_on();						// alias for blink()
@@ -112,7 +115,7 @@ void draw_vertical_graph(uint8_t row, uint8_t column, uint8_t len,  uint8_t pixe
 	 
 
 private:
-  void init_priv();
+  void init_priv(bool initWire = false);
   void send(uint8_t, uint8_t);
   void write4bits(uint8_t);
   void expanderWrite(uint8_t);
@@ -126,6 +129,7 @@ private:
   uint8_t _cols;
   uint8_t _rows;
   uint8_t _backlightval;
+  uint8_t _i2cErr = 0;
 };
 
 #endif

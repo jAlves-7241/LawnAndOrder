@@ -12,9 +12,13 @@
 
 class Display {
 public:
+    typedef void (*ErrorCallback)();
+
     Display();
     void begin();
     void recover(); // Re-initializes without forcing backlight/display ON if they were OFF
+    void setErrorCallback(ErrorCallback cb) { _onError = cb; }
+    bool hasBusFault() const { return _busFault; }
 
     // Write all four rows at once.
     // Pass "" to write a blank row. Pass nullptr to leave a row unchanged.
@@ -46,12 +50,16 @@ private:
     LiquidCrystal_I2C _lcd;
     bool _backlightOn;
     bool _displayOn;
+    bool _busFault = false;
+    uint8_t _consecErrors = 0;
+    uint32_t _lastRecoverMs = 0;
+    ErrorCallback _onError = nullptr;
 
     // Shadow buffer - only writes row if content actually changed
     char _shadow[LCD_ROWS][LCD_COLS + 1];
     bool _dirty[LCD_ROWS];
     uint32_t _lastFullRefresh;
 
-    void _writeRow(uint8_t row, const char* text);
+    bool _writeRow(uint8_t row, const char* text);
     void _invalidateShadow();  // force full redraw on next setRows()
 };
