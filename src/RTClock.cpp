@@ -48,14 +48,15 @@ bool RTClock::begin() {
     if (_lostPower) {
         if (wasValid && prevTime.year >= 2020 && prevTime.year <= 2099) {
             LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
-            DateTime restoredUtc = localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
-                                                       prevTime.hour, prevTime.min, prevTime.sec));
+            DateTime restoredUtc = (prevTime.unix >= 1577836800UL)
+                ? DateTime(prevTime.unix)
+                : localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
+                                      prevTime.hour, prevTime.min, prevTime.sec));
             _rtc.adjust(restoredUtc);
             _lostPower = false;
             gState.rtc_valid = true;
         } else {
             LOG_W("RTC", TXT_LOG_RTC_BAT_LOW);
-            _rtc.adjust(DateTime(2026, 1, 1, 0, 0, 0));
             gState.rtc_valid = false;
         }
     } else {
@@ -66,7 +67,30 @@ bool RTClock::begin() {
     DateTime utcDt = _rtc.now();
     
     // Proteger o arranque contra barramento I2C preso ou corrompido
-    if (utcDt.year() < 2020 || utcDt.year() > 2099) {
+    if (_lostPower && !wasValid) {
+        if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
+            LOG_E("RTC", TXT_LOG_RTC_BOOT_CORRUPT,
+                  utcDt.year(), utcDt.month(), utcDt.day());
+            _found = false;
+            gState.rtc_valid = false;
+            return false;
+        }
+        // Chip presente com OSF ativo e relogio ainda nao configurado: preservar OSF ate o utilizador acertar a hora
+        if (_isValidDateTime(utcDt)) {
+            _copyToState(utcToLocal(utcDt));
+            gState.now.unix = utcDt.unixtime();
+        } else if (gState.now.year < DATE_YEAR_MIN) {
+            _copyToState(DateTime(2026, 1, 1, 0, 0, 0));
+            gState.now.unix = 1767225600UL;
+        }
+        _lastReadMs = millis();
+        _anchorMs = _lastReadMs;
+        _anchorUnix = gState.now.unix;
+        _lastKnownUnix = gState.now.unix;
+        return true;
+    }
+
+    if (!_isValidDateTime(utcDt)) {
         LOG_E("RTC", TXT_LOG_RTC_BOOT_CORRUPT,
               utcDt.year(), utcDt.month(), utcDt.day());
         _found = false;
@@ -122,18 +146,18 @@ void RTClock::update() {
             LOG_I("RTC", TXT_LOG_RTC_HOT_DETECT);
             if (_rtc.begin()) {
                 _found = true;
+                bool wasValid = gState.rtc_valid;
                 #ifdef WOKWI_SIM
                     _lostPower = false;
-                    if (!gState.rtc_valid) gState.rtc_valid = true;
                 #else
                     _lostPower = _rtc.lostPower();
-                    if (!gState.rtc_valid) gState.rtc_valid = !_lostPower;
                 #endif
                 
                 LOG_I("RTC", TXT_LOG_RTC_HOT_FOUND);
                 
                 DateTime utcDt = _rtc.now();
-                if (utcDt.year() >= 2020 && utcDt.year() <= 2099 && !_lostPower) {
+                if (!_lostPower && _isValidDateTime(utcDt)) {
+                    gState.rtc_valid = true;
                     DateTime localDt = utcToLocal(utcDt);
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
@@ -141,12 +165,17 @@ void RTClock::update() {
                           gState.now.year, gState.now.month, gState.now.day,
                           gState.now.hour, gState.now.min, gState.now.sec);
 
-                } else {
+                } else if (wasValid) {
                     // Se o RTC tem hora inválida mas o utilizador já configurou hora no software
-                    if (gState.rtc_valid) {
+                    if (gState.now.unix >= 1577836800UL) {
+                        _rtc.adjust(DateTime(gState.now.unix));
+                        _lostPower = false;
+                    } else {
                         set(gState.now.year, gState.now.month, gState.now.day,
                             gState.now.hour, gState.now.min, gState.now.sec);
                     }
+                } else {
+                    gState.rtc_valid = false;
                 }
             }
         }
@@ -174,11 +203,22 @@ void RTClock::update() {
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
             LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
-            set(gState.now.year, gState.now.month, gState.now.day,
-                gState.now.hour, gState.now.min, gState.now.sec);
+            if (gState.now.unix >= 1577836800UL) {
+                DateTime restoredUtc(gState.now.unix);
+                _rtc.adjust(restoredUtc);
+                _lostPower = false;
+            } else {
+                set(gState.now.year, gState.now.month, gState.now.day,
+                    gState.now.hour, gState.now.min, gState.now.sec);
+            }
             _lastReadMs = nowMs;   // internal recovery must not defeat the 30 s throttle
         } else {
-            LOG_E("RTC", TXT_LOG_RTC_BAT_FAIL_RAM);
+            if (!_lostPower) {
+                LOG_E("RTC", TXT_LOG_RTC_BAT_FAIL_RAM);
+            }
+            _lostPower = true;
+            _incrementSoftwareClock();
+            return;
         }
     }
 #endif
@@ -186,8 +226,8 @@ void RTClock::update() {
     DateTime utcDt = _rtc.now();
 
 #ifndef WOKWI_SIM
-    // Detetar barramento I2C preso ou corrompido (ano fora dos limites de 2020-2099)
-    if (utcDt.year() < 2020 || utcDt.year() > 2099) {
+    // Detetar barramento I2C preso ou corrompido (campos fora dos limites válidos)
+    if (!_isValidDateTime(utcDt)) {
         _consecErrors++;
         if (_consecErrors >= 3) {
             LOG_E("RTC", TXT_LOG_RTC_I2C_CORRUPT,
@@ -208,6 +248,9 @@ void RTClock::update() {
     }
 #endif
 
+    _lostPower = false;
+    gState.rtc_valid = true;
+
     DateTime localDt = utcToLocal(utcDt);
     _copyToState(localDt);
 
@@ -220,33 +263,52 @@ void RTClock::update() {
 }
 
 // ─────────────────────────────────────────────────────────
-void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
+bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                   uint8_t  hour, uint8_t minute, uint8_t second) {
     
-    // Filtro contra underflow do epoch (corrupção por dados manuais ou software)
-    if (year < 2020 || year > 2099) return;
+    // Filtro contra underflow/campos inválidos (corrupção por dados manuais ou software)
+    if (year < DATE_YEAR_MIN || year > DATE_YEAR_MAX) return false;
+    DateTime localDt(year, month, day, hour, minute, second);
+    if (!_isValidDateTime(localDt)) return false;
 
     // Preservar a suspensão mantendo a diferença de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
     bool wasRtcValid = gState.rtc_valid;
 
     // A hora recebida do utilizador é HORA LOCAL.
-    DateTime localDt(year, month, day, hour, minute, second);
     DateTime utcDt = localToUtc(localDt);
     DateTime effectiveLocal = utcToLocal(utcDt);
 
+    bool hwOk = false;
     if (_found) {
-        _rtc.adjust(utcDt);
+        #ifdef WOKWI_SIM
+            _rtc.adjust(utcDt);
+            hwOk = true;
+        #else
+            if (_rtc.begin()) {
+                _rtc.adjust(utcDt);
+                hwOk = true;
+            } else {
+                _found = false;
+                LOG_E("RTC", TXT_LOG_RTC_NOT_FOUND);
+            }
+        #endif
     } else {
         LOG_I("RTC", TXT_LOG_RTC_SAVE_ATTEMPT);
         if (_rtc.begin()) {
             _found = true;
             _rtc.adjust(utcDt);
+            hwOk = true;
             LOG_I("RTC", TXT_LOG_RTC_SAVE_OK);
         }
     }
 
-    _lostPower       = false;
+    if (hwOk) {
+        _lostPower = false;
+        _lastReadMs = millis() - 30000UL;
+    } else {
+        _lastRtcRetryMs = millis();
+    }
     gState.rtc_valid = true;
 
     // Atualizar a RAM imediatamente (importante para fallback software)
@@ -255,9 +317,6 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     _anchorMs = millis();
     _anchorUnix = gState.now.unix;
     _lastKnownUnix = gState.now.unix;
-
-    // Forçar releitura para gState
-    _lastReadMs = millis() - 30000UL;
 
     // Reajustar o `suspended_until`
     if (gState.suspended && gState.suspended_until > 0) {
@@ -288,6 +347,8 @@ void RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     LOG_I("RTC", TXT_LOG_RTC_TIME_SET,
           year, month, day, hour, minute, second);
+    _revision++;
+    return hwOk;
 }
 
 void RTClock::setTime(uint8_t hour, uint8_t minute) {
@@ -339,6 +400,25 @@ void RTClock::_copyToState(const DateTime& dt) {
     gState.now.min   = dt.minute();
     gState.now.sec   = dt.second();
     gState.now.dow   = dt.dayOfTheWeek();
+}
+
+bool RTClock::_isValidDateTime(const DateTime& dt) {
+    uint16_t y  = dt.year();
+    uint8_t  m  = dt.month();
+    uint8_t  d  = dt.day();
+    uint8_t  hh = dt.hour();
+    uint8_t  mm = dt.minute();
+    uint8_t  ss = dt.second();
+    if (y < DATE_YEAR_MIN || y > DATE_YEAR_MAX) return false;
+    if (m < 1 || m > 12) return false;
+    static const uint8_t kDaysInMonth[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    uint8_t maxD = kDaysInMonth[m - 1];
+    if (m == 2 && ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0))) {
+        maxD = 29;
+    }
+    if (d < 1 || d > maxD) return false;
+    if (hh > 23 || mm > 59 || ss > 59) return false;
+    return true;
 }
 
 // Retorna true se a hora (UTC) cai no período de horário de verão europeu

@@ -35,8 +35,8 @@ public:
     // gState.now with a software clock between hardware reads.
     void update();
 
-    // Set date and time.
-    void set(uint16_t year, uint8_t month,  uint8_t day,
+    // Set date and time. Returns true if hardware RTC was updated, false if only RAM fallback.
+    bool set(uint16_t year, uint8_t month,  uint8_t day,
              uint8_t  hour, uint8_t minute, uint8_t second);
 
     // Set only hour and minute, keeping the current date.
@@ -60,6 +60,7 @@ public:
 
     // True if the hardware module is physically detected.
     bool isPresent() const { return _found; }
+    uint32_t revision() const { return _revision; }
 
     void setErrorCallback(ErrorCallback cb) { _errorCb = cb; }
 
@@ -73,12 +74,14 @@ private:
     uint32_t _anchorMs;
     uint32_t _anchorUnix;
     uint32_t _lastKnownUnix;
+    uint32_t _revision = 0;
     ErrorCallback _errorCb;
 
     void _incrementSoftwareClock();
 
     static void _copyToState(const DateTime& dt);
     static bool _isEU_DST(const DateTime& dt);
+    static bool _isValidDateTime(const DateTime& dt);
 };
 
 extern RTClock rtclock;
