@@ -39,6 +39,9 @@ public:
     // Recomputes next_* immediately so the IDLE screen updates.
     void onModeChanged();
 
+    // Clear persisted/cached DST fall-back trigger guards (on mode change or manual set_time).
+    void clearLastTriggers();
+
     // Call this when a watering cycle finishes (from WateringController
     // or from the loop after noticing watering went inactive).
     // Advances next_* past the just-fired slot.
@@ -67,8 +70,9 @@ private:
     // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;
     uint8_t _lastSec;
+    uint32_t _lastClockRev;
 
-    // UTC unix timestamp of the last successful auto-trigger for each slot.
+    // UTC unix timestamp of the last successful auto-trigger for each slot (persisted to NVS).
     // Prevents re-triggering the same slot when local time repeats (DST fall-back).
     // Uses a 2h (7200s) window: the same slot on consecutive days is ≥24h apart,
     // while a DST duplicate is exactly 1h apart. Different slots use different indices.

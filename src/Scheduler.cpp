@@ -10,7 +10,7 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _lastMin(0xFF), _lastSec(0xFF)
+    : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
 }
@@ -19,6 +19,8 @@ Scheduler::Scheduler()
 void Scheduler::begin() {
     _lastSec = 0xFF;
     _lastMin = 0xFF;
+    _lastClockRev = rtclock.revision();
+    storage.loadLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
     computeNext(gState.mode, gState.now,
@@ -28,8 +30,18 @@ void Scheduler::begin() {
                   gState.next_hour, gState.next_min);
 }
 
+void Scheduler::clearLastTriggers() {
+    memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+    storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
+}
+
 // ─────────────────────────────────────────────────────────
 void Scheduler::update() {
+    if (rtclock.revision() != _lastClockRev) {
+        _lastClockRev = rtclock.revision();
+        clearLastTriggers();
+    }
+
     if (!gState.rtc_valid)  return;
 
     // Apenas processar se o segundo do relógio tiver mudado (redução de carga sobre o CPU)
@@ -62,9 +74,6 @@ void Scheduler::update() {
                     gState.next_hour, gState.next_min);
         if (gState.custom_ref_day != old_ref) storage.save();
 
-
-
-
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
         if (sched.slot_count > 0) {
             DateTime localDate(t.year, t.month, t.day, 0, 0, 0);
@@ -89,6 +98,7 @@ void Scheduler::update() {
                             break;
                         }
                         _lastTriggerUnix[i] = t.unix;
+                        storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
                         LOG_I("SCHED", TXT_LOG_SCHED_AUTO_START,
                                       t.hour, t.min);
                         wateringCtrl.startGeneral(WaterTrigger::AUTO);
@@ -103,7 +113,7 @@ void Scheduler::update() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged() {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
-    memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+    clearLastTriggers();
     _lastSec = 0xFF;
     if (gState.rtc_valid) {
         _lastMin = gState.now.min; // Align with current minute to prevent mid-minute double trigger
@@ -166,8 +176,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     }
     uint32_t current_unix = current_time.unix;
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return true;
-    const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
-    uint32_t max_allowed_duration = (sched.slot_count <= 1) ? 43200UL : 28800UL; // 12h or 8h
+    const uint32_t max_allowed_duration = RECOVERY_MAX_AGE_S;
     if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
         LOG_W("SCHED", TXT_LOG_SCHED_REC_HLIMIT);
         return true;
