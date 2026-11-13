@@ -9,8 +9,8 @@ Este diretório contém o firmware do controlador ESP32. A execução é coopera
 - `WateringController.h / .cpp`: fila de zonas, temporização, comutação dos relés e estado de recuperação persistente.
 - `Scheduler.h / .cpp`: cálculo limitado do próximo horário, tratamento de frequência personalizada e disparo de ciclos automáticos.
 - `RTClock.h / .cpp`: DS3231 no hardware, conversão local/UTC, DST europeu e avanço por software entre leituras do RTC.
-- `Storage.h / .cpp`: configuração e estado de recuperação em NVS; exportação/importação hexadecimal validada.
-- `History.h / .cpp`: CSV em LittleFS, cache de entradas recentes em NVS e exportação série.
+- `Storage.h / .cpp`: configuração NVS v5 com integridade por CRC-16/CCITT em `AppConfigBlob` (72 carateres hex, sem retrocompatibilidade v4), cache atómica de histórico (`hblob`) e marcadores `sched_tr`.
+- `History.h / .cpp`: CSV em LittleFS, cache de entradas recentes e dimensão esperada do ficheiro na NVS (`hblob`), persistência de adiamentos durante rotação em `/hist_pend.txt` e exportação série.
 - `Display.h / .cpp`, `Encoder.h / .cpp`, `UI.h / .cpp`: LCD com shadow buffer, encoder via ISR/debounce e encaminhamento dos ecrãs.
 - `Terminal.h / .cpp`: CLI Serial a 115200 baud, com leitura incremental de comandos (incluindo `stop`, `reboot`, `i2c_scan`, gestão de configurações e histórico).
 - `log.h`, `i18n.h`, `config.h`: logs, idiomas e parâmetros/hardware.
@@ -28,7 +28,7 @@ A separação por módulos é acompanhada por singletons e estado global partilh
 6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão e tenta recuperar um ciclo interrompido.
 7. Calcula o horário seguinte, inicia UI e terminal.
 
-`History::begin()` tenta montar o sistema de ficheiros com `LittleFS.begin(false)`. Se a montagem falhar, consulta a cache na NVS; se já existirem registos conhecidos (`known > 0`), a formatação destrutiva é prevenida para salvaguardar o histórico para posterior recuperação. A formatação (`begin(true)`) só é executada se a cache estiver vazia (`known == 0`), garantindo que dados históricos não são apagados desnecessariamente. A configuração NVS permanece separada.
+`History::begin()` tenta montar o sistema de ficheiros com `LittleFS.begin(false)` (com retentativa antes de desistir). Se a montagem falhar, consulta `storage.hasHistoryData()` (`hblob` na NVS); se já existirem registos conhecidos, a formatação destrutiva é prevenida para salvaguardar o histórico. A formatação (`begin(true)`) só é executada quando não há dados históricos conhecidos em NVS. No arranque seguinte, valida também o tamanho do ficheiro contra o registado em `hblob` e reprocessa eventuais entradas pendentes de `/hist_pend.txt`. A configuração NVS permanece separada.
 
 ## Ciclo principal (`loop()`)
 
@@ -46,12 +46,12 @@ O RTC de hardware é consultado com intervalo nominal de 30 s; entre leituras, o
 
 ## Decisões e limites operacionais
 
-- **Blackout durante uma zona:** a NVS não é atualizada a cada segundo para limitar desgaste. A posição e a duração configurada ficam guardadas; se a energia falhar durante uma zona, essa zona pode ser repetida pela duração completa após reinício. A posição é persistida quando uma zona termina, por isso uma falha durante essa gravação também pode repetir a zona acabada de concluir. O reinício valida hora, duração máxima e distância para o próximo ciclo antes de retomar. É um compromisso deliberado entre desgaste da flash e precisão da retoma.
+- **Blackout durante uma zona:** a NVS não é atualizada a cada segundo para limitar desgaste. A posição e a duração configurada ficam guardadas; se a energia falhar durante uma zona, essa zona pode ser repetida pela duração completa após reinício. O reinício valida hora, idade máxima (`RECOVERY_MAX_AGE_S` = 2 h), distância para o próximo ciclo e o contador persistente `RecoveryState::retry_count` (aborta após `MAX_RECOVERY_RETRIES` = 3 arranques falhados; repõe a `0` após `RECOVERY_STABLE_MS` = 30 s estáveis) para impedir boot/watering loops. É um compromisso deliberado entre desgaste da flash e precisão da retoma.
 
-- **DST e reboot:** a proteção contra duplicação da hora repetida é mantida em RAM para evitar escrita persistente adicional. Um reboot na janela entre as duas ocorrências pode permitir uma segunda ativação. A janela é rara; se o custo dessa duplicação aumentar, a alternativa é persistir um marcador de último disparo.
+- **DST e reboot:** a proteção contra duplicação da hora repetida (janela 2 h no recuo DST) persiste os últimos timestamps de disparo na NVS (`sched_tr`) protegidos por CRC-16 para manter a proteção após reinício; alterações manuais de modo ou acertos explícitos do relógio (`rtclock.revision()`) limpam esses marcadores.
 - **RTC inválido/ausente:** o relógio por software mantém a interface utilizável, mas sem uma hora válida não autoriza agendamentos automáticos nem retoma validada após blackout. No assistente de primeiro arranque, o utilizador pode confirmar que pretende continuar sem RTC. `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot; para operação automática persistente, é necessário um RTC válido.
 
-- **Importação de configuração:** o blob é verificado antes da aplicação. Uma importação inválida não deve deixar alterações parciais no estado em RAM.
+- **Importação de configuração:** apenas formato NVS v5 (72 carateres hex) protegido por CRC-16/CCITT e validação estrita de limites em memória antes de alterar `gState`. Uma importação inválida, v4 antiga ou durante rega ativa é integralmente rejeitada sem efeitos parciais.
 - **Hardware:** o estado OFF por software não deteta relés ou válvulas mecanicamente presos. A camada de hardware da instalação continua responsável por isolamento, corte de água e proteção contra falhas físicas.
 
 ## Interface
