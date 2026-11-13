@@ -6,7 +6,25 @@
 
 
 // ── NVS namespace (max 15 chars) ──────────────────────────
-static const char* NVS_NS = "rega";
+static const char* NVS_NS       = "rega";
+static const char* KEY_CFG      = "cfg";
+static const char* KEY_HBLOB    = "hblob";
+static const char* KEY_SCHED_TR = "sched_tr";
+static const size_t HIST_CACHE_MAX_BYTES = 256;
+
+struct __attribute__((packed)) HistoryNvsHeader {
+    uint8_t  version;
+    uint16_t lineCount;
+    uint32_t fileSize;
+    uint16_t dataSize;
+};
+
+struct __attribute__((packed)) SchedTriggersBlob {
+    uint8_t  version;
+    uint8_t  count;
+    uint32_t ts[MAX_SLOTS_PER_MODE];
+    uint16_t crc16;
+};
 
 static Preferences prefs;
 Storage storage;
@@ -22,7 +40,20 @@ void Storage::begin() {
     }
 }
 
-static const char* KEY_CFG = "cfg";
+uint16_t Storage::_crc16(const uint8_t* data, size_t len) {
+    uint16_t crc = 0xFFFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= (uint16_t)data[i] << 8;
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            if (crc & 0x8000) {
+                crc = (uint16_t)((crc << 1) ^ 0x1021);
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc;
+}
 
 // AppConfigBlob is a packed wire/storage format. Validate bool bytes before
 // reading them as bools so malformed NVS/import data cannot create invalid
@@ -44,6 +75,39 @@ static bool _blobHasValidBooleans(const AppConfigBlob& blob) {
     return true;
 }
 
+static bool _validateImportBlob(const AppConfigBlob& blob) {
+    if (blob.mode >= (uint8_t)AppMode::_COUNT) {
+        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_MODE, blob.mode);
+        return false;
+    }
+    if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER &&
+        blob.backlight_timeout_ms < 30000UL) {
+        return false;
+    }
+    if (blob.suspended_until > 4102444799UL) { // > 2099-12-31 23:59:59 UTC
+        return false;
+    }
+    if (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > 47482UL) {
+        return false;
+    }
+    for (int i = 0; i < NUM_ZONES; i++) {
+        if (blob.zones[i].duration_min > 20) return false;
+        if (blob.zones[i].enabled && blob.zones[i].duration_min == 0) return false;
+    }
+    if (blob.custom_interval_days == 0 || blob.custom_interval_days > 14) {
+        return false;
+    }
+    if (blob.custom_slot_count == 0 || blob.custom_slot_count > MAX_SLOTS_PER_MODE) {
+        return false;
+    }
+    for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+        if (blob.custom_slots[i].hour > 23 || blob.custom_slots[i].minute > 59) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static int _hexNibble(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -61,6 +125,13 @@ bool Storage::load() {
     if (readBytes != sizeof(blob) || blob.version != NVS_VERSION ||
         !_blobHasValidBooleans(blob)) {
         LOG_W("NVS", TXT_LOG_NVS_BLOB_INV, blob.version);
+        return false;
+    }
+
+    uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
+                                  offsetof(AppConfigBlob, crc16));
+    if (blob.crc16 != expectedCrc) {
+        LOG_W("NVS", TXT_LOG_NVS_CRC_FAIL, blob.crc16, expectedCrc);
         return false;
     }
 
@@ -112,30 +183,120 @@ void Storage::clear() {
 }
 
 // ─────────────────────────────────────────────────────────
-bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount) {
-    if (!_ready) { lineCount = 0; return false; }
-    size_t readBytes = prefs.getBytes("hcache", dest, size);
-    if (readBytes != size) { lineCount = 0; return false; }
-    lineCount = prefs.getUShort("hcnt", 0);
+bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount, uint32_t* outFileSize) {
+    lineCount = 0;
+    if (outFileSize) *outFileSize = 0;
+    if (!_ready || !dest || size == 0 || size > HIST_CACHE_MAX_BYTES) return false;
+
+    const size_t expectedLen = sizeof(HistoryNvsHeader) + size + sizeof(uint16_t);
+    uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
+    size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, sizeof(buf));
+    if (readBytes != expectedLen) return false;
+
+    HistoryNvsHeader hdr = {};
+    memcpy(&hdr, buf, sizeof(hdr));
+    if (hdr.version != NVS_VERSION || hdr.dataSize != size) return false;
+
+    uint16_t storedCrc = 0;
+    memcpy(&storedCrc, buf + sizeof(hdr) + size, sizeof(storedCrc));
+    uint16_t calcCrc = _crc16(buf, sizeof(hdr) + size);
+    if (storedCrc != calcCrc) {
+        LOG_W("NVS", TXT_LOG_NVS_CRC_FAIL, storedCrc, calcCrc);
+        return false;
+    }
+
+    memcpy(dest, buf + sizeof(hdr), size);
+    lineCount = hdr.lineCount;
+    if (outFileSize) *outFileSize = hdr.fileSize;
     return true;
 }
 
-void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount) {
-    if (!_ready) return;
-    
-    uint16_t currentCnt = prefs.getUShort("hcnt", 0);
-    if (currentCnt != lineCount) {
-        prefs.putUShort("hcnt", lineCount);
+void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount, uint32_t fileSize) {
+    if (!_ready || !src || size == 0 || size > HIST_CACHE_MAX_BYTES) return;
+
+    const size_t totalLen = sizeof(HistoryNvsHeader) + size + sizeof(uint16_t);
+    uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
+    HistoryNvsHeader hdr = {};
+    hdr.version   = NVS_VERSION;
+    hdr.lineCount = lineCount;
+    hdr.fileSize  = fileSize;
+    hdr.dataSize  = (uint16_t)size;
+
+    memcpy(buf, &hdr, sizeof(hdr));
+    memcpy(buf + sizeof(hdr), src, size);
+    uint16_t crc = _crc16(buf, sizeof(hdr) + size);
+    memcpy(buf + sizeof(hdr) + size, &crc, sizeof(crc));
+
+    uint8_t existing[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
+    if (prefs.getBytes(KEY_HBLOB, existing, sizeof(existing)) == totalLen &&
+        memcmp(buf, existing, totalLen) == 0) {
+        return;
     }
 
-    uint8_t currentCache[128];
-    if (size <= sizeof(currentCache)) {
-        size_t readBytes = prefs.getBytes("hcache", currentCache, size);
-        if (readBytes != size || memcmp(src, currentCache, size) != 0) {
-            prefs.putBytes("hcache", src, size);
-        }
-    } else {
-        prefs.putBytes("hcache", src, size);
+    if (prefs.putBytes(KEY_HBLOB, buf, totalLen) == 0) {
+        LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+    }
+}
+
+bool Storage::hasHistoryData() {
+    if (!_ready) return false;
+    uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
+    size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, sizeof(buf));
+    if (readBytes < sizeof(HistoryNvsHeader) + sizeof(uint16_t)) return false;
+
+    HistoryNvsHeader hdr = {};
+    memcpy(&hdr, buf, sizeof(hdr));
+    if (hdr.version != NVS_VERSION || hdr.dataSize > HIST_CACHE_MAX_BYTES) return false;
+    size_t expectedLen = sizeof(HistoryNvsHeader) + hdr.dataSize + sizeof(uint16_t);
+    if (readBytes != expectedLen) return false;
+
+    uint16_t storedCrc = 0;
+    memcpy(&storedCrc, buf + sizeof(hdr) + hdr.dataSize, sizeof(storedCrc));
+    if (storedCrc != _crc16(buf, sizeof(hdr) + hdr.dataSize)) return false;
+
+    return (hdr.lineCount > 0 || hdr.fileSize > 0);
+}
+
+// ─────────────────────────────────────────────────────────
+bool Storage::loadLastTriggers(uint32_t* out, size_t count) {
+    if (!out || count != MAX_SLOTS_PER_MODE) return false;
+    for (size_t i = 0; i < count; i++) out[i] = 0;
+    if (!_ready) return false;
+
+    SchedTriggersBlob blob = {};
+    if (prefs.getBytes(KEY_SCHED_TR, &blob, sizeof(blob)) != sizeof(blob)) return false;
+    if (blob.version != NVS_VERSION || blob.count != MAX_SLOTS_PER_MODE) return false;
+
+    uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
+                                  offsetof(SchedTriggersBlob, crc16));
+    if (blob.crc16 != expectedCrc) return false;
+
+    for (size_t i = 0; i < count; i++) {
+        out[i] = blob.ts[i];
+    }
+    return true;
+}
+
+void Storage::saveLastTriggers(const uint32_t* in, size_t count) {
+    if (!_ready || !in || count != MAX_SLOTS_PER_MODE) return;
+
+    SchedTriggersBlob blob = {};
+    blob.version = NVS_VERSION;
+    blob.count   = MAX_SLOTS_PER_MODE;
+    for (size_t i = 0; i < count; i++) {
+        blob.ts[i] = in[i];
+    }
+    blob.crc16 = _crc16(reinterpret_cast<const uint8_t*>(&blob),
+                        offsetof(SchedTriggersBlob, crc16));
+
+    SchedTriggersBlob current = {};
+    if (prefs.getBytes(KEY_SCHED_TR, &current, sizeof(current)) == sizeof(current) &&
+        memcmp(&blob, &current, sizeof(blob)) == 0) {
+        return;
+    }
+
+    if (prefs.putBytes(KEY_SCHED_TR, &blob, sizeof(blob)) == 0) {
+        LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
     }
 }
 
@@ -168,12 +329,17 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
 
 // ─────────────────────────────────────────────────────────
 void Storage::exportConfigHex(char* hexOut, size_t maxLen) {
+    if (!hexOut || maxLen == 0) return;
+    if (maxLen < sizeof(AppConfigBlob) * 2 + 1) {
+        hexOut[0] = '\0';
+        return;
+    }
+
     AppConfigBlob blob = {};
     _stateToBlob(blob);
 
     // Convert to hex string
-    if (maxLen < sizeof(AppConfigBlob) * 2 + 1) return;
-    uint8_t* ptr = (uint8_t*)&blob;
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&blob);
     static const char hexChars[] = "0123456789ABCDEF";
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
         hexOut[i * 2]     = hexChars[ptr[i] >> 4];
@@ -185,6 +351,11 @@ void Storage::exportConfigHex(char* hexOut, size_t maxLen) {
 // ─────────────────────────────────────────────────────────
 bool Storage::importConfigHex(const char* hexIn) {
     if (!hexIn) return false;
+    if (gState.watering.active) {
+        LOG_W("NVS", TXT_LOG_NVS_IMP_ACTIVE);
+        return false;
+    }
+
     size_t len = strlen(hexIn);
     if (len != sizeof(AppConfigBlob) * 2) {
         LOG_W("NVS", TXT_LOG_NVS_IMP_INV_LEN, (int)len, (int)(sizeof(AppConfigBlob) * 2));
@@ -205,11 +376,26 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
+    if (!_blobHasValidBooleans(blob)) {
+        return false;
+    }
+
+    uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
+                                  offsetof(AppConfigBlob, crc16));
+    if (blob.crc16 != expectedCrc) {
+        LOG_W("NVS", TXT_LOG_NVS_CRC_FAIL, blob.crc16, expectedCrc);
+        return false;
+    }
+
+    if (!_validateImportBlob(blob)) {
+        return false;
+    }
+
     const AppState previousState = gState;
     const uint8_t customMode = (uint8_t)AppMode::PERSONALIZADO;
     const ModeSchedule previousCustomSchedule = MODE_SCHEDULES[customMode];
 
-    if (!_blobHasValidBooleans(blob) || !_blobToState(blob)) {
+    if (!_blobToState(blob)) {
         return false;
     }
 
@@ -226,8 +412,9 @@ bool Storage::importConfigHex(const char* hexIn) {
 
 // ─────────────────────────────────────────────────────────
 void Storage::_stateToBlob(AppConfigBlob& blob) {
-    blob.version = NVS_VERSION;
-    blob.mode    = (uint8_t)gState.mode;
+    memset(&blob, 0, sizeof(blob));
+    blob.version              = NVS_VERSION;
+    blob.mode                 = (uint8_t)gState.mode;
     blob.backlight_timeout_ms = gState.backlight_timeout_ms;
     blob.suspended_until      = gState.suspended_until;
     blob.custom_ref_day       = gState.custom_ref_day;
@@ -246,6 +433,9 @@ void Storage::_stateToBlob(AppConfigBlob& blob) {
         blob.custom_slots[i].hour   = cs.slots[i].hour;
         blob.custom_slots[i].minute = cs.slots[i].minute;
     }
+
+    blob.crc16 = _crc16(reinterpret_cast<const uint8_t*>(&blob),
+                        offsetof(AppConfigBlob, crc16));
 }
 
 bool Storage::_blobToState(const AppConfigBlob& blob) {
@@ -306,7 +496,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         }
     }
 
-    // Reject schedules whose watering runs could overlap.
+    // Reject schedules whose watering runs could overlap (enforce >= 1 min even if total_dur == 0).
     if (cs.slot_count > 1) {
         uint32_t total_dur = 0;
         uint8_t enabledZones = 0;
@@ -318,47 +508,46 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         }
         // Match the UI check: include one minute per inter-zone transition.
         if (enabledZones > 1) total_dur += enabledZones - 1;
+        uint32_t min_spacing = (total_dur > 0) ? total_dur : 1;
 
-        if (total_dur > 0) {
-            bool hasOverlap = false;
-            for (int i = 0; i < cs.slot_count && !hasOverlap; i++) {
-                for (int j = i + 1; j < cs.slot_count; j++) {
-                    uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                    uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                    int16_t diff = (int16_t)s1 - (int16_t)s2;
-                    if (diff < 0) diff = -diff;
-                    if (diff > 720) diff = 1440 - diff;
-                    if ((uint32_t)diff < total_dur) {
-                        hasOverlap = true;
-                        break;
-                    }
+        bool hasOverlap = false;
+        for (int i = 0; i < cs.slot_count && !hasOverlap; i++) {
+            for (int j = i + 1; j < cs.slot_count; j++) {
+                uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                int16_t diff = (int16_t)s1 - (int16_t)s2;
+                if (diff < 0) diff = -diff;
+                if (diff > 720) diff = 1440 - diff;
+                if ((uint32_t)diff < min_spacing) {
+                    hasOverlap = true;
+                    break;
                 }
             }
-            if (hasOverlap) {
-                if (gState.mode == AppMode::PERSONALIZADO) {
-                    LOG_W("NVS", TXT_LOG_NVS_OVERLAP);
-                    gState = previousState;
-                    MODE_SCHEDULES[customMode] = previousCustomSchedule;
-                    return false;
-                }
-                // Dormant custom schedule overlaps current zone durations: respace evenly
-                // anchored at slots[0] and keep sorted so user settings are preserved.
-                uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
-                uint16_t stepMins = 1440 / cs.slot_count;
-                for (int i = 1; i < cs.slot_count; i++) {
-                    uint16_t nextMins = (baseMins + i * stepMins) % 1440;
-                    cs.slots[i].hour   = (uint8_t)(nextMins / 60);
-                    cs.slots[i].minute = (uint8_t)(nextMins % 60);
-                }
-                for (int i = 0; i < cs.slot_count - 1; i++) {
-                    for (int j = i + 1; j < cs.slot_count; j++) {
-                        uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                        uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                        if (mins_j < mins_i) {
-                            auto temp = cs.slots[i];
-                            cs.slots[i] = cs.slots[j];
-                            cs.slots[j] = temp;
-                        }
+        }
+        if (hasOverlap) {
+            if (gState.mode == AppMode::PERSONALIZADO) {
+                LOG_W("NVS", TXT_LOG_NVS_OVERLAP);
+                gState = previousState;
+                MODE_SCHEDULES[customMode] = previousCustomSchedule;
+                return false;
+            }
+            // Dormant custom schedule overlaps current zone durations: respace evenly
+            // anchored at slots[0] and keep sorted so user settings are preserved.
+            uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
+            uint16_t stepMins = 1440 / cs.slot_count;
+            for (int i = 1; i < cs.slot_count; i++) {
+                uint16_t nextMins = (baseMins + i * stepMins) % 1440;
+                cs.slots[i].hour   = (uint8_t)(nextMins / 60);
+                cs.slots[i].minute = (uint8_t)(nextMins % 60);
+            }
+            for (int i = 0; i < cs.slot_count - 1; i++) {
+                for (int j = i + 1; j < cs.slot_count; j++) {
+                    uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
+                    uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
+                    if (mins_j < mins_i) {
+                        auto temp = cs.slots[i];
+                        cs.slots[i] = cs.slots[j];
+                        cs.slots[j] = temp;
                     }
                 }
             }

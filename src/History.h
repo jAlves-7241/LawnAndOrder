@@ -80,6 +80,7 @@ private:
     static bool _lineToEntry(const char* line, HistoryEntry& out);
     static char* _trimLineBuffer(char* buf, size_t& pos);
     uint16_t    _countLines() const;
+    uint32_t    _currentFileSize() const;
     void        _rotateAndAppend(const char* newLine);
     void        _populateCache();
 };

@@ -10,6 +10,9 @@
 
 History history;
 
+static const char* HIST_TMP_FILE     = "/hist_tmp.csv";
+static const char* HIST_PENDING_FILE = "/hist_pend.txt";
+
 // Flag global para suspensão temporária de logs durante exportação Serial
 bool _log_suspended = false;
 
@@ -36,29 +39,97 @@ bool History::begin(bool formatOnFail) {
     _defHead = 0;
     _defTail = 0;
     _log_suspended = false;
+
     _ready = LittleFS.begin(false);
     if (!_ready) {
-        HistoryEntry tmp[HISTORY_DISPLAY]; uint16_t known = 0;
-        storage.loadHistoryCache(tmp, sizeof(tmp), known);
-        if (formatOnFail && known == 0) _ready = LittleFS.begin(true); // nothing to lose
+        // Retry once before considering format
+        _ready = LittleFS.begin(false);
     }
+    if (!_ready) {
+        if (formatOnFail && !storage.hasHistoryData()) {
+            _ready = LittleFS.begin(true); // nothing to lose
+        } else if (formatOnFail) {
+            LOG_W("HIST", TXT_LOG_HIST_FS_PRESERVED);
+        }
+    }
+
     if (!_ready) {
         LOG_E("HIST", TXT_LOG_HIST_MOUNT_FAIL);
         _lineCount = 0;
         _cacheCount = 0;
     } else {
-        LittleFS.remove("/hist_tmp.csv"); // Clean up orphaned temp file from a crash
-        // Tenta carregar da NVS primeiro
-        bool nvsOk = storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount);
+        LittleFS.remove(HIST_TMP_FILE); // Clean up orphaned temp file from a crash
+
+        // Replay any pending line persisted right before a mid-rotation power loss
+        bool replayedPending = false;
+        File pendFile = LittleFS.open(HIST_PENDING_FILE, "r");
+        if (pendFile) {
+            char lineBuf[LINE_BUF];
+            size_t linePos = 0;
+            bool overflow = false;
+            int replayed = 0;
+            auto replayLine = [&](char* p) {
+                if (strlen(p) == 0) return;
+                HistoryEntry tmp = {};
+                if (_lineToEntry(p, tmp)) {
+                    File dst = LittleFS.open(HISTORY_FILE, "a");
+                    if (dst) {
+                        if (dst.println(p) > 0) replayed++;
+                        dst.close();
+                    }
+                }
+            };
+            while (pendFile.available()) {
+                int cInt = pendFile.read();
+                if (cInt < 0) break;
+                char c = (char)cInt;
+                if (c == '\n') {
+                    if (!overflow) {
+                        char* p = _trimLineBuffer(lineBuf, linePos);
+                        replayLine(p);
+                    }
+                    linePos = 0;
+                    overflow = false;
+                } else if (c != '\r') {
+                    if (linePos < sizeof(lineBuf) - 1) {
+                        lineBuf[linePos++] = c;
+                    } else {
+                        overflow = true;
+                    }
+                }
+            }
+            if (!overflow && linePos > 0) {
+                char* p = _trimLineBuffer(lineBuf, linePos);
+                replayLine(p);
+            }
+            pendFile.close();
+            LittleFS.remove(HIST_PENDING_FILE);
+            if (replayed > 0) {
+                replayedPending = true;
+                LOG_I("HIST", TXT_LOG_HIST_PEND_REPLAY, replayed);
+            }
+        }
+
+        // Tenta carregar da NVS primeiro (a menos que tenhamos recuperado pendentes)
+        uint32_t expectedFileSize = 0;
+        bool nvsOk = !replayedPending &&
+                     storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount, &expectedFileSize);
         bool fsConsistent = false;
         File f = LittleFS.open(HISTORY_FILE, "r");
         if (f) {
-            size_t fsize = f.size();
+            uint32_t fsize = (uint32_t)f.size();
             f.close();
-            fsConsistent = (_lineCount == 0 && fsize == 0) || (_lineCount > 0 && fsize > 0);
-        } else if (_lineCount == 0) {
+            if (_lineCount == 0) {
+                fsConsistent = (fsize == 0);
+            } else if (expectedFileSize > 0) {
+                fsConsistent = (fsize == expectedFileSize);
+            } else {
+                fsConsistent = (fsize > 0);
+            }
+        } else if (_lineCount == 0 && expectedFileSize == 0) {
             fsConsistent = true;
         }
+
         bool cacheValid = false;
         uint8_t validCount = 0;
         HistoryEntry tempCache[HISTORY_DISPLAY] = {};
@@ -89,11 +160,11 @@ bool History::begin(bool formatOnFail) {
             _cacheCount = validCount;
             LOG_I("HIST", TXT_LOG_HIST_NVS_LOAD, _lineCount);
         } else {
-            // Fallback (apenas se NVS estiver vazio ou corrompido)
+            // Fallback (apenas se NVS estiver vazio ou desatualizado/corrompido)
             _lineCount = _countLines();
             _populateCache();
             // Salva na NVS para o próximo boot
-            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
             LOG_I("HIST", TXT_LOG_HIST_FS_LOAD, _lineCount);
         }
     }
@@ -137,17 +208,18 @@ void History::record(const HistoryEntry& entry) {
                 _pendingCacheSave = true;
                 LOG_I("HIST", TXT_LOG_HIST_ROT_START);
             } else {
-                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
                 LOG_I("HIST", TXT_LOG_HIST_LOGGED, line);
             }
         }
         return;   // <-- NÃO salvar NVS aqui
     }
 
-    // Caminho síncrono: salvar ficheiro + NVS imediatamente (comportamento atual)
+    // Caminho síncrono: salvar ficheiro + NVS imediatamente
     File f = LittleFS.open(HISTORY_FILE, "a");
     if (!f) { LOG_E("HIST", TXT_LOG_HIST_FILE_ERR); return; }
     size_t written = f.println(line);
+    uint32_t fsize = (uint32_t)f.size();
     f.close();
     if (written == 0) { LOG_E("HIST", TXT_LOG_HIST_FILE_ERR); return; }
     _lineCount++;
@@ -159,7 +231,7 @@ void History::record(const HistoryEntry& entry) {
         _cache[HISTORY_DISPLAY - 1] = entry;
     }
 
-    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, fsize);
     LOG_I("HIST", TXT_LOG_HIST_LOGGED, line);
 }
 
@@ -182,7 +254,7 @@ void History::clear() {
     if (_rotState != RotState::IDLE) {
         if (_rotSrc) _rotSrc.close();
         if (_rotDst) _rotDst.close();
-        LittleFS.remove("/hist_tmp.csv");
+        LittleFS.remove(HIST_TMP_FILE);
         _rotState = RotState::IDLE;
     }
     
@@ -192,6 +264,7 @@ void History::clear() {
         _log_suspended = false;
     }
     
+    LittleFS.remove(HIST_PENDING_FILE);
     LittleFS.remove(HISTORY_FILE);
     _lineCount = 0;
     _cacheCount = 0;
@@ -199,7 +272,7 @@ void History::clear() {
     _defHead = 0;
     _defTail = 0;
     for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = HistoryEntry{};
-    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, 0);
     LOG_I("HIST", TXT_LOG_HIST_WIPED);
 }
 
@@ -208,6 +281,15 @@ uint16_t History::entryCount() const { return _lineCount; }
 // ─────────────────────────────────────────────────────────
 // Private
 // ─────────────────────────────────────────────────────────
+
+uint32_t History::_currentFileSize() const {
+    if (!_ready) return 0;
+    File f = LittleFS.open(HISTORY_FILE, "r");
+    if (!f) return 0;
+    uint32_t fsize = (uint32_t)f.size();
+    f.close();
+    return fsize;
+}
 
 // CSV: "YYYY-MM-DDTHH:MM,<trigger_char>,d0,d1,d2,d3"
 void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
@@ -241,11 +323,11 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     out.hour  = (uint8_t)hh;
     out.min   = (uint8_t)mm;
 
-    // Validate trigger char
-    if (tc == 'A' || tc == 'M' || tc == 'C' || tc == 'T')
+    // Validate trigger char (match _isValidCachedEntry: reject 'T' or invalid triggers)
+    if (tc == 'A' || tc == 'M' || tc == 'C')
         out.trigger = (WaterTrigger)tc;
     else
-        out.trigger = WaterTrigger::MANUAL;
+        return false;
 
     // Parse zone durations - after the second comma
     const char* p = line;
@@ -327,6 +409,7 @@ void History::_populateCache() {
     char chunk[256];
     char line[LINE_BUF];
     size_t linePos = 0;
+    bool lineOverflow = false;
 
     while (f.available()) {
         int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
@@ -335,6 +418,11 @@ void History::_populateCache() {
         for (int i = 0; i < bytesRead; i++) {
             char c = chunk[i];
             if (c == '\n') {
+                if (lineOverflow) {
+                    linePos = 0;
+                    lineOverflow = false;
+                    continue;
+                }
                 char* p = _trimLineBuffer(line, linePos);
                 if (strlen(p) > 0) {
                     HistoryEntry temp = {};
@@ -349,14 +437,18 @@ void History::_populateCache() {
                         }
                     }
                 }
-            } else if (c != '\r' && linePos < sizeof(line) - 1) {
-                line[linePos++] = c;
+            } else if (c != '\r') {
+                if (linePos < sizeof(line) - 1) {
+                    line[linePos++] = c;
+                } else {
+                    lineOverflow = true;
+                }
             }
         }
     }
 
     // Process final line if file does not end with '\n'
-    if (linePos > 0) {
+    if (linePos > 0 && !lineOverflow) {
         char* p = _trimLineBuffer(line, linePos);
         if (strlen(p) > 0) {
             HistoryEntry temp = {};
@@ -379,9 +471,16 @@ void History::_populateCache() {
 void History::_rotateAndAppend(const char* newLine) {
     // Bloqueio forçado síncrono removido (código morto) - _rotState é garantido ser IDLE aqui.
 
-    _rotDiscard = HISTORY_MAX_ENTRIES / 10;
-    if (_rotDiscard == 0) _rotDiscard = 1;
-    _rotKeep = HISTORY_MAX_ENTRIES - _rotDiscard;
+    uint16_t step = HISTORY_MAX_ENTRIES / 10;
+    if (step == 0) step = 1;
+    _rotKeep = (HISTORY_MAX_ENTRIES > step) ? (HISTORY_MAX_ENTRIES - step) : 1;
+    // If prior fallbacks grew _lineCount past HISTORY_MAX_ENTRIES, discard all excess
+    // oldest lines so newest entries are never truncated at the tail.
+    if (_lineCount > _rotKeep) {
+        _rotDiscard = _lineCount - _rotKeep;
+    } else {
+        _rotDiscard = step;
+    }
 
     _rotSrc = LittleFS.open(HISTORY_FILE, "r");
     if (!_rotSrc) {
@@ -394,7 +493,7 @@ void History::_rotateAndAppend(const char* newLine) {
         return;
     }
 
-    _rotDst = LittleFS.open("/hist_tmp.csv", "w");
+    _rotDst = LittleFS.open(HIST_TMP_FILE, "w");
     if (!_rotDst) {
         _rotSrc.close();
         // Fallback: append directly if we can't create tmp file
@@ -404,6 +503,13 @@ void History::_rotateAndAppend(const char* newLine) {
             f.close();
         }
         return;
+    }
+
+    // Persist pending line before starting async copy so power loss cannot drop it
+    File pendFile = LittleFS.open(HIST_PENDING_FILE, "w");
+    if (pendFile) {
+        pendFile.println(newLine);
+        pendFile.close();
     }
 
     strlcpy(_rotPendingLine, newLine, sizeof(_rotPendingLine));
@@ -500,28 +606,35 @@ void History::update() {
         }
         _rotDst.close();
 
-        if (!_rotWriteErr && LittleFS.rename("/hist_tmp.csv", HISTORY_FILE)) {
+        if (!_rotWriteErr && LittleFS.rename(HIST_TMP_FILE, HISTORY_FILE)) {
+            LittleFS.remove(HIST_PENDING_FILE);
             _lineCount = _rotCopied + 1;
 
             // Salvar NVS agora que _lineCount é correto E cache já foi atualizado
+            uint32_t fsize = _currentFileSize();
             if (_pendingCacheSave) {
                 _pendingCacheSave = false;
-                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, fsize);
                 LOG_I("HIST", TXT_LOG_HIST_ROT_DONE_NVS, _lineCount);
             } else {
-                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+                storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, fsize);
                 LOG_I("HIST", TXT_LOG_HIST_ROT_DONE, _lineCount);
             }
         } else {
             LOG_E("HIST", TXT_LOG_HIST_RENAME_FAIL);
-            LittleFS.remove("/hist_tmp.csv");
+            LittleFS.remove(HIST_TMP_FILE);
             _pendingCacheSave = false;
             File f = LittleFS.open(HISTORY_FILE, "a");
-            if (f) { f.println(_rotPendingLine); f.close(); }
+            if (f) {
+                if (f.println(_rotPendingLine) > 0) {
+                    LittleFS.remove(HIST_PENDING_FILE);
+                }
+                f.close();
+            }
             // Rebuild consistent state from the actual file
             _lineCount = _countLines();
             _populateCache();
-            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount);
+            storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
         }
         _rotState = RotState::IDLE;
         // Drenar apenas UMA entrada por ciclo para evitar re-entrância

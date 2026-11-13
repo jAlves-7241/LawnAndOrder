@@ -452,7 +452,7 @@
 #define TXT_TERM_HELP_4                                                        \
   "  export_config                - Export current config (Hex Blob)"
 #define TXT_TERM_HELP_5                                                        \
-  "  import_config <68_hex>       - Import config from Hex Blob"
+  "  import_config <72_hex>       - Import config from Hex Blob"
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Export watering history over Serial"
 #define TXT_TERM_HELP_7                                                        \
@@ -614,6 +614,13 @@
 #define TXT_LOG_NVS_IMP_OK "Config imported successfully via hex string"
 #define TXT_LOG_NVS_IMP_INV_MODE "Import failed: invalid mode (%d)"
 #define TXT_LOG_NVS_OVERLAP "Custom schedule overlap detected"
+#define TXT_LOG_NVS_CRC_FAIL "CRC mismatch (%04X vs %04X) - rejected"
+#define TXT_LOG_NVS_IMP_ACTIVE "Import rejected: watering is currently active"
+#define TXT_LOG_REC_MAX_RETRY "Recovery aborted after %u failed boot attempts"
+#define TXT_LOG_REC_STABLE "Boot recovery stabilized - retry counter reset"
+#define TXT_LOG_HIST_FS_PRESERVED "LittleFS mount failed with NVS history present - skipping format"
+#define TXT_LOG_HIST_PEND_REPLAY "Replaying %d deferred history record(s) from pending log"
+#define TXT_TERM_WIPE_EXPIRED "Confirmation timed out. Clear history cancelled."
 #elif defined(LANG_SERIAL_PT)
 #define TXT_LOG_START_EXPORT "A iniciar exportacao do historico..."
 #define TXT_LOG_EXPORT_DONE "Exportacao concluida: %d registos"
@@ -657,7 +664,7 @@
 #define TXT_TERM_HELP_4                                                        \
   "  export_config                - Exporta a configuracao atual (Hex Blob)"
 #define TXT_TERM_HELP_5                                                        \
-  "  import_config <68_hex>       - Importa configuracoes a partir do Hex "    \
+  "  import_config <72_hex>       - Importa configuracoes a partir do Hex "    \
   "Blob"
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Exporta o historico de regas por Serial"
@@ -833,4 +840,11 @@
   "Configuracoes importadas com sucesso via hex string"
 #define TXT_LOG_NVS_IMP_INV_MODE "Importacao falhou: modo invalido (%d)"
 #define TXT_LOG_NVS_OVERLAP "Detetada sobreposicao no horario personalizado"
+#define TXT_LOG_NVS_CRC_FAIL "CRC invalido (%04X vs %04X) - rejeitado"
+#define TXT_LOG_NVS_IMP_ACTIVE "Importacao rejeitada: rega ativa de momento"
+#define TXT_LOG_REC_MAX_RETRY "Recuperacao abortada apos %u tentativas falhadas de arranque"
+#define TXT_LOG_REC_STABLE "Recuperacao estabilizada - contador de tentativas reposto"
+#define TXT_LOG_HIST_FS_PRESERVED "LittleFS falhou com historico em NVS - formatacao evitada"
+#define TXT_LOG_HIST_PEND_REPLAY "A reprocessar %d registo(s) pendentes de rotacao"
+#define TXT_TERM_WIPE_EXPIRED "Confirmacao expirada. Limpeza de historico cancelada."
 #endif

@@ -9,11 +9,14 @@
 // using the Preferences library (no extra dependencies).
 //
 // What is persisted:
-//   - gState.mode
+//   - gState.mode, custom_interval_days, custom_slot_count, custom_slots, custom_ref_day
 //   - gState.zones[i].enabled + duration_min  (for all NUM_ZONES)
 //   - gState.backlight_timeout_ms
-//   - gState.suspended
-//   - gState.setup_done
+//   - gState.suspended_until (monotonic UTC boundary)
+//   - gState.auto_dst, gState.setup_done
+//   - NVS v5 blobs (`cfg`, `hblob`) include CRC-16/CCITT integrity verification
+//   - RecoveryState (`rec`) includes `retry_count` for bounded blackout recovery
+//   - Scheduler slot trigger guards (`sched_tr`) persist across reboots
 //
 // What is NOT persisted (intentionally):
 //   - gState.now          → always comes from RTC
@@ -22,10 +25,10 @@
 //   - gState.next_hour/min → recomputed by Scheduler on boot
 //
 // Versioning:
-//   NVS_VERSION is stored alongside the data.  If the version in flash
-//   doesn't match the current NVS_VERSION, stored data is ignored and
-//   defaults are kept.  Increment NVS_VERSION whenever the key schema
-//   changes to avoid loading corrupt/stale data after a firmware update.
+//   NVS_VERSION is stored alongside the data and protected by CRC-16.  If the
+//   version in flash doesn't match NVS_VERSION or CRC fails, stored data is
+//   rejected and defaults are kept.  Increment NVS_VERSION whenever the key
+//   schema changes to avoid loading corrupt/stale data after a firmware update.
 //
 // Usage:
 //   setup()  → initAppState() → storage.load() → rest of init
@@ -33,7 +36,7 @@
 //   On factory reset            → storage.clear() + initAppState()
 // ─────────────────────────────────────────────────────────
 
-#define NVS_VERSION 4   // increment when key schema changes
+#define NVS_VERSION 5   // increment when key schema changes
 
 struct __attribute__((packed)) RecoveryState {
     uint8_t version;
@@ -47,6 +50,7 @@ struct __attribute__((packed)) RecoveryState {
     } queue[NUM_ZONES];
     uint8_t zone_dur_min[NUM_ZONES];
     WaterTrigger trigger;
+    uint8_t retry_count;
 };
 
 struct __attribute__((packed)) AppConfigBlob {
@@ -69,6 +73,7 @@ struct __attribute__((packed)) AppConfigBlob {
         uint8_t hour;
         uint8_t minute;
     } custom_slots[MAX_SLOTS_PER_MODE];
+    uint16_t crc16;
 };
 
 
@@ -89,23 +94,29 @@ public:
     // Erase the entire NVS namespace (factory reset).
     void clear();
 
-    // Persist history cache to NVS
-    bool loadHistoryCache(void* dest, size_t size, uint16_t& lineCount);
-    void saveHistoryCache(const void* src, size_t size, uint16_t lineCount);
+    // Persist atomic CRC-protected history cache (`hblob`) to NVS
+    bool loadHistoryCache(void* dest, size_t size, uint16_t& lineCount, uint32_t* outFileSize = nullptr);
+    void saveHistoryCache(const void* src, size_t size, uint16_t lineCount, uint32_t fileSize = 0);
+    bool hasHistoryData();
+
+    // Persist scheduler slot last-trigger Unix timestamps (`sched_tr`)
+    bool loadLastTriggers(uint32_t* out, size_t count);
+    void saveLastTriggers(const uint32_t* in, size_t count);
 
     // Persist recovery state to NVS
     bool loadRecoveryState(RecoveryState& rs);
     void saveRecoveryState(const RecoveryState& rs);
 
-    // Export current state as a 68-character hexadecimal string
+    // Export current state as a 72-character hexadecimal string (v5 CRC-protected)
     void exportConfigHex(char* hexOut, size_t maxLen);
 
-    // Import a 68-character hexadecimal string, validate and save to NVS
+    // Import a 72-character hexadecimal string (v5 CRC-protected), validate strictly and save to NVS
     bool importConfigHex(const char* hexIn);
 
 private:
     bool _ready = false;  // true after begin() succeeds
 
+    static uint16_t _crc16(const uint8_t* data, size_t len);
     void _stateToBlob(AppConfigBlob& blob);
     bool _blobToState(const AppConfigBlob& blob);
 };
