@@ -326,6 +326,81 @@ void test_history_corrupted_nvs_cache_rebuilds_from_fs(void) {
     TEST_ASSERT_EQUAL_UINT8(2, out[1].day);
 }
 
+void test_history_begin_detects_truncated_file_via_filesize(void) {
+    HistoryEntry e1 = { 2026, 7, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    HistoryEntry e2 = { 2026, 7, 2, 8, 0, { 12, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e1);
+    history.record(e2);
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+
+    // Mutate file in LittleFS (truncate to first line) leaving stale NVS cache
+    LittleFS.files[HISTORY_FILE] = "2026-07-01T08:00,A,10,0,0,0\r\n";
+
+    History fresh;
+    TEST_ASSERT_TRUE(fresh.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(1, fresh.entryCount());
+
+    HistoryEntry out[3] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, fresh.readLast(3, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out[0].day);
+}
+
+void test_history_pending_record_persisted_and_replayed_across_rotation(void) {
+    history.clear();
+
+    // Over-capacity file (HISTORY_MAX_ENTRIES + 5 lines) -> dynamic _rotDiscard trims to ~90%
+    std::string bigFile;
+    bigFile.reserve((HISTORY_MAX_ENTRIES + 5) * 32);
+    for (int i = 0; i < HISTORY_MAX_ENTRIES + 5; i++) {
+        bigFile.append("2026-06-01T08:00,A,10,0,0,0\r\n");
+    }
+    LittleFS.files[HISTORY_FILE] = std::move(bigFile);
+    history._lineCount = HISTORY_MAX_ENTRIES + 5;
+
+    HistoryEntry triggerRot = { 2026, 6, 2, 8, 0, { 11, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(triggerRot);
+    TEST_ASSERT_TRUE(history._rotState != History::RotState::IDLE);
+
+    // Record another entry while rotation is active -> persisted in /hist_pend.txt
+    HistoryEntry deferred = { 2026, 6, 3, 9, 30, { 14, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(deferred);
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+
+    int safety = 1000;
+    while (history._rotState != History::RotState::IDLE && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
+
+    // Simulate power loss after pending file write by re-creating /hist_pend.txt and restarting
+    LittleFS.files["/hist_pend.txt"] = "2026-06-04T07:45,C,6,0,0,0\r\n";
+    History recovered;
+    TEST_ASSERT_TRUE(recovered.begin(false));
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+
+    HistoryEntry latest[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, recovered.readLast(1, latest));
+    TEST_ASSERT_EQUAL_UINT8(4, latest[0].day);
+    TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, latest[0].trigger);
+}
+
+void test_history_rejects_test_trigger_and_long_corrupt_line(void) {
+    HistoryEntry e = {};
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-06-01T08:00,T,5,0,0,0", e));
+
+    // Overlong line (>= LINE_BUF) must not splice trailing bytes into a phantom entry
+    std::string corrupt(127, 'X');
+    corrupt += "2026-06-01T08:00,M,5,0,0,0\r\n";
+    corrupt += "2026-06-05T10:00,A,8,0,0,0\r\n";
+    LittleFS.files[HISTORY_FILE] = corrupt;
+
+    History fresh;
+    TEST_ASSERT_TRUE(fresh.begin(false));
+    HistoryEntry out[2] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, fresh.readLast(2, out));
+    TEST_ASSERT_EQUAL_UINT8(5, out[0].day);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -341,5 +416,8 @@ int main(void) {
     RUN_TEST(test_history_line_to_entry_negative_and_overflow_bounds);
     RUN_TEST(test_history_rotation_write_failure_preserves_original_file);
     RUN_TEST(test_history_corrupted_nvs_cache_rebuilds_from_fs);
+    RUN_TEST(test_history_begin_detects_truncated_file_via_filesize);
+    RUN_TEST(test_history_pending_record_persisted_and_replayed_across_rotation);
+    RUN_TEST(test_history_rejects_test_trigger_and_long_corrupt_line);
     return UNITY_END();
 }

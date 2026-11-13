@@ -378,6 +378,78 @@ void test_watering_deenergize_relays_preserves_recovery_state(void) {
     TEST_ASSERT_TRUE(rs.active);
 }
 
+void test_watering_recovery_retry_cap_and_stable_reset(void) {
+    DateTime nowDt(2026, 6, 15, 10, 2, 0);
+    uint32_t startUnix = nowDt.unixtime() - 120;
+    gState.rtc_valid = true;
+    gState.mode = AppMode::DESATIVADO;
+    gState.now = { 2026, 6, 15, 10, 2, 0, 1, nowDt.unixtime() };
+
+    RecoveryState rs = {};
+    rs.version = NVS_VERSION;
+    rs.active = true;
+    rs.start_unix_time = startUnix;
+    rs.queuePos = 0;
+    rs.queueLen = 1;
+    rs.queue[0] = { 0, 600000UL }; // 10 min
+    rs.zone_dur_min[0] = 10;
+    rs.trigger = WaterTrigger::MANUAL;
+    rs.retry_count = 0;
+    storage.saveRecoveryState(rs);
+
+    // 3 consecutive boots without surviving RECOVERY_STABLE_MS increment retry_count 1..3
+    for (uint8_t attempt = 1; attempt <= MAX_RECOVERY_RETRIES; attempt++) {
+        wateringCtrl = WateringController();
+        wateringCtrl.begin();
+        TEST_ASSERT_TRUE(wateringCtrl.isActive());
+        RecoveryState cur = {};
+        TEST_ASSERT_TRUE(storage.loadRecoveryState(cur));
+        TEST_ASSERT_EQUAL_UINT8(attempt, cur.retry_count);
+    }
+
+    // Next boot after MAX_RECOVERY_RETRIES aborts recovery and clears state
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    RecoveryState cleared = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(cleared));
+    TEST_ASSERT_FALSE(cleared.active);
+
+    // Successful run surviving RECOVERY_STABLE_MS resets retry_count in NVS
+    rs.retry_count = 1;
+    storage.saveRecoveryState(rs);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    advanceMockMillis(RECOVERY_STABLE_MS + 100);
+    wateringCtrl.update();
+    RecoveryState stable = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(stable));
+    TEST_ASSERT_TRUE(stable.active);
+    TEST_ASSERT_EQUAL_UINT8(0, stable.retry_count);
+}
+
+void test_watering_invalid_custom_duration_preserves_active_cycle(void) {
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 10;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(60);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1));
+
+    bool sel[NUM_ZONES] = { false, true, false, false };
+    wateringCtrl.startCustom(sel, 0);
+    wateringCtrl.startCustom(sel, 21);
+    wateringCtrl.startCustom(nullptr, 5);
+
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_2));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -392,5 +464,7 @@ int main(void) {
     RUN_TEST(test_watering_recovery_rejects_corrupted_and_suspended_states);
     RUN_TEST(test_watering_inter_zone_wait_updates_upcoming_zone_index);
     RUN_TEST(test_watering_deenergize_relays_preserves_recovery_state);
+    RUN_TEST(test_watering_recovery_retry_cap_and_stable_reset);
+    RUN_TEST(test_watering_invalid_custom_duration_preserves_active_cycle);
     return UNITY_END();
 }

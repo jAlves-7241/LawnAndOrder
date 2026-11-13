@@ -356,6 +356,108 @@ void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
     TEST_ASSERT_TRUE(testDisp.isDisplayOn());
 }
 
+static uint8_t _i2cRecoverCallbackCalls = 0;
+static void _mockI2cRecoverCb() {
+    _i2cRecoverCallbackCalls++;
+}
+
+void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
+    _i2cRecoverCallbackCalls = 0;
+    testDisp.setErrorCallback(_mockI2cRecoverCb);
+
+    testDisp._lcd.mockI2cError = 1;
+    // Trigger 3 consecutive failed frames -> error callback fires once at 3rd error
+    for (int i = 0; i < 3; i++) {
+        testDisp.setRows("A", "B", "C", "D");
+    }
+    TEST_ASSERT_TRUE(testDisp.hasBusFault());
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+
+    // Additional failures inside 10s cooldown (even >= 3 frames) must NOT re-trigger callback
+    advanceMockMillis(2000);
+    for (int i = 0; i < 3; i++) {
+        testDisp.setRows("E", "F", "G", "H");
+    }
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+
+    // After 10s cooldown, callback triggers again on fault, then clears once I2C recovers
+    advanceMockMillis(10000);
+    testDisp.setRows("I", "J", "K", "L");
+    TEST_ASSERT_EQUAL_UINT8(2, _i2cRecoverCallbackCalls);
+    TEST_ASSERT_TRUE(testDisp.hasBusFault());
+
+    testDisp._lcd.mockI2cError = 0;
+    testDisp.setRows("Row0", "Row1", "Row2", "Row3");
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
+}
+
+void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
+    gState.setup_done = true;
+    gState.mode = AppMode::PERSONALIZADO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 4;
+    cs.interval_days = 3;
+    cs.slots[0] = { 6, 0 };
+    cs.slots[1] = { 12, 0 };
+    cs.slots[2] = { 18, 0 };
+    cs.slots[3] = { 22, 0 };
+
+    testUi.begin();
+    testUi.dispatchAction("horarios");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL_STRING("H:06:00 12:00 18:00 ", testUi.getScreenInfo()._rows[2]);
+    TEST_ASSERT_EQUAL_STRING("  22:00 (3d)        ", testUi.getScreenInfo()._rows[3]);
+    TEST_ASSERT_EQUAL_STRING("H:06:00 12:00 18:00 ", testDisp._lcd.getRow(2));
+    TEST_ASSERT_EQUAL_STRING("  22:00 (3d)        ", testDisp._lcd.getRow(3));
+
+    // Zero total zone duration (all zones disabled) must still prevent identical timestamps
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = false;
+        gState.zones[i].duration_min = 0;
+    }
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 0 };
+    testUi.dispatchAction("sel:4");
+    TEST_ASSERT_TRUE(cs.slots[0].hour != cs.slots[1].hour || cs.slots[0].minute != cs.slots[1].minute);
+}
+
+void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
+    gState.setup_done = true;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    testUi.begin();
+
+    // Open ScreenDateEdit, update RTC externally, call refreshClockEditors()
+    testUi.getScreenDateEdit().setup(MenuID::DEF);
+    testUi.changeScreen(&testUi.getScreenDateEdit());
+    TEST_ASSERT_EQUAL_UINT8(15, testUi.getScreenDateEdit()._deDay);
+
+    rtclock.set(2027, 8, 22, 14, 30, 0);
+    testUi.refreshClockEditors();
+    TEST_ASSERT_EQUAL_UINT16(2027, testUi.getScreenDateEdit()._deYear);
+    TEST_ASSERT_EQUAL_UINT8(8, testUi.getScreenDateEdit()._deMonth);
+    TEST_ASSERT_EQUAL_UINT8(22, testUi.getScreenDateEdit()._deDay);
+
+    // Open ScreenTimeEdit(RTC), update RTC externally, call refreshClockEditors()
+    testUi.getScreenTimeEdit().setup(TimeEditContext::RTC, 0, MenuID::DEF);
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    rtclock.set(2028, 3, 5, 19, 45, 0);
+    testUi.refreshClockEditors();
+    TEST_ASSERT_EQUAL_UINT8(19, testUi.getScreenTimeEdit()._teHour);
+    TEST_ASSERT_EQUAL_UINT8(45, testUi.getScreenTimeEdit()._teMin);
+    TEST_ASSERT_EQUAL_UINT16(2028, testUi.getDateEditYear());
+
+    // Saving FREQ_DAYS without valid RTC keeps custom_ref_day at 0xFFFFFFFFUL
+    gState.rtc_valid = false;
+    gState.custom_ref_day = 12345UL;
+    testUi.getScreenDurPick().setup(3, DurContext::FREQ_DAYS, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -367,5 +469,8 @@ int main(void) {
     RUN_TEST(test_ui_info_and_done_post_enter_rotation_bounce_guard);
     RUN_TEST(test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety);
     RUN_TEST(test_ui_idle_screen_waiting_between_zones_and_backlight_never);
+    RUN_TEST(test_display_i2c_fault_abort_cooldown_and_recovery_callback);
+    RUN_TEST(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
+    RUN_TEST(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
     return UNITY_END();
 }

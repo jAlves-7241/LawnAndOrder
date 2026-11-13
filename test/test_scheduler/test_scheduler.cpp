@@ -343,6 +343,60 @@ void test_scheduler_cycle_expired_bounds_and_overflow_safety(void) {
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, current, 600));
 }
 
+void test_scheduler_last_triggers_persist_across_reboot(void) {
+    storage.begin();
+    rtclock = RTClock();
+    gState.mode = AppMode::MEDIO;
+    uint32_t t1 = 1792915200UL; // 2026-10-25 08:00:00
+    gState.now = { 2026, 10, 25, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0, 0, t1 };
+
+    scheduler.begin();
+    scheduler._lastMin = 0xFF;
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // Simulate reboot 1 hour later during DST fall-back repeated hour
+    scheduler = Scheduler();
+    scheduler.begin();
+    gState.now = { 2026, 10, 25, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0, 0, t1 + 3600UL };
+    scheduler._lastMin = 0xFF;
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+}
+
+void test_scheduler_clock_set_clears_last_triggers(void) {
+    storage.begin();
+    rtclock = RTClock();
+    rtclock.begin();
+    gState.mode = AppMode::MEDIO;
+
+    rtclock.set(2026, 6, 15, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0);
+    scheduler.begin();
+    scheduler._lastMin = 0xFF;
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // Explicit manual clock rewind (via rtclock.set) increments revision and re-arms slot
+    rtclock.set(2026, 6, 15, SCHED_MEDIO_SLOT0_H - 1, 59, 55);
+    scheduler.update(); // observes revision change -> clearLastTriggers()
+    rtclock.set(2026, 6, 15, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+}
+
+void test_scheduler_recovery_max_age_2h(void) {
+    gState.mode = AppMode::DESATIVADO;
+    uint32_t startUnix = 1781500000UL;
+
+    SystemTime overLimit = { 2026, 6, 15, 11, 0, 0, 1, startUnix + RECOVERY_MAX_AGE_S + 1 };
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, overLimit, 10800));
+
+    SystemTime withinLimit = { 2026, 6, 15, 8, 30, 0, 1, startUnix + 1800 };
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, withinLimit, 3600));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -360,5 +414,8 @@ int main(void) {
     RUN_TEST(test_scheduler_exact_minute_boundary);
     RUN_TEST(test_scheduler_on_watering_done_does_not_skip_adjacent_minute_slot);
     RUN_TEST(test_scheduler_cycle_expired_bounds_and_overflow_safety);
+    RUN_TEST(test_scheduler_last_triggers_persist_across_reboot);
+    RUN_TEST(test_scheduler_clock_set_clears_last_triggers);
+    RUN_TEST(test_scheduler_recovery_max_age_2h);
     return UNITY_END();
 }

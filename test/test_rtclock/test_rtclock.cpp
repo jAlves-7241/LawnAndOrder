@@ -235,6 +235,52 @@ void test_rtclock_refresh_local_time_on_dst_toggle(void) {
     TEST_ASSERT_EQUAL_UINT8(10, gState.now.hour);
 }
 
+void test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set(void) {
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = true;
+    gState.rtc_valid = false;
+
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    // Hardware OSF must NOT be cleared on initial boot when RAM time was invalid
+    TEST_ASSERT_TRUE(rtclock._rtc.mockLostPower);
+
+    // Invalid calendar date (Feb 30) must return false without changing clock or revision
+    uint32_t revBefore = rtclock.revision();
+    TEST_ASSERT_FALSE(rtclock.set(2026, 2, 30, 12, 0, 0));
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    TEST_ASSERT_EQUAL_UINT32(revBefore, rtclock.revision());
+
+    // Valid set while RTC hardware missing (mockPresent=false) returns false but updates RAM fallback
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+}
+
+void test_rtclock_hotplug_validates_reading_and_tracks_revision(void) {
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.begin());
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+
+    // Re-attach RTC carrying invalid year (2000) -> hotplug must keep rtc_valid false
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
+    advanceMockMillis(35000);
+    rtclock.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+
+    // Valid hardware time succeeds and valid set() increments revision
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 9, 0, 0));
+    advanceMockMillis(35000);
+    rtclock.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+
+    uint32_t rev = rtclock.revision();
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 30, 0));
+    TEST_ASSERT_EQUAL_UINT32(rev + 1, rtclock.revision());
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
@@ -247,5 +293,7 @@ int main(void) {
     RUN_TEST(test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour);
     RUN_TEST(test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power);
     RUN_TEST(test_rtclock_refresh_local_time_on_dst_toggle);
+    RUN_TEST(test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set);
+    RUN_TEST(test_rtclock_hotplug_validates_reading_and_tracks_revision);
     return UNITY_END();
 }

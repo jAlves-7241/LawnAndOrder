@@ -3,7 +3,25 @@
 #include "../../test/mocks/TestCommon.cpp"
 bool _log_suspended = false;
 #include "../../src/AppState.cpp"
+#define private public
+#include "Storage.h"
+#undef private
 #include "../../src/Storage.cpp"
+
+static void recomputeHexCrc(char* hex) {
+    size_t nBytes = sizeof(AppConfigBlob);
+    uint8_t raw[sizeof(AppConfigBlob)] = {};
+    for (size_t i = 0; i < nBytes; i++) {
+        char tmp[3] = { hex[i * 2], hex[i * 2 + 1], '\0' };
+        raw[i] = (uint8_t)strtoul(tmp, nullptr, 16);
+    }
+    uint16_t crc = Storage::_crc16(raw, offsetof(AppConfigBlob, crc16));
+    raw[offsetof(AppConfigBlob, crc16)]     = (uint8_t)(crc & 0xFF);
+    raw[offsetof(AppConfigBlob, crc16) + 1] = (uint8_t)((crc >> 8) & 0xFF);
+    for (size_t i = 0; i < nBytes; i++) {
+        snprintf(&hex[i * 2], 3, "%02X", raw[i]);
+    }
+}
 
 void setUp(void) {
     resetAllTestMocks();
@@ -16,7 +34,7 @@ void test_storage_export_hex_length_and_format(void) {
     char hex[128] = {};
     storage.exportConfigHex(hex, sizeof(hex));
 
-    // Must be exactly sizeof(AppConfigBlob) * 2 characters
+    // Must be exactly sizeof(AppConfigBlob) * 2 characters (72 for v5)
     size_t expectedLen = sizeof(AppConfigBlob) * 2;
     TEST_ASSERT_EQUAL_UINT32(expectedLen, strlen(hex));
 
@@ -122,6 +140,7 @@ void test_storage_recovery_state_roundtrip(void) {
     rs.zone_dur_min[2] = 15;
     rs.zone_dur_min[3] = 5;
     rs.trigger = WaterTrigger::AUTO;
+    rs.retry_count = 2;
 
     storage.saveRecoveryState(rs);
 
@@ -135,6 +154,7 @@ void test_storage_recovery_state_roundtrip(void) {
     TEST_ASSERT_EQUAL_UINT8(2, loaded.queue[1].zone_idx);
     TEST_ASSERT_EQUAL_UINT32(900000, loaded.queue[1].duration_ms);
     TEST_ASSERT_EQUAL(WaterTrigger::AUTO, loaded.trigger);
+    TEST_ASSERT_EQUAL_UINT8(2, loaded.retry_count);
 }
 
 void test_storage_save_and_load_persistence(void) {
@@ -165,6 +185,7 @@ void test_storage_rejects_corrupted_boolean_bytes(void) {
     size_t autoDstHexOffset = offsetof(AppConfigBlob, auto_dst) * 2;
     hex[autoDstHexOffset] = '0';
     hex[autoDstHexOffset + 1] = '2'; // Invalid bool byte (value 2)
+    recomputeHexCrc(hex);
 
     bool ok = storage.importConfigHex(hex);
     TEST_ASSERT_FALSE(ok);
@@ -179,10 +200,18 @@ void test_storage_duration_clamping_on_import(void) {
     hex[durOffset] = '1';
     hex[durOffset + 1] = 'E'; // 30 minutes in hex (0x1E > 20)
 
-    bool ok = storage.importConfigHex(hex);
-    TEST_ASSERT_TRUE(ok);
-    // Durations > 20 must be clamped to safe default of 8
-    TEST_ASSERT_EQUAL_UINT8(8, gState.zones[0].duration_min);
+    uint8_t origDur = gState.zones[0].duration_min;
+    TEST_ASSERT_FALSE(storage.importConfigHex(hex)); // Bad CRC rejected
+    recomputeHexCrc(hex);
+    TEST_ASSERT_FALSE(storage.importConfigHex(hex)); // Valid CRC but >20m duration strictly rejected
+    TEST_ASSERT_EQUAL_UINT8(origDur, gState.zones[0].duration_min);
+
+    // Valid export must also be rejected while watering is active
+    storage.exportConfigHex(hex, sizeof(hex));
+    gState.watering.active = true;
+    TEST_ASSERT_FALSE(storage.importConfigHex(hex));
+    gState.watering.active = false;
+    TEST_ASSERT_TRUE(storage.importConfigHex(hex));
 }
 
 void test_storage_import_rejects_version_mismatch(void) {
@@ -192,9 +221,9 @@ void test_storage_import_rejects_version_mismatch(void) {
     // Change version (first byte / 2 hex chars) to 0xFE
     hex[0] = 'F';
     hex[1] = 'E';
-
-    bool ok = storage.importConfigHex(hex);
-    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_FALSE(storage.importConfigHex(hex));
+    recomputeHexCrc(hex);
+    TEST_ASSERT_FALSE(storage.importConfigHex(hex));
 }
 
 void test_storage_clear_wipes_all(void) {
@@ -280,6 +309,72 @@ void test_storage_zero_duration_normalizes_enabled_false(void) {
     TEST_ASSERT_EQUAL_UINT8(0, gState.zones[0].duration_min);
 }
 
+void test_storage_nvs_load_crc_rejection_and_clamping(void) {
+    gState.mode = AppMode::FRACO;
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 12;
+    TEST_ASSERT_TRUE(storage.save());
+
+    AppConfigBlob blob = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(blob), prefs.getBytes(KEY_CFG, &blob, sizeof(blob)));
+
+    // 1. Corrupt byte in NVS without updating CRC -> load() rejects
+    blob.zones[0].duration_min = 9;
+    prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::DESATIVADO, gState.mode);
+
+    // 2. Corrupted duration > 20 in NVS WITH valid CRC -> load() defensively clamps to 8
+    blob.zones[0].duration_min = 30;
+    blob.crc16 = Storage::_crc16((const uint8_t*)&blob, offsetof(AppConfigBlob, crc16));
+    prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL_UINT8(8, gState.zones[0].duration_min);
+}
+
+void test_storage_history_blob_atomic_and_filesize(void) {
+    TEST_ASSERT_FALSE(storage.hasHistoryData());
+
+    HistoryEntry sample[2] = {};
+    sample[0] = { 2026, 6, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    sample[1] = { 2026, 6, 2, 9, 15, { 5, 5, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    storage.saveHistoryCache(sample, sizeof(sample), 42, 1234UL);
+    TEST_ASSERT_TRUE(storage.hasHistoryData());
+
+    HistoryEntry loaded[2] = {};
+    uint16_t lineCount = 0;
+    uint32_t fileSize = 0;
+    TEST_ASSERT_TRUE(storage.loadHistoryCache(loaded, sizeof(loaded), lineCount, &fileSize));
+    TEST_ASSERT_EQUAL_UINT16(42, lineCount);
+    TEST_ASSERT_EQUAL_UINT32(1234UL, fileSize);
+    TEST_ASSERT_EQUAL_UINT8(2, loaded[1].day);
+
+    // Flip last CRC byte of KEY_HBLOB in NVS -> loadHistoryCache must reject cleanly
+    uint8_t raw[128] = {};
+    size_t sz = prefs.getBytes(KEY_HBLOB, raw, sizeof(raw));
+    TEST_ASSERT_GREATER_THAN_UINT32(sizeof(HistoryNvsHeader) + 2, sz);
+    raw[sz - 1] ^= 0xFF;
+    prefs.putBytes(KEY_HBLOB, raw, sz);
+    TEST_ASSERT_FALSE(storage.loadHistoryCache(loaded, sizeof(loaded), lineCount, &fileSize));
+}
+
+void test_storage_last_triggers_roundtrip(void) {
+    uint32_t ts[MAX_SLOTS_PER_MODE] = { 1781500000UL, 1781510000UL, 0UL, 1781520000UL };
+    storage.saveLastTriggers(ts, MAX_SLOTS_PER_MODE);
+
+    uint32_t loaded[MAX_SLOTS_PER_MODE] = {};
+    TEST_ASSERT_TRUE(storage.loadLastTriggers(loaded, MAX_SLOTS_PER_MODE));
+    TEST_ASSERT_EQUAL_UINT32(1781500000UL, loaded[0]);
+    TEST_ASSERT_EQUAL_UINT32(1781510000UL, loaded[1]);
+    TEST_ASSERT_EQUAL_UINT32(0UL, loaded[2]);
+    TEST_ASSERT_EQUAL_UINT32(1781520000UL, loaded[3]);
+
+    storage.clear();
+    TEST_ASSERT_FALSE(storage.loadLastTriggers(loaded, MAX_SLOTS_PER_MODE));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
@@ -294,5 +389,8 @@ int main(void) {
     RUN_TEST(test_storage_history_cache_persistence);
     RUN_TEST(test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected);
     RUN_TEST(test_storage_zero_duration_normalizes_enabled_false);
+    RUN_TEST(test_storage_nvs_load_crc_rejection_and_clamping);
+    RUN_TEST(test_storage_history_blob_atomic_and_filesize);
+    RUN_TEST(test_storage_last_triggers_roundtrip);
     return UNITY_END();
 }

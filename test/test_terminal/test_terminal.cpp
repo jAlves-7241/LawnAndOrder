@@ -16,9 +16,23 @@
 
 // 2. Define lightweight mock UI matching the methods Terminal needs
 static bool _ui_went_idle = false;
+static bool _ui_in_setup = false;
+static bool _ui_synced_setup = false;
+static bool _ui_refreshed_clock = false;
 class UI {
 public:
     void goIdle() { _ui_went_idle = true; }
+    bool inSetup() const { return _ui_in_setup; }
+    void syncSetupState() {
+        _ui_synced_setup = true;
+        if (gState.setup_done) {
+            _ui_in_setup = false;
+            goIdle();
+        } else {
+            _ui_in_setup = true;
+        }
+    }
+    void refreshClockEditors() { _ui_refreshed_clock = true; }
 };
 UI ui;
 
@@ -31,6 +45,9 @@ UI ui;
 void setUp(void) {
     resetAllTestMocks();
     _ui_went_idle = false;
+    _ui_in_setup = false;
+    _ui_synced_setup = false;
+    _ui_refreshed_clock = false;
     terminal.begin();
     storage.begin();
     history.begin();
@@ -150,7 +167,11 @@ void test_terminal_i2c_scan_command(void) {
 void test_terminal_export_and_import_config_commands(void) {
     Serial.reset();
     _ui_went_idle = false;
+    _ui_in_setup = false;
+    _ui_synced_setup = false;
+    _ui_refreshed_clock = false;
 
+    gState.setup_done = true;
     // Export config
     Serial.feedInput("export_config\r\n");
     terminal.update();
@@ -161,6 +182,7 @@ void test_terminal_export_and_import_config_commands(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(validHex) != std::string::npos);
 
     // Import valid config
+    gState.setup_done = false;
     Serial.reset();
     std::string importCmd = std::string("import_config ") + validHex + "\r\n";
     Serial.feedInput(importCmd);
@@ -322,6 +344,119 @@ void test_terminal_reboot_deenergizes_active_relays_preserving_recovery(void) {
     TEST_ASSERT_TRUE(rs.active);
 }
 
+void test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow(void) {
+    HistoryEntry e = { 2026, 6, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    Serial.reset();
+    Serial.feedInput("clear_history\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+
+    // Advance >= IDLE_TIMEOUT_MS (30s) then send 'y' -> must expire before processing 'y'
+    advanceMockMillis(IDLE_TIMEOUT_MS + 10);
+    Serial.reset();
+    Serial.feedInput("y\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_EXPIRED) != std::string::npos);
+
+    // Trigger buffer overflow, then recover immediately with Ctrl+C (0x03) without Enter
+    Serial.reset();
+    std::string tooLong(270, 'x');
+    Serial.feedInput(tooLong);
+    while (Serial.available() > 0) {
+        terminal.update();
+    }
+    TEST_ASSERT_TRUE(terminal._ignore_rest);
+
+    Serial.reset();
+    Serial.feedInput("\x03help\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._ignore_rest);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("status") != std::string::npos);
+}
+
+void test_terminal_import_active_guard_setup_sync_and_set_time_strict(void) {
+    // 1. Export a setup_done=false config, then import while inSetup is true
+    gState.setup_done = false;
+    char hexSetupFalse[sizeof(AppConfigBlob) * 2 + 1] = {};
+    storage.exportConfigHex(hexSetupFalse, sizeof(hexSetupFalse));
+
+    gState.setup_done = true;
+    char hexSetupTrue[sizeof(AppConfigBlob) * 2 + 1] = {};
+    storage.exportConfigHex(hexSetupTrue, sizeof(hexSetupTrue));
+
+    // Active watering blocks CLI import_config
+    wateringCtrl.begin();
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 5;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    TEST_ASSERT_TRUE(gState.watering.active);
+
+    Serial.reset();
+    std::string cmd = std::string("import_config ") + hexSetupTrue + "\r\n";
+    Serial.feedInput(cmd);
+    while (Serial.available() > 0) terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_IMP_BLOB) != std::string::npos);
+    wateringCtrl.stop();
+
+    // Importing valid config calls syncSetupState() and leaves setup if setup_done==true
+    _ui_in_setup = true;
+    _ui_synced_setup = false;
+    _ui_went_idle = false;
+    Serial.reset();
+    Serial.feedInput(cmd);
+    while (Serial.available() > 0) terminal.update();
+    TEST_ASSERT_TRUE(_ui_synced_setup);
+    TEST_ASSERT_FALSE(_ui_in_setup);
+    TEST_ASSERT_TRUE(_ui_went_idle);
+
+    // clear_history while _ui_in_setup == true must NOT kick UI to goIdle()
+    _ui_in_setup = true;
+    _ui_went_idle = false;
+    Serial.feedInput("clear_history\r\ny\r\n");
+    while (Serial.available() > 0) terminal.update();
+    TEST_ASSERT_FALSE(_ui_went_idle);
+
+    // Strict set_time rejects internal spaces and calls refreshClockEditors() on success
+    _ui_refreshed_clock = false;
+    gState.rtc_valid = false;
+    Serial.reset();
+    Serial.feedInput("set_time 2026- 7-20 15:45:00\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    TEST_ASSERT_FALSE(_ui_refreshed_clock);
+
+    Serial.reset();
+    Serial.feedInput("set_time 2026-07-20 15:45:00\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_TRUE(_ui_refreshed_clock);
+}
+
+void test_terminal_midline_batch_coalesces_tail_redraw(void) {
+    Serial.reset();
+    // Feed "ab", move cursor Left twice to index 0, then insert "XYZ" in one batch
+    Serial.feedInput("ab\033[D\033[DXYZ");
+    terminal.update();
+
+    TEST_ASSERT_EQUAL_UINT16(5, terminal._bufLen);
+    terminal._buffer[terminal._bufLen] = '\0';
+    TEST_ASSERT_EQUAL_STRING("XYZab", terminal._buffer);
+
+    // Count erase-to-EOL "\033[K" occurrences -> must be coalesced to 1!
+    size_t countK = 0;
+    size_t pos = 0;
+    while ((pos = Serial.outputBuffer.find("\033[K", pos)) != std::string::npos) {
+        countK++;
+        pos += 3;
+    }
+    TEST_ASSERT_EQUAL_UINT32(1, countK);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -340,5 +475,8 @@ int main(void) {
     RUN_TEST(test_terminal_set_time_rejects_trailing_garbage_and_plus_sign);
     RUN_TEST(test_terminal_status_truthful_when_rtc_invalid);
     RUN_TEST(test_terminal_reboot_deenergizes_active_relays_preserving_recovery);
+    RUN_TEST(test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow);
+    RUN_TEST(test_terminal_import_active_guard_setup_sync_and_set_time_strict);
+    RUN_TEST(test_terminal_midline_batch_coalesces_tail_redraw);
     return UNITY_END();
 }

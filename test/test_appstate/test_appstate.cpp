@@ -14,8 +14,8 @@ void tearDown(void) {}
 void test_struct_sizes_and_alignment(void) {
     TEST_ASSERT_EQUAL_UINT32(12, sizeof(HistoryEntry));
     // Verify packed layout of RecoveryState and AppConfigBlob
-    TEST_ASSERT_EQUAL_UINT32(33, sizeof(RecoveryState));
-    TEST_ASSERT_EQUAL_UINT32(34, sizeof(AppConfigBlob));
+    TEST_ASSERT_EQUAL_UINT32(34, sizeof(RecoveryState));
+    TEST_ASSERT_EQUAL_UINT32(36, sizeof(AppConfigBlob));
 }
 
 void test_init_app_state_defaults(void) {
