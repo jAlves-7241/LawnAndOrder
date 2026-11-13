@@ -30,6 +30,7 @@ private:
 class ScreenDateEdit : public UIScreen {
 public:
     void setup(MenuID backMenu);
+    void refreshFromClock(UI& ui);
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;
@@ -50,6 +51,7 @@ private:
 class ScreenTimeEdit : public UIScreen {
 public:
     void setup(TimeEditContext ctx, uint8_t cycleIdx, MenuID backMenu);
+    void refreshFromClock(UI& ui);
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;

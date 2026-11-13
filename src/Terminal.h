@@ -13,11 +13,13 @@ private:
     uint16_t _bufLen = 0;
     uint16_t _cursorPos = 0;
     bool _pendingClearHistory = false;
+    uint32_t _pendingClearAtMs = 0;
     char _ansi_buf[8] = {};
 
     bool _in_ansi = false;
     uint8_t _ansi_bytes = 0;
     bool _ignore_rest = false;
+    bool _tailDirty = false;
     char _last_c = 0;
 
     // Command table (dispatch + help generation)
@@ -57,6 +59,7 @@ private:
     void _moveCursorToStart();
     void _moveCursorToEnd();
     void _redrawTail();
+    void _flushTail();
     void _deleteCharAtCursor();
     void _backspaceAtCursor();
     void _clearLine();

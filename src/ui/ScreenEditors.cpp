@@ -66,6 +66,7 @@ void ScreenDurPick::handleClick(UI& ui) {
             uint8_t enCount = 0;
             for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
             if (enCount > 1) total_dur += (enCount - 1);
+            uint16_t min_spacing = (total_dur > 0) ? total_dur : 1;
             bool overlap = false;
             for (int i = 0; i < cs.slot_count; i++) {
                 for (int j = i + 1; j < cs.slot_count; j++) {
@@ -74,7 +75,7 @@ void ScreenDurPick::handleClick(UI& ui) {
                     int16_t diff = (int16_t)s1 - (int16_t)s2;
                     if (diff < 0) diff = -diff;
                     if (diff > 720) diff = 1440 - diff;
-                    if (diff < total_dur) { overlap = true; break; }
+                    if (diff < min_spacing) { overlap = true; break; }
                 }
                 if (overlap) break;
             }
@@ -96,8 +97,10 @@ void ScreenDurPick::handleClick(UI& ui) {
     if (_durContext == DurContext::FREQ_DAYS) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.interval_days = (_durValue > 0) ? _durValue : 1;
-        DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
-        gState.custom_ref_day = localDate.unixtime() / 86400UL;
+        if (!gState.rtc_valid) { gState.custom_ref_day = 0xFFFFFFFFUL; } else {
+            DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
+            gState.custom_ref_day = localDate.unixtime() / 86400UL;
+        }
         ui.flagConfigChanged();
         scheduler.onModeChanged();
         ui.goMenu(_backMenu);
@@ -227,6 +230,11 @@ void ScreenDateEdit::setup(MenuID backMenu) {
     _backMenu = backMenu;
 }
 
+void ScreenDateEdit::refreshFromClock(UI& ui) {
+    setup(_backMenu);
+    render(ui);
+}
+
 void ScreenDateEdit::onEnter(UI& ui) {
     render(ui);
 }
@@ -319,6 +327,15 @@ void ScreenTimeEdit::setup(TimeEditContext ctx, uint8_t cycleIdx, MenuID backMen
     _backMenu = backMenu;
 }
 
+void ScreenTimeEdit::refreshFromClock(UI& ui) {
+    if (_teContext != TimeEditContext::RTC) return;
+    if (gState.rtc_valid) {
+        ui.setDateCache(gState.now.year, gState.now.month, gState.now.day);
+    }
+    setup(_teContext, _teCycleIdx, _backMenu);
+    render(ui);
+}
+
 void ScreenTimeEdit::onEnter(UI& ui) {
     render(ui);
 }
@@ -357,9 +374,21 @@ void ScreenTimeEdit::handleClick(UI& ui) {
             return;
         }
 
-        rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
+        bool hwOk = rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
                     ui.getDateEditDay(), _teHour, _teMin, 0);
         scheduler.onModeChanged();
+        if (!hwOk) {
+            if (ui.inSetup()) {
+                ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
+                                            MenuID::SETUP_MODE, "skip_clock");
+                ui.changeScreen(&ui.getScreenConfirm());
+            } else {
+                ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT,
+                                         TXT_FOUND, "", MenuID::DEF);
+                ui.changeScreen(&ui.getScreenInfo());
+            }
+            return;
+        }
 
         if (ui.inSetup()) {
             ui.advanceSetup();
@@ -381,6 +410,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
             if (gState.zones[z].enabled) enCount++;
         }
         if (enCount > 1) total_dur += (enCount - 1); // incluir delays de relés
+        uint16_t min_spacing = (total_dur > 0) ? total_dur : 1;
 
         uint8_t old_h = cs.slots[_teCycleIdx].hour;
         uint8_t old_m = cs.slots[_teCycleIdx].minute;
@@ -395,7 +425,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
                 int16_t diff = (int16_t)s1 - (int16_t)s2;
                 if (diff < 0) diff = -diff;
                 if (diff > 720) diff = 1440 - diff;
-                if (diff < total_dur) {
+                if ((uint16_t)diff < min_spacing) {
                     overlap = true;
                     break;
                 }

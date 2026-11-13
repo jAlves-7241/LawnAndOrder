@@ -33,6 +33,8 @@ public:
     void setInSetup(bool val) { _inSetup = val; }
     SetupStep getSetupStep() const { return _setupStep; }
     void advanceSetup();
+    void syncSetupState();
+    void refreshClockEditors();
 
     void flagConfigChanged() { _configChanged = true; }
     bool executeConfirmed(const char* tag);

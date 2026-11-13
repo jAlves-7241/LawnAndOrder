@@ -173,6 +173,24 @@ void UI::advanceSetup() {
 // ─────────────────────────────────────────────────────────
 // Dispatch / Actions
 // ─────────────────────────────────────────────────────────
+void UI::syncSetupState() {
+    _configChanged = false;
+    if (!gState.setup_done) {
+        _startSetup();
+    } else {
+        _inSetup = false;
+        goIdle();
+    }
+}
+
+void UI::refreshClockEditors() {
+    if (_currentScreen == &_screenDateEdit) {
+        _screenDateEdit.refreshFromClock(*this);
+    } else if (_currentScreen == &_screenTimeEdit) {
+        _screenTimeEdit.refreshFromClock(*this);
+    }
+}
+
 bool UI::executeConfirmed(const char* tag) {
     if (!tag) return false;
     LOG_I("UI", TXT_LOG_UI_CONFIRM_TAG, tag);
@@ -250,6 +268,7 @@ void UI::dispatchAction(const char* action) {
                 uint8_t enCount = 0;
                 for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
                 if (enCount > 1) total_dur += (enCount - 1);
+                uint16_t min_spacing = (total_dur > 0) ? total_dur : 1;
                 bool overlap = false;
                 for (int i = 0; i < cs.slot_count && !overlap; i++) {
                     for (int j = i + 1; j < cs.slot_count; j++) {
@@ -258,7 +277,7 @@ void UI::dispatchAction(const char* action) {
                         int16_t diff = (int16_t)s1 - (int16_t)s2;
                         if (diff < 0) diff = -diff;
                         if (diff > 720) diff = 1440 - diff;
-                        if ((uint16_t)diff < total_dur) { overlap = true; break; }
+                        if ((uint16_t)diff < min_spacing) { overlap = true; break; }
                     }
                 }
                 if (overlap) {
@@ -417,20 +436,21 @@ void UI::dispatchAction(const char* action) {
                 }
             } else {
                 // 3 ou 4 ciclos: dividir em duas linhas de horas
-                // Linha horas A: ciclos 0 e 1
-                snprintf(l2, sizeof(l2), "H: %02d:%02d + %02d:%02d",
-                         cs.slots[0].hour, cs.slots[0].minute,
-                         cs.slots[1].hour, cs.slots[1].minute);
-                // Linha horas B: ciclos 2 (e 3 se existir)
+                // Linha horas A: ciclos 0 a 2
+                snprintf(l2, sizeof(l2), "H:%02d:%02d %02d:%02d %02d:%02d",
+                         (int)(cs.slots[0].hour % 24U), (int)(cs.slots[0].minute % 60U),
+                         (int)(cs.slots[1].hour % 24U), (int)(cs.slots[1].minute % 60U),
+                         (int)(cs.slots[2].hour % 24U), (int)(cs.slots[2].minute % 60U));
+                // Linha horas B: ciclo 3 + frequência (ou só frequência para 3 ciclos)
                 if (cs.slot_count == 4) {
-                    snprintf(l3, sizeof(l3), "   %02d:%02d + %02d:%02d",
-                             cs.slots[2].hour, cs.slots[2].minute,
-                             cs.slots[3].hour, cs.slots[3].minute);
+                    snprintf(l3, sizeof(l3), "  %02d:%02d (%dd)",
+                             cs.slots[3].hour, cs.slots[3].minute,
+                             cs.interval_days);
                 } else {
-                    snprintf(l3, sizeof(l3), "   %02d:%02d",
-                             cs.slots[2].hour, cs.slots[2].minute);
+                    if (cs.interval_days == 1) snprintf(l3, sizeof(l3), "%s", TXT_PROG_EVERY_1_DAY);
+                    else snprintf(l3, sizeof(l3), TXT_PROG_EVERY_DAYS, cs.interval_days);
                 }
-                // Frequência sacrificada, mas apenas cabem 4 linhas (0 a 3)
+
             }
 
         } else {

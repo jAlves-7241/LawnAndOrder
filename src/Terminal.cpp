@@ -102,6 +102,29 @@ static char *trimWhitespace(char *str) {
     return str;
 }
 
+static bool parseExactSetTime(const char* s, int& yr, int& mo, int& dy,
+                              int& hh, int& mm, int& ss) {
+    if (!s || strlen(s) != 19) return false;
+    for (int i = 0; i < 19; i++) {
+        if (i == 4 || i == 7) {
+            if (s[i] != '-') return false;
+        } else if (i == 10) {
+            if (s[i] != ' ') return false;
+        } else if (i == 13 || i == 16) {
+            if (s[i] != ':') return false;
+        } else if (s[i] < '0' || s[i] > '9') {
+            return false;
+        }
+    }
+    yr = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+    mo = (s[5] - '0') * 10 + (s[6] - '0');
+    dy = (s[8] - '0') * 10 + (s[9] - '0');
+    hh = (s[11] - '0') * 10 + (s[12] - '0');
+    mm = (s[14] - '0') * 10 + (s[15] - '0');
+    ss = (s[17] - '0') * 10 + (s[18] - '0');
+    return true;
+}
+
 static const char *getModeStr(AppMode mode) {
     switch (mode) {
     case AppMode::INTENSO:      return TXT_TERM_MODE_INTENSE;
@@ -118,8 +141,9 @@ static const char *getModeStr(AppMode mode) {
 // ═════════════════════════════════════════════════════════
 
 Terminal::Terminal()
-    : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _ansi_buf{},
-      _in_ansi(false), _ansi_bytes(0), _ignore_rest(false), _last_c(0)
+    : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _pendingClearAtMs(0),
+      _ansi_buf{}, _in_ansi(false), _ansi_bytes(0), _ignore_rest(false),
+      _tailDirty(false), _last_c(0)
 {
     memset(_buffer, 0, sizeof(_buffer));
 }
@@ -128,9 +152,11 @@ void Terminal::begin() {
     _bufLen = 0;
     _cursorPos = 0;
     _pendingClearHistory = false;
+    _pendingClearAtMs = 0;
     _in_ansi = false;
     _ansi_bytes = 0;
     _ignore_rest = false;
+    _tailDirty = false;
     _last_c = 0;
     LOG_I("TERM", TXT_LOG_TERM_READY);
 }
@@ -174,12 +200,20 @@ void Terminal::_redrawTail() {
     }
 }
 
+// Flush deferred mid-line tail redraw if contiguous edits dirtied the tail
+void Terminal::_flushTail() {
+    if (_tailDirty) {
+        _redrawTail();
+        _tailDirty = false;
+    }
+}
+
 // Delete the character at the current cursor position (Del key)
 void Terminal::_deleteCharAtCursor() {
     if (_cursorPos < _bufLen) {
         _bufLen--;
         memmove(&_buffer[_cursorPos], &_buffer[_cursorPos + 1], _bufLen - _cursorPos);
-        _redrawTail();
+        _tailDirty = true;
     }
 }
 
@@ -190,7 +224,7 @@ void Terminal::_backspaceAtCursor() {
         _bufLen--;
         memmove(&_buffer[_cursorPos], &_buffer[_cursorPos + 1], _bufLen - _cursorPos);
         Serial.print("\b");
-        _redrawTail();
+        _tailDirty = true;
     }
 }
 
@@ -201,6 +235,7 @@ void Terminal::_clearLine() {
         _bufLen = 0;
         _cursorPos = 0;
     }
+    _tailDirty = false;
 }
 
 // ═════════════════════════════════════════════════════════
@@ -220,8 +255,10 @@ void Terminal::_drainInput() {
     _bufLen = 0;
     _cursorPos = 0;
     _pendingClearHistory = false;
+    _pendingClearAtMs = 0;
     _in_ansi = false;
     _ignore_rest = false;
+    _tailDirty = false;
 }
 
 // Feed a character into the ANSI sequence accumulator.
@@ -285,8 +322,15 @@ void Terminal::_handleAnsiSequence() {
     // ── CSI sequences (ESC [ ...) ──
     if (_ansi_bytes >= 2 && _ansi_buf[0] == '[') {
 
+        // Three-byte Del (ESC [ 3 ~) can coalesce across batches without cursor move
+        if (_ansi_bytes == 3 && terminator == '~' && _ansi_buf[1] == '3') {
+            _deleteCharAtCursor();
+            return;
+        }
+
         // Two-byte CSI: ESC [ <letter>
         if (_ansi_bytes == 2) {
+            _flushTail();
             switch (terminator) {
             case 'D': // Left arrow
                 if (_cursorPos > 0) {
@@ -311,10 +355,8 @@ void Terminal::_handleAnsiSequence() {
 
         // Three-byte CSI: ESC [ <digit> ~
         if (_ansi_bytes == 3 && terminator == '~') {
+            _flushTail();
             switch (_ansi_buf[1]) {
-            case '3': // Delete
-                _deleteCharAtCursor();
-                return;
             case '1': // Home (alternate)
             case '7': // Home (rxvt)
                 _moveCursorToStart();
@@ -329,6 +371,7 @@ void Terminal::_handleAnsiSequence() {
 
     // ── SS3 sequences (ESC O ...) ──
     if (_ansi_bytes == 2 && _ansi_buf[0] == 'O') {
+        _flushTail();
         switch (terminator) {
         case 'H': // Home
             _moveCursorToStart();
@@ -352,6 +395,7 @@ bool Terminal::_handleLineEnd(char c) {
     }
 
     if (c == '\n' || c == '\r') {
+        _flushTail();
         _ignore_rest = false;
         if (_bufLen > 0 || _pendingClearHistory) {
             _buffer[_bufLen] = '\0';
@@ -373,8 +417,10 @@ bool Terminal::_handleControlChar(char c) {
     // Cancelar/limpar linha atual (Ctrl+C ou Ctrl+U)
     if (c == 3 || c == 21) {
         _clearLine();
+        _ignore_rest = false;
         if (_pendingClearHistory) {
             _pendingClearHistory = false;
+            _pendingClearAtMs = 0;
             Serial.println(TXT_TERM_CANCELLED);
         }
         _last_c = c;
@@ -413,10 +459,9 @@ void Terminal::_insertChar(char c) {
         _bufLen++;
         // Echo the inserted character
         Serial.write(c);
-        // Redraw the tail (characters after the cursor)
+        // Defer tail redraw until cursor move, line end, or batch end
         if (_cursorPos < _bufLen) {
-            Serial.write((const uint8_t*)(_buffer + _cursorPos), _bufLen - _cursorPos);
-            Serial.printf("\033[%dD", _bufLen - _cursorPos);
+            _tailDirty = true;
         }
     } else {
         // Buffer overflow
@@ -425,6 +470,8 @@ void Terminal::_insertChar(char c) {
         _bufLen = 0;
         _cursorPos = 0;
         _pendingClearHistory = false;
+        _pendingClearAtMs = 0;
+        _tailDirty = false;
         _ignore_rest = true;
     }
 
@@ -443,6 +490,14 @@ void Terminal::update() {
         return;
     }
 
+    // Expirar confirmação pendente de limpeza após 30 s de inatividade
+    if (_pendingClearHistory && (uint32_t)(millis() - _pendingClearAtMs) >= IDLE_TIMEOUT_MS) {
+        _clearLine();
+        _pendingClearHistory = false;
+        _pendingClearAtMs = 0;
+        Serial.println(TXT_TERM_WIPE_EXPIRED);
+    }
+
     // Leitura não bloqueante de caracteres com limite
     uint8_t budget = 64;
     while (Serial.available() > 0 && budget-- > 0) {
@@ -453,6 +508,7 @@ void Terminal::update() {
         if (_handleControlChar(c)) continue;
         _insertChar(c);
     }
+    _flushTail();
 }
 
 // ═════════════════════════════════════════════════════════
@@ -467,14 +523,22 @@ void Terminal::_processCommand(char *cmd) {
 
     // Handle pending clear_history confirmation
     if (_pendingClearHistory) {
+        bool expired = (uint32_t)(millis() - _pendingClearAtMs) >= IDLE_TIMEOUT_MS;
         _pendingClearHistory = false;
+        _pendingClearAtMs = 0;
+        if (expired) {
+            Serial.println(TXT_TERM_WIPE_EXPIRED);
+            return;
+        }
         if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 ||
             strcasecmp(trimmed, "s") == 0 || strcasecmp(trimmed, "sim") == 0)) {
             Serial.println(TXT_TERM_WIPING);
             history.clear();
             // Reposicionar ecrã físico para Idle para refletir o histórico limpo
-            // imediatamente
-            ui.goIdle();
+            // imediatamente (sem sair do wizard de configuração inicial)
+            if (!ui.inSetup()) {
+                ui.goIdle();
+            }
             Serial.println(TXT_TERM_WIPE_OK);
         } else {
             Serial.println(TXT_TERM_CANCELLED);
@@ -609,8 +673,7 @@ void Terminal::_cmdSetTime(char *args) {
     }
 
     int yr, mo, dy, hh, mm, ss;
-    char extra = 0;
-    if (sscanf(args, "%4d-%2d-%2d %2d:%2d:%2d %c", &yr, &mo, &dy, &hh, &mm, &ss, &extra) != 6) {
+    if (!parseExactSetTime(args, yr, mo, dy, hh, mm, ss)) {
         Serial.println(TXT_TERM_ERR_FORMAT);
         return;
     }
@@ -651,11 +714,15 @@ void Terminal::_cmdSetTime(char *args) {
     }
 
     // Acertar a hora local
-    rtclock.set((uint16_t)yr, (uint8_t)mo, (uint8_t)dy, (uint8_t)hh, (uint8_t)mm,
-                (uint8_t)ss);
+    if (!rtclock.set((uint16_t)yr, (uint8_t)mo, (uint8_t)dy, (uint8_t)hh, (uint8_t)mm,
+                     (uint8_t)ss)) {
+        Serial.println(TXT_LOG_RTC_NOT_FOUND);
+        return;
+    }
 
-    // Atualizar o scheduler imediatamente baseado no novo relógio
+    // Atualizar o scheduler e editores de relógio imediatamente baseado no novo relógio
     scheduler.onModeChanged();
+    ui.refreshClockEditors();
 
     Serial.printf(TXT_TERM_TIME_SET, yr, mo, dy, hh, mm, ss);
 }
@@ -676,15 +743,20 @@ void Terminal::_cmdImportConfig(char *args) {
         return;
     }
 
+    if (gState.watering.active) {
+        LOG_W("NVS", TXT_LOG_NVS_IMP_ACTIVE);
+        Serial.println(TXT_TERM_ERR_IMP_BLOB);
+        return;
+    }
+
     if (storage.importConfigHex(args)) {
         // Sucesso na importação - atualizar hora local (caso auto_dst tenha mudado) e agendamento
         if (gState.rtc_valid) {
             rtclock.refreshLocalTime();
         }
         scheduler.onModeChanged();
-        // Reposicionar ecrã físico para Idle para refletir as novas configurações
-        // imediatamente
-        ui.goIdle();
+        // Sincronizar UI com setup_done importado (sair do wizard ou iniciar se setup_done=false)
+        ui.syncSetupState();
         Serial.println(TXT_TERM_IMP_OK);
     } else {
         Serial.println(TXT_TERM_ERR_IMP_BLOB);
@@ -705,6 +777,7 @@ void Terminal::_cmdClearHistory(char* /*args*/) {
     Serial.print(TXT_TERM_WIPE_CONFIRM);
     Serial.print(" ");
     _pendingClearHistory = true;
+    _pendingClearAtMs = millis();
 }
 
 void Terminal::_cmdReboot(char* /*args*/) {
