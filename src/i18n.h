@@ -423,11 +423,29 @@
 #define TXT_LOG_LVL_DEBUG "DEBUG"
 
 #define TXT_LOG_TAG_SYS "System"
+#define TXT_LOG_TAG_SCHEDULE "Schedule"
+#define TXT_LOG_TAG_LCD "Display"
+#define TXT_LOG_TAG_I2C "I2C Bus"
 
 #define TXT_SER_TRIG_AUTO "Automatic"
 #define TXT_SER_TRIG_MANUAL "Manual"
 #define TXT_SER_TRIG_CUSTOM "Custom"
 #define TXT_SER_TRIG_TEST "Test"
+
+// Reset reasons & error descriptions
+#define TXT_RST_POWERON "Power-on"
+#define TXT_RST_EXT "External reset button"
+#define TXT_RST_SW "Software restart"
+#define TXT_RST_PANIC "System crash (panic)"
+#define TXT_RST_WDT "Hardware watchdog timeout"
+#define TXT_RST_DEEPSLEEP "Deep sleep wake"
+#define TXT_RST_BROWNOUT "Low voltage (brownout)"
+#define TXT_RST_OTHER "Other reset (code %d)"
+#define TXT_ERR_INV_ARG "invalid argument"
+#define TXT_ERR_INV_STATE "invalid state"
+#define TXT_ERR_NO_MEM "out of memory"
+#define TXT_ERR_NOT_FOUND "not found"
+#define TXT_ERR_CODE_FMT "error code %d"
 
 // I2C friendly device names
 #define TXT_I2C_DEV_LCD "LCD Display"
@@ -452,8 +470,11 @@
 #define TXT_LOG_ZONE_ACTIVE_MIN "Zone %d (%s) active - dur=%lu min"
 #define TXT_LOG_ZONE_ACTIVE_SEC "Zone %d (%s) active - dur=%lu s"
 #define TXT_LOG_NEXT_WATERING "Next watering: %02d:%02d"
-#define TXT_LOG_LCD_READY "Ready"
-#define TXT_LOG_LCD_RECOVERED "Recovered"
+#define TXT_LOG_LCD_READY "LCD display initialized (%dx%d at 0x%02X)"
+#define TXT_LOG_LCD_INIT_FAIL "LCD display did not respond on I2C bus (address 0x%02X)"
+#define TXT_LOG_LCD_RECOVERED "LCD display communication restored"
+#define TXT_LOG_LCD_REC_FAIL "LCD display still unreachable after I2C bus recovery"
+#define TXT_LOG_LCD_COMM_ERR "LCD communication failed 3 times in a row - starting I2C bus recovery"
 #define TXT_LOG_TERM_READY "Serial command terminal activated at 115200 baud."
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - TERMINAL SERVICE                  "
 // Terminal
@@ -583,16 +604,19 @@
 #define TXT_TERM_HIST_EMPTY "History is empty."
 #define TXT_TERM_HIST_EXPORT_END "--- END: %d records ---\n"
 #define TXT_LOG_I2C_SCAN_FOUND "Device found at 0x%02X"
-#define TXT_LOG_I2C_SCAN_NONE "No I2C devices found - check wiring"
+#define TXT_LOG_I2C_SDA_STUCK "I2C data line still held low after bus clear - check wiring or pull-ups"
+#define TXT_LOG_I2C_SCAN_NONE "No I2C devices found on bus - check wiring and power"
 #define TXT_LOG_I2C_SCAN_DONE "Scan complete: %d device(s)"
-#define TXT_LOG_I2C_REC_START "Starting stuck I2C bus recovery..."
-#define TXT_LOG_I2C_REC_DONE "I2C recovery complete"
-#define TXT_LOG_SYS_BOOT "Starting system..."
-#define TXT_LOG_WDT_INIT_FAIL "WDT init failed: %d"
-#define TXT_LOG_WDT_ADD_FAIL "WDT add failed: %d"
-#define TXT_LOG_RTC_UNAVAIL "RTC not available"
-#define TXT_LOG_SUSP_EXP_CLR "Suspension expired (or RTC failed) - cleared"
-#define TXT_LOG_SYS_READY "System ready"
+#define TXT_LOG_I2C_SCAN_SUMMARY "Detected %u I2C device(s): %s"
+#define TXT_LOG_I2C_REC_START "Recovering stuck I2C hardware bus..."
+#define TXT_LOG_I2C_REC_DONE "I2C bus recovery complete"
+#define TXT_LOG_SYS_BOOT "Lawn & Order %s (built %s) booting - reset reason: %s"
+#define TXT_LOG_WDT_INIT_FAIL "Hardware watchdog initialization failed (%s)"
+#define TXT_LOG_WDT_ADD_FAIL "Failed to register main loop with hardware watchdog (%s)"
+#define TXT_LOG_SUSP_EXP_CLR "Saved watering suspension had already expired - suspension cleared"
+#define TXT_LOG_SUSP_KEPT_NO_CLK "Watering remains suspended until clock time becomes valid"
+#define TXT_LOG_SUSP_BOOT_ACTIVE "Watering is suspended until %04d-%02d-%02d %02d:%02d"
+#define TXT_LOG_SYS_READY "System initialization complete - controller ready"
 #define TXT_LOG_RTC_NOT_FOUND "Module not found - check I2C"
 #define TXT_LOG_RTC_BAT_LOW "Battery depleted or 1st use - set time"
 #define TXT_LOG_RTC_BOOT_CORRUPT "Boot reading corrupted (%04d-%02d-%02d)"
@@ -650,11 +674,29 @@
 #define TXT_LOG_LVL_DEBUG "DEPURACAO"
 
 #define TXT_LOG_TAG_SYS "Sistema"
+#define TXT_LOG_TAG_SCHEDULE "Agendamento"
+#define TXT_LOG_TAG_LCD "Ecra"
+#define TXT_LOG_TAG_I2C "Barramento I2C"
 
 #define TXT_SER_TRIG_AUTO "Automatica"
 #define TXT_SER_TRIG_MANUAL "Manual"
 #define TXT_SER_TRIG_CUSTOM "Personalizada"
 #define TXT_SER_TRIG_TEST "Teste"
+
+// Motivos de reinicio e descricoes de erro
+#define TXT_RST_POWERON "Ligacao a corrente"
+#define TXT_RST_EXT "Botao de reinicio externo"
+#define TXT_RST_SW "Reinicio por software"
+#define TXT_RST_PANIC "Falha grave do sistema (panic)"
+#define TXT_RST_WDT "Tempo limite do supervisor de hardware"
+#define TXT_RST_DEEPSLEEP "Saida de suspensao profunda"
+#define TXT_RST_BROWNOUT "Tensao insuficiente (brownout)"
+#define TXT_RST_OTHER "Outro reinicio (codigo %d)"
+#define TXT_ERR_INV_ARG "argumento invalido"
+#define TXT_ERR_INV_STATE "estado invalido"
+#define TXT_ERR_NO_MEM "memoria insuficiente"
+#define TXT_ERR_NOT_FOUND "nao encontrado"
+#define TXT_ERR_CODE_FMT "codigo de erro %d"
 
 // Nomes amigaveis de dispositivos I2C
 #define TXT_I2C_DEV_LCD "Ecra LCD"
@@ -683,8 +725,14 @@
 #define TXT_LOG_ZONE_ACTIVE_MIN "Zona %d (%s) ativa - dur=%lu min"
 #define TXT_LOG_ZONE_ACTIVE_SEC "Zona %d (%s) ativa - dur=%lu s"
 #define TXT_LOG_NEXT_WATERING "Proxima rega: %02d:%02d"
-#define TXT_LOG_LCD_READY "Pronto"
-#define TXT_LOG_LCD_RECOVERED "Recuperado"
+#define TXT_LOG_LCD_READY "Ecra LCD inicializado (%dx%d em 0x%02X)"
+#define TXT_LOG_LCD_INIT_FAIL                                                  \
+  "Ecra LCD nao respondeu no barramento I2C (endereco 0x%02X)"
+#define TXT_LOG_LCD_RECOVERED "Comunicacao com o ecra LCD restabelecida"
+#define TXT_LOG_LCD_REC_FAIL                                                   \
+  "Ecra LCD continua inalcancavel apos recuperacao do barramento I2C"
+#define TXT_LOG_LCD_COMM_ERR                                                   \
+  "Comunicacao com o ecra LCD falhou 3 vezes seguidas - a iniciar recuperacao do barramento I2C"
 #define TXT_LOG_TERM_READY "Terminal de comando serial ativado a 115200 baud."
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - SERVICO TERMINAL                  "
 // Terminal
@@ -822,16 +870,26 @@
 #define TXT_TERM_HIST_EMPTY "Historico vazio."
 #define TXT_TERM_HIST_EXPORT_END "--- FIM: %d registos ---\n"
 #define TXT_LOG_I2C_SCAN_FOUND "Dispositivo encontrado em 0x%02X"
-#define TXT_LOG_I2C_SCAN_NONE "Nenhum dispositivo I2C encontrado - verificar cablagem"
+#define TXT_LOG_I2C_SDA_STUCK                                                  \
+  "Linha de dados I2C continua bloqueada em estado baixo apos limpeza - verifique a cablagem ou resistencias pull-up"
+#define TXT_LOG_I2C_SCAN_NONE                                                  \
+  "Nenhum dispositivo I2C encontrado no barramento - verifique a cablagem e a alimentacao"
 #define TXT_LOG_I2C_SCAN_DONE "Scan completo: %d dispositivo(s)"
-#define TXT_LOG_I2C_REC_START "A iniciar recuperacao do barramento I2C preso..."
-#define TXT_LOG_I2C_REC_DONE "Recuperacao I2C concluida"
-#define TXT_LOG_SYS_BOOT "A iniciar sistema..."
-#define TXT_LOG_WDT_INIT_FAIL "WDT init falhou: %d"
-#define TXT_LOG_WDT_ADD_FAIL "WDT add falhou: %d"
-#define TXT_LOG_RTC_UNAVAIL "RTC nao disponivel"
-#define TXT_LOG_SUSP_EXP_CLR "Suspensao expirada (ou RTC falhou) - limpa"
-#define TXT_LOG_SYS_READY "Sistema pronto"
+#define TXT_LOG_I2C_SCAN_SUMMARY "Detetado(s) %u dispositivo(s) I2C: %s"
+#define TXT_LOG_I2C_REC_START "A recuperar barramento de hardware I2C bloqueado..."
+#define TXT_LOG_I2C_REC_DONE "Recuperacao do barramento I2C concluida"
+#define TXT_LOG_SYS_BOOT "Lawn & Order %s (compilado %s) a iniciar - motivo do reinicio: %s"
+#define TXT_LOG_WDT_INIT_FAIL                                                  \
+  "Falha ao inicializar supervisor de hardware (watchdog) (%s)"
+#define TXT_LOG_WDT_ADD_FAIL                                                   \
+  "Falha ao registar ciclo principal no supervisor de hardware (%s)"
+#define TXT_LOG_SUSP_EXP_CLR                                                   \
+  "Suspensao de rega guardada ja tinha expirado - suspensao limpa"
+#define TXT_LOG_SUSP_KEPT_NO_CLK                                               \
+  "A rega permanece suspensa ate a hora do relogio ser valida"
+#define TXT_LOG_SUSP_BOOT_ACTIVE                                               \
+  "A rega esta suspensa ate %04d-%02d-%02d %02d:%02d"
+#define TXT_LOG_SYS_READY "Inicializacao do sistema concluida - controlador pronto"
 #define TXT_LOG_RTC_NOT_FOUND "Modulo nao encontrado - verificar I2C"
 #define TXT_LOG_RTC_BAT_LOW                                                    \
   "Bateria descarregada ou 1a utilizacao - acertar hora"

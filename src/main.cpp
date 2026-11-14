@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
+#if __has_include(<esp_system.h>)
+  #include <esp_system.h>
+#endif
 #include <Wire.h>
 
 #include "config.h"
@@ -20,21 +23,58 @@ Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 UI             ui(display, encoder);
 
+#if LOG_LEVEL >= LVL_INFO
+static const char* resetReasonStr() {
+#if __has_include(<esp_system.h>)
+    static char otherBuf[40];
+    esp_reset_reason_t r = esp_reset_reason();
+    switch (r) {
+        case ESP_RST_POWERON:   return TXT_RST_POWERON;
+        case ESP_RST_EXT:       return TXT_RST_EXT;
+        case ESP_RST_SW:        return TXT_RST_SW;
+        case ESP_RST_PANIC:     return TXT_RST_PANIC;
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT:       return TXT_RST_WDT;
+        case ESP_RST_DEEPSLEEP: return TXT_RST_DEEPSLEEP;
+        case ESP_RST_BROWNOUT:  return TXT_RST_BROWNOUT;
+        default:
+            snprintf(otherBuf, sizeof(otherBuf), TXT_RST_OTHER, (int)r);
+            return otherBuf;
+    }
+#else
+    return TXT_RST_POWERON;
+#endif
+}
+#endif
+
+#if LOG_LEVEL >= LVL_ERROR
+static void espErrDesc(esp_err_t err, char* buf, size_t len) {
+    switch (err) {
+        case ESP_ERR_INVALID_ARG:   snprintf(buf, len, "%s", TXT_ERR_INV_ARG);     break;
+        case ESP_ERR_INVALID_STATE: snprintf(buf, len, "%s", TXT_ERR_INV_STATE);   break;
+        case ESP_ERR_NO_MEM:        snprintf(buf, len, "%s", TXT_ERR_NO_MEM);      break;
+        case ESP_ERR_NOT_FOUND:     snprintf(buf, len, "%s", TXT_ERR_NOT_FOUND);   break;
+        default:                    snprintf(buf, len, TXT_ERR_CODE_FMT, (int)err); break;
+    }
+}
+#endif
+
 bool clearI2CBus() {
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
     pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN); // Open-drain evita curto push-pull no barramento
     digitalWrite(PIN_SCL, HIGH);
-    
+
     delayMicroseconds(25);
     // Toggle SCL up to 9 times while SDA is LOW
     for (int i = 0; i < 9; i++) {
-        if (digitalRead(PIN_SDA) == HIGH) break; 
+        if (digitalRead(PIN_SDA) == HIGH) break;
         digitalWrite(PIN_SCL, LOW);
         delayMicroseconds(25);
         digitalWrite(PIN_SCL, HIGH);
         delayMicroseconds(25);
     }
-    
+
     // Generate STOP condition
     digitalWrite(PIN_SCL, LOW);
     delayMicroseconds(25);
@@ -43,12 +83,12 @@ bool clearI2CBus() {
     delayMicroseconds(25);
     digitalWrite(PIN_SCL, HIGH);
     delayMicroseconds(25);
-    digitalWrite(PIN_SDA, HIGH); 
+    digitalWrite(PIN_SDA, HIGH);
     pinMode(PIN_SDA, INPUT_PULLUP);
     delayMicroseconds(2000);
     bool sdaHigh = (digitalRead(PIN_SDA) == HIGH);
     if (!sdaHigh) {
-        LOG_W("SYS", "I2C SDA held low after bus clear");
+        LOG_W(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SDA_STUCK);
     }
     return sdaHigh;
 }
@@ -69,18 +109,18 @@ void recoverI2C() {
     }
     lastRecoverMs = now;
     esp_task_wdt_reset();
-    LOG_W("SYS", TXT_LOG_I2C_REC_START);
+    LOG_W(TXT_LOG_TAG_I2C, TXT_LOG_I2C_REC_START);
     Wire.end();
-    
+
     clearI2CBus();
-    
+
     Wire.begin(PIN_SDA, PIN_SCL);
     configureI2CTimeout();
     rtclock.begin();
     esp_task_wdt_reset();
     display.recover();
     // Timeout ja configurado antes de rtclock.begin() e preservado por Display::_lcd.init(false)
-    LOG_I("SYS", TXT_LOG_I2C_REC_DONE);
+    LOG_I(TXT_LOG_TAG_I2C, TXT_LOG_I2C_REC_DONE);
 }
 
 void setup() {
@@ -91,9 +131,10 @@ void setup() {
     digitalWrite(PIN_RELAY_4, RELAY_OFF); pinMode(PIN_RELAY_4, OUTPUT);
 
     Serial.begin(115200);
-    LOG_I("SYS", TXT_LOG_SYS_BOOT);
+    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_BOOT,
+          FW_VERSION, FW_BUILD_DATE, resetReasonStr());
 
-    // Inicializar o Watchdog com timeout parametrizado e reset automático (compatível com ESP-IDF v4 e v5)
+    // Inicializar o Watchdog com timeout parametrizado e reset automatico (compativel com ESP-IDF v4 e v5)
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
     esp_task_wdt_config_t wdt_config = {
         .timeout_ms = WDT_TIMEOUT_S * 1000,
@@ -109,15 +150,25 @@ void setup() {
 #else
     esp_err_t wdt_err = esp_task_wdt_init(WDT_TIMEOUT_S, true);
 #endif
+#if LOG_LEVEL >= LVL_ERROR
     if (wdt_err != ESP_OK) {
-        LOG_E("SYS", TXT_LOG_WDT_INIT_FAIL, wdt_err);
+        char errBuf[40];
+        espErrDesc(wdt_err, errBuf, sizeof(errBuf));
+        LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_INIT_FAIL, errBuf);
     }
+#endif
 
     wdt_err = esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
     // No Arduino Core 3.x, a loopTask pode ja vir subscrita ao TWDT (retorna ESP_ERR_INVALID_STATE)
+#if LOG_LEVEL >= LVL_ERROR
     if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
-        LOG_E("SYS", TXT_LOG_WDT_ADD_FAIL, wdt_err);
+        char errBuf[40];
+        espErrDesc(wdt_err, errBuf, sizeof(errBuf));
+        LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_ADD_FAIL, errBuf);
     }
+#else
+    (void)wdt_err;
+#endif
 
     initAppState();       // load firmware defaults into RAM
 
@@ -133,22 +184,45 @@ void setup() {
     configureI2CTimeout();
     delay(200); // Allow LCD to boot fully
 
-    // I2C bus scan — log all detected devices
+#if LOG_LEVEL >= LVL_ERROR
+    // I2C bus scan — log concise summary with friendly device names
     byte i2cCount = 0;
+#if LOG_LEVEL >= LVL_DEBUG
+    char i2cList[192] = "";
+    size_t i2cPos = 0;
+    bool i2cTruncated = false;
+#endif
     for (byte i = 8; i < 120; i++) {
         esp_task_wdt_reset();
         Wire.beginTransmission(i);
         if (Wire.endTransmission() == 0) {
-            LOG_I("I2C", TXT_LOG_I2C_SCAN_FOUND, i);
+#if LOG_LEVEL >= LVL_DEBUG
+            if (!i2cTruncated) {
+                int n = snprintf(i2cList + i2cPos, sizeof(i2cList) - i2cPos,
+                                 "%s0x%02X (%s)",
+                                 (i2cCount > 0 ? ", " : ""),
+                                 i, i2cDeviceName(i));
+                if (n > 0 && i2cPos + (size_t)n < sizeof(i2cList)) {
+                    i2cPos += (size_t)n;
+                } else {
+                    if (sizeof(i2cList) >= 4U) {
+                        strcpy(i2cList + sizeof(i2cList) - 4U, "...");
+                    }
+                    i2cTruncated = true;
+                }
+            }
+#endif
             i2cCount++;
             delay(1);
         }
     }
     if (i2cCount == 0) {
-        LOG_E("I2C", TXT_LOG_I2C_SCAN_NONE);
+        LOG_E(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_NONE);
     } else {
-        LOG_I("I2C", TXT_LOG_I2C_SCAN_DONE, i2cCount);
+        LOG_D(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_SUMMARY,
+              (unsigned)i2cCount, i2cList);
     }
+#endif
     esp_task_wdt_reset();
     display.begin();
     esp_task_wdt_reset();
@@ -156,9 +230,7 @@ void setup() {
     encoder.begin();
 
     rtclock.setErrorCallback(recoverI2C);
-    if (!rtclock.begin()) {
-        LOG_E("SYS", TXT_LOG_RTC_UNAVAIL);
-    }
+    rtclock.begin();
 
     // Evaluate active suspension against the real RTC time before resuming interrupted cycles
     if (gState.suspended_until > 0) {
@@ -166,14 +238,21 @@ void setup() {
             // Transient RTC error: retain suspended_until so subsequent NVS saves do not wipe it.
             // Scheduler will evaluate expiration once RTC time is available.
             gState.suspended = true;
-            LOG_W("SYS", TXT_LOG_RTC_UNAVAIL);
+            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_KEPT_NO_CLK);
         } else if (gState.now.unix >= gState.suspended_until) {
             gState.suspended = false;
             gState.suspended_until = 0;
             storage.save();
-            LOG_I("SYS", TXT_LOG_SUSP_EXP_CLR);
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_EXP_CLR);
         } else {
             gState.suspended = true;
+#if LOG_LEVEL >= LVL_INFO
+            DateTime suspLocal = RTClock::utcToLocal(DateTime(gState.suspended_until));
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_BOOT_ACTIVE,
+                  (int)suspLocal.year(), (int)suspLocal.month(),
+                  (int)suspLocal.day(), (int)suspLocal.hour(),
+                  (int)suspLocal.minute());
+#endif
         }
     } else {
         gState.suspended = false;
@@ -185,7 +264,7 @@ void setup() {
     ui.begin();
     terminal.begin();
 
-    LOG_I("SYS", TXT_LOG_SYS_READY);
+    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
 }
 
 // ─────────────────────────────────────────────────────────

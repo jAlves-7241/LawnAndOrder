@@ -31,7 +31,11 @@ void Display::begin() {
     _lastFullRefresh = millis();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = _busFault ? 1 : 0;
-    LOG_I("LCD", TXT_LOG_LCD_READY);
+    if (_busFault) {
+        LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_INIT_FAIL, LCD_ADDR);
+    } else {
+        LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_READY, LCD_COLS, LCD_ROWS, LCD_ADDR);
+    }
 }
 
 void Display::recover() {
@@ -54,7 +58,11 @@ void Display::recover() {
     _invalidateShadow();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = 0;
-    LOG_I("LCD", TXT_LOG_LCD_RECOVERED);
+    if (_busFault) {
+        LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
+    } else {
+        LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
+    }
 }
 
 void Display::backlightOn() {
@@ -143,6 +151,7 @@ void Display::setRows(const char* r0, const char* r1,
         if (_consecErrors >= 3) {
             uint32_t now = millis();
             if (_lastRecoverMs == 0 || (now - _lastRecoverMs) >= 10000UL) {
+                LOG_W(TXT_LOG_TAG_LCD, TXT_LOG_LCD_COMM_ERR);
                 _lastRecoverMs = now;
                 _consecErrors = 0;
                 if (_onError) {
