@@ -122,7 +122,7 @@ void Scheduler::update() {
 }
 
 // ─────────────────────────────────────────────────────────
-void Scheduler::onModeChanged() {
+void Scheduler::onModeChanged(bool announceMode) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
     clearLastTriggers();
     _lastSec = 0xFF;
@@ -141,21 +141,25 @@ void Scheduler::onModeChanged() {
             gState.next_hour = 0;
             gState.next_min  = 0;
         }
-        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_WAIT_CLK,
-              serialModeName(gState.mode));
+        if (announceMode) {
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_WAIT_CLK,
+                  serialModeName(gState.mode));
+        }
         return;
     }
     uint32_t old_ref = gState.custom_ref_day;
     bool hasNext = computeNext(gState.mode, gState.now,
                                gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    if (hasNext) {
-        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG,
-              serialModeName(gState.mode),
-              (int)gState.next_hour, (int)gState.next_min);
-    } else {
-        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG_OFF,
-              serialModeName(gState.mode));
+    if (announceMode) {
+        if (hasNext) {
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG,
+                  serialModeName(gState.mode),
+                  (int)gState.next_hour, (int)gState.next_min);
+        } else {
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG_OFF,
+                  serialModeName(gState.mode));
+        }
     }
 }
 
@@ -194,8 +198,13 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     // 1. Limits
     const uint32_t max_cycle_sec = (uint32_t)NUM_ZONES * 20UL * 60UL;
     if (remaining_duration_sec == 0 || remaining_duration_sec > max_cycle_sec) {
+#if LOG_LEVEL >= LVL_WARN
+        unsigned long rem_min = (remaining_duration_sec == 0)
+            ? 0UL
+            : (unsigned long)((remaining_duration_sec - 1UL) / 60UL + 1UL);
         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_DUR,
-              (unsigned long)remaining_duration_sec, (unsigned long)max_cycle_sec);
+              rem_min, (unsigned long)(max_cycle_sec / 60UL));
+#endif
         return true;
     }
     uint32_t current_unix = current_time.unix;

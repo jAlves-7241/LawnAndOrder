@@ -46,8 +46,7 @@ void WateringController::begin() {
                                    rs.trigger == WaterTrigger::CUSTOM);
         if (rs.queueLen == 0 || rs.queueLen > NUM_ZONES ||
             rs.queuePos >= rs.queueLen || !validTrigger) {
-            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_STATE_INV,
-                  (unsigned)rs.queueLen, (unsigned)rs.queuePos);
+            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_STATE_INV);
             rs.active = false;
             rs.retry_count = 0;
             storage.saveRecoveryState(rs);
@@ -59,8 +58,7 @@ void WateringController::begin() {
             uint32_t durMs = rs.queue[i].duration_ms;
             if (z >= NUM_ZONES || (seenZonesMask & (1U << z)) != 0 ||
                 durMs < 60000UL || durMs > 20UL * 60000UL) {
-                LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_ZONE_INV,
-                      (unsigned)z + 1U, (unsigned long)durMs);
+                LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_ZONE_INV);
                 rs.active = false;
                 rs.retry_count = 0;
                 storage.saveRecoveryState(rs);
@@ -70,8 +68,7 @@ void WateringController::begin() {
         }
         for (uint8_t z = 0; z < NUM_ZONES; z++) {
             if (rs.zone_dur_min[z] > 20) {
-                LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_DUR_INV,
-                      (unsigned)z + 1U, (unsigned)rs.zone_dur_min[z]);
+                LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_DUR_INV);
                 rs.active = false;
                 rs.retry_count = 0;
                 storage.saveRecoveryState(rs);
@@ -193,7 +190,14 @@ void WateringController::startGeneral(WaterTrigger trigger) {
 
 void WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
-    if (!zones || dur_min == 0 || dur_min > 20) return;
+    if (dur_min == 0 || dur_min > 20) {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_INV_DUR, (unsigned)dur_min);
+        return;
+    }
+    if (!zones) {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
+        return;
+    }
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
     if (_buildQueue(zones, dur_ms, WaterTrigger::CUSTOM)) {
 #if LOG_LEVEL >= LVL_INFO
@@ -211,10 +215,18 @@ void WateringController::startCustom(const bool zones[NUM_ZONES],
         LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_START_CUSTOM, zList, (unsigned)dur_min);
 #endif
         _startNextZone();
+    } else {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
     }
 }
 
 void WateringController::startTest(int8_t zone_idx) {
+    if (zone_idx < -1 || zone_idx >= NUM_ZONES) {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_OOB,
+              (zone_idx >= 0) ? ((unsigned)zone_idx + 1U) : 0U,
+              (unsigned)NUM_ZONES);
+        return;
+    }
     uint32_t dur_ms = (uint32_t)ZONE_TEST_DURATION_S * 1000UL;
     bool zones[NUM_ZONES];
     if (zone_idx < 0)
@@ -238,7 +250,7 @@ void WateringController::startTest(int8_t zone_idx) {
 void WateringController::stop() {
     if (_active) {
         _deactivateAll();
-        if (!_isWaiting && !_isRelayDeadTimeWaiting) {
+        if (!_isWaiting && !_isRelayDeadTimeWaiting && _zoneIdx < NUM_ZONES) {
             uint32_t elapsed = millis() - _zoneStartMs;
             // Se correu menos de 30s, registar 0 min (evita "1 min" para interrupcoes imediatas)
             uint8_t ran_min = 0;
@@ -249,26 +261,24 @@ void WateringController::stop() {
                 ran_min = (raw_min > 255UL) ? 255 : (uint8_t)raw_min;
             }
             if (_runTrigger != WaterTrigger::TEST) {
-                if (_zoneIdx < NUM_ZONES) {
-                    _zoneDurMin[_zoneIdx] = ran_min;
-                }
+                _zoneDurMin[_zoneIdx] = ran_min;
             }
             if (elapsed < 60000UL) {
                 LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED_INT_SEC,
                       (int)_zoneIdx + 1,
-                      (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-",
+                      gState.zones[_zoneIdx].name,
                       (unsigned long)(elapsed / 1000UL));
             } else {
                 LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED_INT,
                       (int)_zoneIdx + 1,
-                      (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-",
+                      gState.zones[_zoneIdx].name,
                       (unsigned)ran_min);
             }
-        } else if (_isWaiting || _queuePos > 0) {
+        } else if ((_isWaiting || _queuePos > 0) && _zoneIdx < NUM_ZONES) {
             // Avoid reporting a transition between zones if stopped during initial dead-time
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_STOP_DURING_WAIT,
                   (int)_zoneIdx + 1,
-                  (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-");
+                  gState.zones[_zoneIdx].name);
         }
         _active = false;
         _isWaiting = false;
@@ -308,8 +318,8 @@ void WateringController::update() {
 
     if (_isRelayDeadTimeWaiting) {
         if (millis() - _relayWaitStartMs >= RELAY_DEADTIME_MS) {
-            _isRelayDeadTimeWaiting = false;
             if (_zoneIdx < NUM_ZONES) {
+                _isRelayDeadTimeWaiting = false;
                 digitalWrite(_relayPins[_zoneIdx], RELAY_ON);
                 _zoneStartMs = millis();
                 gState.watering.progress_pct = 0;
@@ -386,8 +396,8 @@ void WateringController::update() {
             _active = false;
             _queueLen = 0;
             _syncState();
-            _finishCycle();
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_CYCLE_DONE);
+            _finishCycle();
         }
     }
 }

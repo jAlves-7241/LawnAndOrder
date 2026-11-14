@@ -35,9 +35,9 @@ public:
     // Call every loop(). Checks if a trigger is due and fires watering.
     void update();
 
-    // Call this whenever the active mode changes (from UI dispatch).
+    // Call this whenever the active mode changes (from UI dispatch) or schedule must recompute.
     // Recomputes next_* immediately so the IDLE screen updates.
-    void onModeChanged();
+    void onModeChanged(bool announceMode = true);
 
     // Clear persisted/cached DST fall-back trigger guards (on mode change or manual set_time).
     void clearLastTriggers();

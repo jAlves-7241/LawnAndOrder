@@ -139,15 +139,15 @@ void RTClock::refreshLocalTime() {
 // ─────────────────────────────────────────────────────────
 void RTClock::update() {
     uint32_t nowMs = millis();
-    if ((nowMs - _lastReadMs) < 30000UL) {
+    if (_log_suspended || (nowMs - _lastReadMs) < 30000UL) {
         _incrementSoftwareClock();
         return; // 30s (ajustado de 1s para reduzir jitter no bus I2C)
     }
     _lastReadMs = nowMs;
 
     if (!_found) {
-        // Tentar redetetar o RTC a quente (hotplug) a cada ~30 segundos
-        if (nowMs - _lastRtcRetryMs >= 10000UL) {
+        // Retry hotplug detection at most once per 30s update interval
+        if (nowMs - _lastRtcRetryMs >= 30000UL) {
             _lastRtcRetryMs = nowMs;
             LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_DETECT);
             if (_rtc.begin()) {
@@ -168,6 +168,10 @@ void RTClock::update() {
                     DateTime localDt = utcToLocal(utcDt);
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
+                    _anchorMs = nowMs;
+                    _anchorUnix = gState.now.unix;
+                    _lastKnownUnix = gState.now.unix;
+                    _revision++;
                     LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_SYNC,
                           (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
                           (int)gState.now.hour, (int)gState.now.min, (int)gState.now.sec);
@@ -178,12 +182,26 @@ void RTClock::update() {
                         _rtc.adjust(DateTime(gState.now.unix));
                         _lostPower = false;
                         _batRecoveryWarned = false;
+                        _revision++;
+                        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
                     } else {
                         set(gState.now.year, gState.now.month, gState.now.day,
                             gState.now.hour, gState.now.min, gState.now.sec);
                     }
                 } else {
                     gState.rtc_valid = false;
+                    if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
+                        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                        _found = false;
+                    } else if (_lostPower) {
+                        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
+                    } else {
+                        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                    }
                 }
             }
         }
@@ -206,10 +224,12 @@ void RTClock::update() {
         return;
     }
 
+    bool recoveredPowerLoss = false;
 #ifndef WOKWI_SIM
     // Re-check oscillator health - detects mid-run battery failure or EMI reset.
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
+            recoveredPowerLoss = true;
             if (!_batRecoveryWarned) {
                 LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
                 _batRecoveryWarned = true;
@@ -221,6 +241,7 @@ void RTClock::update() {
             } else {
                 set(gState.now.year, gState.now.month, gState.now.day,
                     gState.now.hour, gState.now.min, gState.now.sec);
+                _batRecoveryWarned = true;
             }
             _lastReadMs = nowMs;   // internal recovery must not defeat the 30 s throttle
         } else {
@@ -261,7 +282,20 @@ void RTClock::update() {
 #endif
 
     _lostPower = false;
-    _batRecoveryWarned = false;
+    if (!recoveredPowerLoss) {
+        _batRecoveryWarned = false;
+    }
+
+    uint32_t newUnix = utcDt.unixtime();
+    if (gState.rtc_valid && !recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
+        uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
+        uint32_t expectedUnix = _anchorUnix + elapsedSec;
+        int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
+        if (drift > 300 || drift < -300) {
+            _revision++;
+            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_JUMP);
+        }
+    }
     gState.rtc_valid = true;
 
     DateTime localDt = utcToLocal(utcDt);
@@ -269,7 +303,7 @@ void RTClock::update() {
 
     // Override the Unix timestamp with the actual UTC timestamp.
     // This makes time deltas (e.g., suspension) immune to DST transitions.
-    gState.now.unix = utcDt.unixtime();
+    gState.now.unix = newUnix;
     _anchorMs = nowMs;
     _anchorUnix = gState.now.unix;
     _lastKnownUnix = gState.now.unix;
@@ -313,7 +347,6 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                 hwOk = true;
             } else {
                 _found = false;
-                LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_NOT_FOUND);
             }
         #endif
     } else {
@@ -322,7 +355,6 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             _found = true;
             _rtc.adjust(utcDt);
             hwOk = true;
-            LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_SAVE_OK);
         }
     }
 
