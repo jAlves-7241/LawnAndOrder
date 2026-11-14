@@ -4,6 +4,7 @@
 #include "../AppState.h"
 #include "../Scheduler.h"
 #include "../RTClock.h"
+#include "../log.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -155,6 +156,7 @@ void ScreenDurPick::handleClick(UI& ui) {
         }
         gState.suspended = true;
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_SET, (int)_durValue);
         ui.flagConfigChanged();
         char msg[21];
         snprintf(msg, sizeof(msg), TXT_PAUSE_DAYS, _durValue);

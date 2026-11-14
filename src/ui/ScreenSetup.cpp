@@ -23,7 +23,7 @@ void ScreenSetupWelcome::handleRotation(UI& /*ui*/, int8_t /*dir*/) {
 
 void ScreenSetupWelcome::handleClick(UI& ui) {
     if (_isComplete) {
-        LOG_I("UI", TXT_SETUP_DONE_LOG);
+        LOG_I(TXT_LOG_TAG_UI, TXT_SETUP_DONE_LOG);
         ui.setInSetup(false);
         gState.setup_done = true;
         storage.save();

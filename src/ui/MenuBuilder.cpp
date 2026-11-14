@@ -145,8 +145,8 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
                 uint8_t m = (e.month <= 12) ? e.month : 0;
                 snprintf(lbuf, sizeof(lbuf), "%02d%s %02d:%02d %s",
                          e.day, MON[m], e.hour, e.min,
-                         e.trigger == WaterTrigger::AUTO ? "AUTO" :
-                         (e.trigger == WaterTrigger::CUSTOM ? "CUSTOM" : TXT_HIST_TRIG_MANUAL));
+                         e.trigger == WaterTrigger::AUTO ? TXT_HIST_TRIG_AUTO :
+                         (e.trigger == WaterTrigger::CUSTOM ? TXT_HIST_TRIG_CUSTOM : TXT_HIST_TRIG_MANUAL));
 
                 char l1[24], l2[24];
                 snprintf(l1, sizeof(l1), TXT_MB_Z1_Z2, e.zone_dur[0], e.zone_dur[1]);

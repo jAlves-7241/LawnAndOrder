@@ -193,9 +193,10 @@ void UI::refreshClockEditors() {
 
 bool UI::executeConfirmed(const char* tag) {
     if (!tag) return false;
-    LOG_I("UI", TXT_LOG_UI_CONFIRM_TAG, tag);
+    LOG_D(TXT_LOG_TAG_UI, TXT_LOG_UI_CONFIRM_TAG, tag);
 
     if (!strcmp(tag, "reset")) {
+        LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_RESET);
         wateringCtrl.stop();
         history.clear();
         storage.clear();
@@ -206,6 +207,7 @@ bool UI::executeConfirmed(const char* tag) {
     }
 
     if (!strcmp(tag, "skip_clock")) {
+        LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_SKIP_CLOCK);
         advanceSetup();
         return true;
     }
@@ -374,6 +376,8 @@ void UI::dispatchAction(const char* action) {
 
     if (!strcmp(action, "toggle_dst")) {
         gState.auto_dst = !gState.auto_dst;
+        LOG_I(TXT_LOG_TAG_UI, TXT_LOG_DST_TOGGLED,
+              gState.auto_dst ? TXT_SER_ENABLED : TXT_SER_DISABLED);
         _configChanged = true;
         if (gState.rtc_valid) {
             rtclock.refreshLocalTime();
@@ -405,6 +409,7 @@ void UI::dispatchAction(const char* action) {
     if (!strcmp(action, "cancel_susp")) {
         gState.suspended = false;
         gState.suspended_until = 0;
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_CANCELED);
         _configChanged = true;
         _screenDone.setup(TXT_PAUSE_CANCELED, "");
         _screenDone.setBackMenu(MenuID::MAIN);
@@ -527,7 +532,7 @@ void UI::dispatchAction(const char* action) {
         return;
     }
 
-    LOG_W("UI", TXT_LOG_UI_UNKNOWN_ACTION, action);
+    LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
 }
 
 uint16_t UI::getTotalZoneDuration() {

@@ -35,7 +35,9 @@
 #define TXT_TEST_ALL_5S "Test All (5s)"
 #define TXT_TEST_ALL_FMT "Test All (%ds)"
 #define TXT_TEST_ZONE_ITEM_FMT "Z%d %-8s  %2ds"
+#define TXT_HIST_TRIG_AUTO "AUTO"
 #define TXT_HIST_TRIG_MANUAL "MANUAL"
+#define TXT_HIST_TRIG_CUSTOM "CUSTOM"
 #define TXT_INTENSE "Intense"
 #define TXT_MEDIUM "Medium"
 #define TXT_WEAK "Weak"
@@ -233,7 +235,9 @@
 #define TXT_TEST_ALL_5S "Testar Todas (5s)"
 #define TXT_TEST_ALL_FMT "Testar Todas (%ds)"
 #define TXT_TEST_ZONE_ITEM_FMT "Z%d %-8s  %2ds"
+#define TXT_HIST_TRIG_AUTO "AUTO"
 #define TXT_HIST_TRIG_MANUAL "GERAL"
+#define TXT_HIST_TRIG_CUSTOM "PERS"
 #define TXT_INTENSE "Intenso"
 #define TXT_MEDIUM "Medio"
 #define TXT_WEAK "Fraco"
@@ -429,10 +433,13 @@
 #define TXT_LOG_TAG_WATER "Watering"
 #define TXT_LOG_TAG_HIST "History"
 #define TXT_LOG_TAG_LCD "Display"
+#define TXT_LOG_TAG_UI "Interface"
 #define TXT_LOG_TAG_I2C "I2C Bus"
 
 #define TXT_SER_YES "Yes"
 #define TXT_SER_NO "No"
+#define TXT_SER_ENABLED "enabled"
+#define TXT_SER_DISABLED "disabled"
 #define TXT_SER_TRIG_AUTO "Automatic"
 #define TXT_SER_TRIG_MANUAL "Manual"
 #define TXT_SER_TRIG_CUSTOM "Custom"
@@ -467,7 +474,7 @@
 #define TXT_LOG_WAIT_ZONE_TRANS                                                \
   "Waiting for zone transition (currently Zone %d)\n"
 #define TXT_LOG_WATERING_PROG "Watering Zone %d - Progress: %d%%\n"
-#define TXT_SETUP_DONE_LOG "Initial setup complete"
+#define TXT_SETUP_DONE_LOG "Initial setup wizard completed by user"
 #define TXT_LOG_DEFAULTS_LOADED "Initialized default settings in memory (Mode: %s, Zones: %d)"
 #define TXT_LOG_MEM_CLEARED "All saved settings cleared from flash storage (factory reset)"
 #define TXT_LOG_INT_FOUND_INFO "Found interrupted %s watering cycle (stopped on Zone %u) - checking if safe to resume"
@@ -584,8 +591,13 @@
 #define TXT_SER_DOW_SAT_SHORT "Sat"
 
 // Logs
-#define TXT_LOG_UI_CONFIRM_TAG "Confirmed tag: %s"
-#define TXT_LOG_UI_UNKNOWN_ACTION "dispatchAction: unknown '%s'"
+#define TXT_LOG_UI_CONFIRM_TAG "Debug confirmation identifier: %s"
+#define TXT_LOG_UI_RESET "User confirmed factory reset from menu - erasing all data and restarting"
+#define TXT_LOG_UI_SKIP_CLOCK "User skipped initial clock setup in startup wizard"
+#define TXT_LOG_UI_UNKNOWN_ACTION "Ignored unrecognized menu action '%s'"
+#define TXT_LOG_DST_TOGGLED "Automatic daylight saving time adjustment %s"
+#define TXT_LOG_SUSP_SET "Automatic watering suspended by user for %d day(s)"
+#define TXT_LOG_SUSP_CANCELED "Watering suspension cancelled by user"
 #define TXT_LOG_REC_STATE_INV "Saved interrupted watering record has invalid metadata (queue len=%u, pos=%u) - discarded"
 #define TXT_LOG_REC_ZONE_INV "Saved interrupted watering record has invalid zone %u or duration (%lu ms) - discarded"
 #define TXT_LOG_REC_DUR_INV "Saved interrupted watering record has invalid zone %u minutes (%u) - discarded"
@@ -724,10 +736,13 @@
 #define TXT_LOG_TAG_WATER "Rega"
 #define TXT_LOG_TAG_HIST "Historico"
 #define TXT_LOG_TAG_LCD "Ecra"
+#define TXT_LOG_TAG_UI "Interface"
 #define TXT_LOG_TAG_I2C "Barramento I2C"
 
 #define TXT_SER_YES "Sim"
 #define TXT_SER_NO "Nao"
+#define TXT_SER_ENABLED "ativado"
+#define TXT_SER_DISABLED "desativado"
 #define TXT_SER_TRIG_AUTO "Automatica"
 #define TXT_SER_TRIG_MANUAL "Manual"
 #define TXT_SER_TRIG_CUSTOM "Personalizada"
@@ -765,7 +780,7 @@
 #define TXT_LOG_WAIT_ZONE_TRANS                                                \
   "A aguardar transicao de zona (atualmente Zona %d)\n"
 #define TXT_LOG_WATERING_PROG "A regar Zona %d - Progresso: %d%%\n"
-#define TXT_SETUP_DONE_LOG "Configuracao inicial concluida"
+#define TXT_SETUP_DONE_LOG "Assistente de configuracao inicial concluido pelo utilizador"
 #define TXT_LOG_DEFAULTS_LOADED                                                \
   "Predefinicoes inicializadas em memoria (Modo: %s, Zonas: %d)"
 #define TXT_LOG_MEM_CLEARED                                                    \
@@ -899,8 +914,16 @@
 #define TXT_SER_DOW_SAT_SHORT "Sab"
 
 // Logs
-#define TXT_LOG_UI_CONFIRM_TAG "Tag confirmada: %s"
-#define TXT_LOG_UI_UNKNOWN_ACTION "dispatchAction: acao desconhecida '%s'"
+#define TXT_LOG_UI_CONFIRM_TAG "Identificador de confirmacao de depuracao: %s"
+#define TXT_LOG_UI_RESET                                                       \
+  "Utilizador confirmou reposicao de fabrica no menu - a apagar todos os dados e a reiniciar"
+#define TXT_LOG_UI_SKIP_CLOCK                                                  \
+  "Utilizador ignorou o acerto inicial do relogio no assistente de arranque"
+#define TXT_LOG_UI_UNKNOWN_ACTION "Acao de menu nao reconhecida ignorada: '%s'"
+#define TXT_LOG_DST_TOGGLED "Ajuste automatico de horario de verao %s"
+#define TXT_LOG_SUSP_SET                                                       \
+  "Rega automatica suspensa pelo utilizador por %d dia(s)"
+#define TXT_LOG_SUSP_CANCELED "Suspensao da rega cancelada pelo utilizador"
 #define TXT_LOG_REC_STATE_INV                                                  \
   "Registo de rega interrompida guardado tem metadados invalidos (fila=%u, pos=%u) - descartado"
 #define TXT_LOG_REC_ZONE_INV                                                   \
