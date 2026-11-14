@@ -208,10 +208,14 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_BACKWARD);
         return true;
     }
-    if ((current_unix - start_unix) > max_allowed_duration) {
+    const uint32_t outage_sec = current_unix - start_unix;
+    if (outage_sec > max_allowed_duration) {
+#if LOG_LEVEL >= LVL_WARN
+        const uint32_t outage_min = (outage_sec / 60UL) + ((outage_sec % 60UL) ? 1UL : 0UL);
         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_AGE,
-              (unsigned long)((current_unix - start_unix) / 60UL),
+              (unsigned long)outage_min,
               (unsigned long)(max_allowed_duration / 60UL));
+#endif
         return true;
     }
 
@@ -351,10 +355,12 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
             if (ref_day == 0xFFFFFFFFUL) {
                 if (writeBack) {
                     gState.custom_ref_day = candidate_day_1970;
+#if LOG_LEVEL >= LVL_DEBUG
                     DateTime refDt(candidate_day_1970 * 86400UL);
                     LOG_D(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CUSTOM_DAY,
                           (int)refDt.year(), (int)refDt.month(), (int)refDt.day(),
                           (unsigned)sched.interval_days);
+#endif
                     ref_day = candidate_day_1970;
                 } else {
                     ref_day = candidate_day_1970;
