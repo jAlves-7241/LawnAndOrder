@@ -424,6 +424,7 @@
 
 #define TXT_LOG_TAG_SYS "System"
 #define TXT_LOG_TAG_STORAGE "Settings"
+#define TXT_LOG_TAG_CLOCK "Clock"
 #define TXT_LOG_TAG_SCHEDULE "Schedule"
 #define TXT_LOG_TAG_HIST "History"
 #define TXT_LOG_TAG_LCD "Display"
@@ -474,7 +475,9 @@
 #define TXT_LOG_ZONE_DEACTIVATED "Zone %d (%s) deactivated"
 #define TXT_LOG_ZONE_ACTIVE_MIN "Zone %d (%s) active - dur=%lu min"
 #define TXT_LOG_ZONE_ACTIVE_SEC "Zone %d (%s) active - dur=%lu s"
-#define TXT_LOG_NEXT_WATERING "Next watering: %02d:%02d"
+#define TXT_LOG_NEXT_WATERING "Next automatic watering: %02d:%02d (Mode: %s)"
+#define TXT_LOG_NEXT_WATERING_SUSP "Next scheduled slot is %02d:%02d (Mode: %s), currently paused by suspension"
+#define TXT_LOG_NEXT_WATERING_OFF "Automatic watering is disabled (no schedule active)"
 #define TXT_LOG_LCD_READY "LCD display initialized (%dx%d at 0x%02X)"
 #define TXT_LOG_LCD_INIT_FAIL "LCD display did not respond on I2C bus (address 0x%02X)"
 #define TXT_LOG_LCD_RECOVERED "LCD display communication restored"
@@ -626,33 +629,38 @@
 #define TXT_LOG_SUSP_KEPT_NO_CLK "Watering remains suspended until clock time becomes valid"
 #define TXT_LOG_SUSP_BOOT_ACTIVE "Watering is suspended until %04d-%02d-%02d %02d:%02d"
 #define TXT_LOG_SYS_READY "System initialization complete - controller ready"
-#define TXT_LOG_RTC_NOT_FOUND "Module not found - check I2C"
-#define TXT_LOG_RTC_BAT_LOW "Battery depleted or 1st use - set time"
-#define TXT_LOG_RTC_BOOT_CORRUPT "Boot reading corrupted (%04d-%02d-%02d)"
-#define TXT_LOG_RTC_OK "OK - %04d-%02d-%02d %02d:%02d:%02d (%s)"
-#define TXT_LOG_RTC_HOT_DETECT "Attempting to detect hotplug RTC..."
-#define TXT_LOG_RTC_HOT_FOUND "Hotplug module detected successfully"
-#define TXT_LOG_RTC_HOT_SYNC                                                   \
-  "Synced with hotplug RTC: %04d-%02d-%02d %02d:%02d:%02d"
-#define TXT_LOG_RTC_BAT_FAIL_REC                                               \
-  "Battery failed/EMI Reset detected - attempting RAM restore..."
-#define TXT_LOG_RTC_BAT_FAIL_RAM "Battery failed and RAM time invalid"
-#define TXT_LOG_RTC_I2C_CORRUPT                                                \
-  "I2C readings corrupted (%04d-%02d-%02d) - recovering bus..."
-#define TXT_LOG_RTC_SAVE_ATTEMPT "Attempting to save time to RTC..."
-#define TXT_LOG_RTC_SAVE_OK "RTC connected and time saved successfully"
-#define TXT_LOG_RTC_TIME_SET "Time (Local) set: %04d-%02d-%02d %02d:%02d:%02d"
-#define TXT_LOG_SCHED_SUSP_EXP "Suspension expired - watering reactivated"
-#define TXT_LOG_SCHED_DUP_BLOCK                                                \
-  "Duplicate activation blocked (DST fall-back) - slot %02d:%02d"
-#define TXT_LOG_SCHED_AUTO_START "Starting automatic watering %02d:%02d"
-#define TXT_LOG_SCHED_COLLISION_SKIP "Scheduled cycle skipped: watering currently active (Slot: %02d:%02d)"
-#define TXT_LOG_SCHED_MODE_CHG "Mode changed: Next watering %02d:%02d"
-#define TXT_LOG_SCHED_CYCLE_DONE "Cycle complete: Next watering %02d:%02d"
-#define TXT_LOG_SCHED_REC_HLIMIT "Recovery discarded: hard limit exceeded"
-#define TXT_LOG_SCHED_REC_GHOST "Recovery discarded: overrun by ghost cycle"
-#define TXT_LOG_SCHED_REC_GAP "Recovery discarded: 2h safety gap ignored"
-#define TXT_LOG_SCHED_CUSTOM_DAY "custom_ref_day set/reset: %lu"
+#define TXT_LOG_RTC_NOT_FOUND "Hardware clock not detected on I2C bus - using software clock (automatic watering paused until set)"
+#define TXT_LOG_RTC_BAT_LOW "Hardware clock lost power (depleted battery or first use) - please set date and time"
+#define TXT_LOG_RTC_READ_CORRUPT "Hardware clock returned invalid date/time (%04d-%02d-%02d %02d:%02d:%02d)"
+#define TXT_LOG_RTC_OK "Clock synchronized from hardware: %04d-%02d-%02d %02d:%02d:%02d (%s)"
+#define TXT_LOG_RTC_HOT_DETECT "Probing I2C bus for reconnected hardware clock..."
+#define TXT_LOG_RTC_HOT_FOUND "Hardware clock detected on I2C bus"
+#define TXT_LOG_RTC_HOT_SYNC "Clock synchronized from connected hardware clock: %04d-%02d-%02d %02d:%02d:%02d"
+#define TXT_LOG_RTC_BAT_FAIL_REC "Hardware clock lost power while running - restoring time from controller memory"
+#define TXT_LOG_RTC_BAT_FAIL_RAM "Hardware clock battery failed and controller time is invalid - please set date and time"
+#define TXT_LOG_RTC_I2C_CORRUPT "Hardware clock returned invalid readings 3 times (%04d-%02d-%02d %02d:%02d:%02d) - resetting I2C bus"
+#define TXT_LOG_RTC_SAVE_ATTEMPT "Attempting to write time to hardware clock..."
+#define TXT_LOG_RTC_SAVE_OK "Time written to hardware clock"
+#define TXT_LOG_RTC_TIME_SET "System clock set to %04d-%02d-%02d %02d:%02d:%02d (saved to hardware)"
+#define TXT_LOG_RTC_TIME_SET_SW "System clock set to %04d-%02d-%02d %02d:%02d:%02d in memory only (hardware clock unavailable)"
+#define TXT_LOG_RTC_INVALID_SET "Rejected invalid clock setting (%04u-%02u-%02u %02u:%02u:%02u)"
+#define TXT_LOG_SUSP_CLR_TIME_SET "Watering suspension cleared because new clock time is past the pause end date"
+#define TXT_LOG_SCHED_SUSP_EXP "Watering suspension ended - automatic watering re-enabled"
+#define TXT_LOG_SCHED_DUP_BLOCK "Skipped duplicate %02d:%02d schedule during daylight saving fall-back hour"
+#define TXT_LOG_SCHED_AUTO_START "Starting scheduled automatic watering for %02d:%02d"
+#define TXT_LOG_SCHED_COLLISION_SKIP "Skipped scheduled %02d:%02d watering because a cycle is already running"
+#define TXT_LOG_SCHED_MODE_CHG "Schedule updated (Mode: %s) - next watering at %02d:%02d"
+#define TXT_LOG_SCHED_MODE_CHG_OFF "Schedule updated (Mode: %s) - no automatic watering"
+#define TXT_LOG_SCHED_MODE_WAIT_CLK "Schedule mode changed to %s (waiting for valid clock time to schedule)"
+#define TXT_LOG_SCHED_CYCLE_DONE "Cycle complete - next automatic watering at %02d:%02d"
+#define TXT_LOG_SCHED_CYCLE_DONE_OFF "Cycle complete - automatic watering is disabled"
+#define TXT_LOG_SCHED_REC_DUR "Discarded interrupted watering recovery: remaining duration (%lu s) outside valid range (1-%lu s)"
+#define TXT_LOG_SCHED_REC_MODE "Discarded interrupted watering recovery: invalid watering mode (%u)"
+#define TXT_LOG_SCHED_REC_BACKWARD "Discarded interrupted watering recovery: current clock time is earlier than cycle start"
+#define TXT_LOG_SCHED_REC_AGE "Discarded interrupted watering recovery: power outage lasted %lu min (limit is %lu min)"
+#define TXT_LOG_SCHED_REC_MISSED "Discarded interrupted watering recovery: a newer scheduled watering time passed while powered off"
+#define TXT_LOG_SCHED_REC_GAP "Discarded interrupted watering recovery: remaining run plus %lu min safety margin overlaps next schedule"
+#define TXT_LOG_SCHED_CUSTOM_DAY "Custom interval start date anchored to %04d-%02d-%02d (every %u day(s))"
 #define TXT_LOG_NVS_NS_FAIL "Failed to open flash settings storage - configuration changes will not persist"
 #define TXT_LOG_NVS_READY "Flash settings storage opened"
 #define TXT_LOG_NVS_EMPTY "No saved settings found in flash (first boot) - using factory defaults"
@@ -705,6 +713,7 @@
 
 #define TXT_LOG_TAG_SYS "Sistema"
 #define TXT_LOG_TAG_STORAGE "Definicoes"
+#define TXT_LOG_TAG_CLOCK "Relogio"
 #define TXT_LOG_TAG_SCHEDULE "Agendamento"
 #define TXT_LOG_TAG_HIST "Historico"
 #define TXT_LOG_TAG_LCD "Ecra"
@@ -761,7 +770,11 @@
 #define TXT_LOG_ZONE_DEACTIVATED "Zona %d (%s) desativada"
 #define TXT_LOG_ZONE_ACTIVE_MIN "Zona %d (%s) ativa - dur=%lu min"
 #define TXT_LOG_ZONE_ACTIVE_SEC "Zona %d (%s) ativa - dur=%lu s"
-#define TXT_LOG_NEXT_WATERING "Proxima rega: %02d:%02d"
+#define TXT_LOG_NEXT_WATERING "Proxima rega automatica: %02d:%02d (Modo: %s)"
+#define TXT_LOG_NEXT_WATERING_SUSP                                             \
+  "Proximo horario agendado e %02d:%02d (Modo: %s), atualmente em pausa por suspensao"
+#define TXT_LOG_NEXT_WATERING_OFF                                              \
+  "Rega automatica desativada (nenhum agendamento ativo)"
 #define TXT_LOG_LCD_READY "Ecra LCD inicializado (%dx%d em 0x%02X)"
 #define TXT_LOG_LCD_INIT_FAIL                                                  \
   "Ecra LCD nao respondeu no barramento I2C (endereco 0x%02X)"
@@ -862,7 +875,7 @@
 #define TXT_TERM_MODE_CUSTOM "Personalizado"
 #define TXT_TERM_MODE_UNKNOWN "Desconhecido"
 
-// Dias da Semana para Logs Série
+// Dias da Semana para Logs Serie
 #define TXT_SER_DOW_SUN_SHORT "Dom"
 #define TXT_SER_DOW_MON_SHORT "Seg"
 #define TXT_SER_DOW_TUE_SHORT "Ter"
@@ -945,38 +958,67 @@
 #define TXT_LOG_SUSP_BOOT_ACTIVE                                               \
   "A rega esta suspensa ate %04d-%02d-%02d %02d:%02d"
 #define TXT_LOG_SYS_READY "Inicializacao do sistema concluida - controlador pronto"
-#define TXT_LOG_RTC_NOT_FOUND "Modulo nao encontrado - verificar I2C"
+#define TXT_LOG_RTC_NOT_FOUND                                                  \
+  "Relogio de hardware nao detetado no barramento I2C - a usar relogio por software (rega automatica em pausa ate acerto)"
 #define TXT_LOG_RTC_BAT_LOW                                                    \
-  "Bateria descarregada ou 1a utilizacao - acertar hora"
-#define TXT_LOG_RTC_BOOT_CORRUPT                                               \
-  "Leitura de arranque corrompida (%04d-%02d-%02d)"
-#define TXT_LOG_RTC_OK "OK - %04d-%02d-%02d %02d:%02d:%02d (%s)"
-#define TXT_LOG_RTC_HOT_DETECT "A tentar detetar RTC a quente..."
-#define TXT_LOG_RTC_HOT_FOUND "Modulo detetado a quente (hotplug) com sucesso"
+  "Relogio de hardware perdeu alimentacao (pilha gasta ou primeira utilizacao) - acerte a data e hora"
+#define TXT_LOG_RTC_READ_CORRUPT                                               \
+  "Relogio de hardware devolveu data/hora invalida (%04d-%02d-%02d %02d:%02d:%02d)"
+#define TXT_LOG_RTC_OK                                                         \
+  "Relogio sincronizado a partir do hardware: %04d-%02d-%02d %02d:%02d:%02d (%s)"
+#define TXT_LOG_RTC_HOT_DETECT                                                 \
+  "A procurar relogio de hardware religado no barramento I2C..."
+#define TXT_LOG_RTC_HOT_FOUND "Relogio de hardware detetado no barramento I2C"
 #define TXT_LOG_RTC_HOT_SYNC                                                   \
-  "Sincronizado com o RTC a quente: %04d-%02d-%02d %02d:%02d:%02d"
+  "Relogio sincronizado com relogio de hardware ligado: %04d-%02d-%02d %02d:%02d:%02d"
 #define TXT_LOG_RTC_BAT_FAIL_REC                                               \
-  "Pilha falhou/Reset EMI detetado - a tentar restaurar RTC via RAM..."
-#define TXT_LOG_RTC_BAT_FAIL_RAM "Falha na bateria e hora da RAM invalida"
+  "Relogio de hardware perdeu energia em funcionamento - a repor hora a partir da memoria do controlador"
+#define TXT_LOG_RTC_BAT_FAIL_RAM                                               \
+  "Pilha do relogio de hardware falhou e a hora do controlador e invalida - acerte a data e hora"
 #define TXT_LOG_RTC_I2C_CORRUPT                                                \
-  "I2C com leituras corrompidas (%04d-%02d-%02d) - a recuperar barramento..."
-#define TXT_LOG_RTC_SAVE_ATTEMPT "A tentar gravar hora no RTC..."
-#define TXT_LOG_RTC_SAVE_OK "RTC ligado e hora gravada com sucesso"
+  "Relogio de hardware devolveu leituras invalidas 3 vezes (%04d-%02d-%02d %02d:%02d:%02d) - a reiniciar barramento I2C"
+#define TXT_LOG_RTC_SAVE_ATTEMPT "A tentar gravar hora no relogio de hardware..."
+#define TXT_LOG_RTC_SAVE_OK "Hora gravada no relogio de hardware"
 #define TXT_LOG_RTC_TIME_SET                                                   \
-  "Hora (Local) definida: %04d-%02d-%02d %02d:%02d:%02d"
-#define TXT_LOG_SCHED_SUSP_EXP "Suspensao expirada - rega reativada"
+  "Relogio do sistema definido para %04d-%02d-%02d %02d:%02d:%02d (gravado em hardware)"
+#define TXT_LOG_RTC_TIME_SET_SW                                                \
+  "Relogio do sistema definido para %04d-%02d-%02d %02d:%02d:%02d apenas em memoria (relogio de hardware indisponivel)"
+#define TXT_LOG_RTC_INVALID_SET                                                \
+  "Definicao de hora invalida rejeitada (%04u-%02u-%02u %02u:%02u:%02u)"
+#define TXT_LOG_SUSP_CLR_TIME_SET                                              \
+  "Suspensao de rega limpa porque a nova hora ultrapassa a data de fim da pausa"
+#define TXT_LOG_SCHED_SUSP_EXP                                                 \
+  "Suspensao da rega terminou - rega automatica reativada"
 #define TXT_LOG_SCHED_DUP_BLOCK                                                \
-  "Ativacao duplicada bloqueada (DST fall-back) - slot %02d:%02d"
-#define TXT_LOG_SCHED_AUTO_START "Iniciar rega automatica %02d:%02d"
-#define TXT_LOG_SCHED_COLLISION_SKIP "Ciclo agendado ignorado: rega ativa de momento (Slot: %02d:%02d)"
-#define TXT_LOG_SCHED_MODE_CHG "Modo alterado: Proxima rega %02d:%02d"
-#define TXT_LOG_SCHED_CYCLE_DONE "Ciclo concluido: Proxima rega %02d:%02d"
-#define TXT_LOG_SCHED_REC_HLIMIT "Recuperacao descartada: hard limit excedido"
-#define TXT_LOG_SCHED_REC_GHOST                                                \
-  "Recuperacao descartada: atropelado por ciclo fantasma"
+  "Horario %02d:%02d duplicado ignorado durante o recuo da mudanca de hora"
+#define TXT_LOG_SCHED_AUTO_START                                               \
+  "A iniciar rega automatica agendada para %02d:%02d"
+#define TXT_LOG_SCHED_COLLISION_SKIP                                           \
+  "Rega agendada para %02d:%02d ignorada porque ja existe um ciclo em curso"
+#define TXT_LOG_SCHED_MODE_CHG                                                 \
+  "Agendamento atualizado (Modo: %s) - proxima rega as %02d:%02d"
+#define TXT_LOG_SCHED_MODE_CHG_OFF                                             \
+  "Agendamento atualizado (Modo: %s) - sem rega automatica"
+#define TXT_LOG_SCHED_MODE_WAIT_CLK                                            \
+  "Modo de agendamento alterado para %s (a aguardar hora valida para agendar)"
+#define TXT_LOG_SCHED_CYCLE_DONE                                               \
+  "Ciclo concluido - proxima rega automatica as %02d:%02d"
+#define TXT_LOG_SCHED_CYCLE_DONE_OFF                                           \
+  "Ciclo concluido - a rega automatica esta desativada"
+#define TXT_LOG_SCHED_REC_DUR                                                  \
+  "Recuperacao de rega interrompida descartada: duracao restante (%lu s) fora do intervalo valido (1-%lu s)"
+#define TXT_LOG_SCHED_REC_MODE                                                 \
+  "Recuperacao de rega interrompida descartada: modo de rega invalido (%u)"
+#define TXT_LOG_SCHED_REC_BACKWARD                                             \
+  "Recuperacao de rega interrompida descartada: hora atual e anterior ao inicio do ciclo"
+#define TXT_LOG_SCHED_REC_AGE                                                  \
+  "Recuperacao de rega interrompida descartada: falha de energia durou %lu min (limite e %lu min)"
+#define TXT_LOG_SCHED_REC_MISSED                                               \
+  "Recuperacao de rega interrompida descartada: passou um horario agendado mais recente durante a falha"
 #define TXT_LOG_SCHED_REC_GAP                                                  \
-  "Recuperacao descartada: gap de seguranca 2h desrespeitado"
-#define TXT_LOG_SCHED_CUSTOM_DAY "custom_ref_day definido/redefinido: %lu"
+  "Recuperacao de rega interrompida descartada: tempo restante mais margem de %lu min sobrepoe-se ao proximo horario"
+#define TXT_LOG_SCHED_CUSTOM_DAY                                               \
+  "Data de referencia do intervalo personalizado definida para %04d-%02d-%02d (a cada %u dia(s))"
 #define TXT_LOG_NVS_NS_FAIL                                                    \
   "Falha ao abrir armazenamento de definicoes em flash - alteracoes nao serao guardadas"
 #define TXT_LOG_NVS_READY "Armazenamento de definicoes em flash aberto"

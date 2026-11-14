@@ -68,6 +68,7 @@ private:
     RTC_Chip _rtc;
     bool     _found;
     bool     _lostPower;
+    bool     _batRecoveryWarned = false;
     uint32_t _lastReadMs;
     uint32_t _lastRtcRetryMs;
     uint8_t  _consecErrors;

@@ -23,11 +23,22 @@ void Scheduler::begin() {
     storage.loadLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
-    computeNext(gState.mode, gState.now,
-                gState.next_hour, gState.next_min);
+    bool hasNext = computeNext(gState.mode, gState.now,
+                               gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", TXT_LOG_NEXT_WATERING,
-                  gState.next_hour, gState.next_min);
+    if (hasNext) {
+        if (gState.suspended) {
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_NEXT_WATERING_SUSP,
+                  (int)gState.next_hour, (int)gState.next_min,
+                  serialModeName(gState.mode));
+        } else {
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_NEXT_WATERING,
+                  (int)gState.next_hour, (int)gState.next_min,
+                  serialModeName(gState.mode));
+        }
+    } else {
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_NEXT_WATERING_OFF);
+    }
 }
 
 void Scheduler::clearLastTriggers() {
@@ -44,7 +55,7 @@ void Scheduler::update() {
 
     if (!gState.rtc_valid)  return;
 
-    // Apenas processar se o segundo do relógio tiver mudado (redução de carga sobre o CPU)
+    // Apenas processar se o segundo do relogio tiver mudado (reducao de carga sobre o CPU)
     if (gState.now.sec == _lastSec) return;
     _lastSec = gState.now.sec;
 
@@ -57,7 +68,7 @@ void Scheduler::update() {
             gState.suspended_until = 0;
             _lastMin = 0xFF; // Force schedule evaluation to avoid skip if cleared on same minute
             storage.save();
-            LOG_I("SCHED", TXT_LOG_SCHED_SUSP_EXP);
+            LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_SUSP_EXP);
         } else {
             return; // Still suspended
         }
@@ -84,23 +95,23 @@ void Scheduler::update() {
                     if (t.hour == sched.slots[i].hour &&
                         t.min  == sched.slots[i].minute) {
                         if (gState.watering.active) {
-                            LOG_W("SCHED", TXT_LOG_SCHED_COLLISION_SKIP,
-                                  sched.slots[i].hour, sched.slots[i].minute);
+                            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
+                                  (int)sched.slots[i].hour, (int)sched.slots[i].minute);
                             break;
                         }
                         // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
                         // 2 hours ago (UTC), this is a duplicate from the repeated hour.
-                        // Same slot on consecutive days is ≥24h apart, so 7200s is safe.
+                        // Same slot on consecutive days is >=24h apart, so 7200s is safe.
                         if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
                             (t.unix - _lastTriggerUnix[i]) < 7200) {
-                            LOG_W("SCHED", TXT_LOG_SCHED_DUP_BLOCK,
-                                  sched.slots[i].hour, sched.slots[i].minute);
+                            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_DUP_BLOCK,
+                                  (int)sched.slots[i].hour, (int)sched.slots[i].minute);
                             break;
                         }
                         _lastTriggerUnix[i] = t.unix;
                         storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
-                        LOG_I("SCHED", TXT_LOG_SCHED_AUTO_START,
-                                      t.hour, t.min);
+                        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_AUTO_START,
+                              (int)t.hour, (int)t.min);
                         wateringCtrl.startGeneral(WaterTrigger::AUTO);
                         break;
                     }
@@ -130,14 +141,22 @@ void Scheduler::onModeChanged() {
             gState.next_hour = 0;
             gState.next_min  = 0;
         }
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_WAIT_CLK,
+              serialModeName(gState.mode));
         return;
     }
     uint32_t old_ref = gState.custom_ref_day;
-    computeNext(gState.mode, gState.now,
-                gState.next_hour, gState.next_min);
+    bool hasNext = computeNext(gState.mode, gState.now,
+                               gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", TXT_LOG_SCHED_MODE_CHG,
-                  gState.next_hour, gState.next_min);
+    if (hasNext) {
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG,
+              serialModeName(gState.mode),
+              (int)gState.next_hour, (int)gState.next_min);
+    } else {
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG_OFF,
+              serialModeName(gState.mode));
+    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -146,11 +165,15 @@ void Scheduler::onWateringDone() {
     // computeNext() already skips slots at or before now.hour:now.min (<=),
     // so pass gState.now directly to avoid skipping an upcoming slot on the next minute.
     uint32_t old_ref = gState.custom_ref_day;
-    computeNext(gState.mode, gState.now,
-                gState.next_hour, gState.next_min);
+    bool hasNext = computeNext(gState.mode, gState.now,
+                               gState.next_hour, gState.next_min);
     if (gState.custom_ref_day != old_ref) storage.save();
-    LOG_I("SCHED", TXT_LOG_SCHED_CYCLE_DONE,
-                  gState.next_hour, gState.next_min);
+    if (hasNext) {
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CYCLE_DONE,
+              (int)gState.next_hour, (int)gState.next_min);
+    } else {
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CYCLE_DONE_OFF);
+    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -168,17 +191,27 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
 
 // ─────────────────────────────────────────────────────────
 bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_time, uint32_t remaining_duration_sec) {
-    // 1. Hard Limits
+    // 1. Limits
     const uint32_t max_cycle_sec = (uint32_t)NUM_ZONES * 20UL * 60UL;
     if (remaining_duration_sec == 0 || remaining_duration_sec > max_cycle_sec) {
-        LOG_W("SCHED", TXT_LOG_SCHED_REC_HLIMIT);
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_DUR,
+              (unsigned long)remaining_duration_sec, (unsigned long)max_cycle_sec);
         return true;
     }
     uint32_t current_unix = current_time.unix;
-    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return true;
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) {
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_MODE, (unsigned)gState.mode);
+        return true;
+    }
     const uint32_t max_allowed_duration = RECOVERY_MAX_AGE_S;
-    if (current_unix < start_unix || (current_unix - start_unix) > max_allowed_duration) {
-        LOG_W("SCHED", TXT_LOG_SCHED_REC_HLIMIT);
+    if (current_unix < start_unix) {
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_BACKWARD);
+        return true;
+    }
+    if ((current_unix - start_unix) > max_allowed_duration) {
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_AGE,
+              (unsigned long)((current_unix - start_unix) / 60UL),
+              (unsigned long)(max_allowed_duration / 60UL));
         return true;
     }
 
@@ -200,7 +233,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     
     uint32_t next_from_start = getNextCycleUnix(startST);
     if (next_from_start != 0xFFFFFFFF && next_from_start <= current_unix) {
-         LOG_W("SCHED", TXT_LOG_SCHED_REC_GHOST);
+         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_MISSED);
          return true;
     }
     
@@ -208,7 +241,8 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     if (next_cycle_unix != 0xFFFFFFFF) {
         uint64_t estimated_end = (uint64_t)current_unix + (uint64_t)remaining_duration_sec;
         if (estimated_end + (uint64_t)SAFETY_GAP_SEC > (uint64_t)next_cycle_unix) {
-            LOG_W("SCHED", TXT_LOG_SCHED_REC_GAP);
+            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_GAP,
+                  (unsigned long)(SAFETY_GAP_SEC / 60UL));
             return true;
         }
     }
@@ -317,7 +351,10 @@ bool Scheduler::_dayMatches(const ModeSchedule& sched, uint32_t candidate_day_19
             if (ref_day == 0xFFFFFFFFUL) {
                 if (writeBack) {
                     gState.custom_ref_day = candidate_day_1970;
-                    LOG_D("SCHED", TXT_LOG_SCHED_CUSTOM_DAY, candidate_day_1970);
+                    DateTime refDt(candidate_day_1970 * 86400UL);
+                    LOG_D(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CUSTOM_DAY,
+                          (int)refDt.year(), (int)refDt.month(), (int)refDt.day(),
+                          (unsigned)sched.interval_days);
                     ref_day = candidate_day_1970;
                 } else {
                     ref_day = candidate_day_1970;
