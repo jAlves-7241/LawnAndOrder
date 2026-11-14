@@ -423,14 +423,19 @@
 #define TXT_LOG_LVL_DEBUG "DEBUG"
 
 #define TXT_LOG_TAG_SYS "System"
+#define TXT_LOG_TAG_STORAGE "Settings"
 #define TXT_LOG_TAG_SCHEDULE "Schedule"
+#define TXT_LOG_TAG_HIST "History"
 #define TXT_LOG_TAG_LCD "Display"
 #define TXT_LOG_TAG_I2C "I2C Bus"
 
+#define TXT_SER_YES "Yes"
+#define TXT_SER_NO "No"
 #define TXT_SER_TRIG_AUTO "Automatic"
 #define TXT_SER_TRIG_MANUAL "Manual"
 #define TXT_SER_TRIG_CUSTOM "Custom"
 #define TXT_SER_TRIG_TEST "Test"
+#define TXT_SER_ZONE_DUR_FMT "%sZone %d: %u min"
 
 // Reset reasons & error descriptions
 #define TXT_RST_POWERON "Power-on"
@@ -454,15 +459,15 @@
 #define TXT_I2C_DEV_UNKNOWN "Unknown device"
 
 #define TXT_LOG_START_EXPORT "Starting history export..."
-#define TXT_LOG_EXPORT_DONE "Export complete: %d records"
-#define TXT_LOG_NO_EXPORT_ROT "Cannot export during history rotation"
+#define TXT_LOG_NO_EXPORT_ROT "Cannot export history while file compaction is running"
+#define TXT_LOG_EXPORT_SUPPRESSED "%u diagnostic log message(s) (%u warning/error) occurred during CSV export and were hidden"
 #define TXT_SYS_STATUS_HDR "================== SYSTEM STATUS =================="
 #define TXT_LOG_WAIT_ZONE_TRANS                                                \
   "Waiting for zone transition (currently Zone %d)\n"
 #define TXT_LOG_WATERING_PROG "Watering Zone %d - Progress: %d%%\n"
 #define TXT_SETUP_DONE_LOG "Initial setup complete"
 #define TXT_LOG_DEFAULTS_LOADED "Initialized default settings in memory (Mode: %s, Zones: %d)"
-#define TXT_LOG_MEM_CLEARED "Memory cleared (Reset)"
+#define TXT_LOG_MEM_CLEARED "All saved settings cleared from flash storage (factory reset)"
 #define TXT_LOG_RESUME_ZONE "Resuming zone %d cycle"
 #define TXT_LOG_RTC_INVALID_RESUME "Invalid RTC. Cannot validate resume time."
 #define TXT_LOG_ZONE_DEACTIVATED_INT "Zone %d (%s) deactivated (interrupted)"
@@ -585,24 +590,28 @@
 #define TXT_LOG_ZONE_DONE_WAIT "Zone %d completed - waiting %lu s"
 #define TXT_LOG_CYCLE_DONE "Cycle completed"
 #define TXT_LOG_CYCLE_NO_DUR "Cycle without effective duration - ignoring history"
-#define TXT_LOG_HIST_MOUNT_FAIL "Failed to mount LittleFS"
-#define TXT_LOG_HIST_NVS_LOAD "Loaded via NVS - %d entries"
-#define TXT_LOG_HIST_FS_LOAD "Loaded via LittleFS (Fallback) - %d entries"
-#define TXT_LOG_HIST_DISK_BUSY "Disk busy - log deferred"
-#define TXT_LOG_HIST_Q_FULL "Deferred queue full - log lost"
-#define TXT_LOG_HIST_ROT_START "Rotation started, NVS deferred"
-#define TXT_LOG_HIST_FILE_ERR "Failed to open file"
-#define TXT_LOG_HIST_LOGGED "Logged: %s"
-#define TXT_LOG_HIST_WIPED "History deleted"
-#define TXT_LOG_HIST_ROT_CORRUPT "Corrupted line purged from disk"
-#define TXT_LOG_HIST_ROT_DONE_NVS "Rotation complete + NVS updated - entries: %d"
-#define TXT_LOG_HIST_ROT_DONE "Rotation complete - entries: %d"
-#define TXT_LOG_HIST_RENAME_FAIL "Rename failed - keeping original"
-#define TXT_LOG_HIST_EXPORT_FAIL "Failed to open file for export"
+#define TXT_LOG_HIST_MOUNT_FAIL "Failed to mount flash filesystem for watering history"
+#define TXT_LOG_HIST_FORMATTED "History flash filesystem unformatted or damaged (no backup index) - formatted clean filesystem"
+#define TXT_LOG_HIST_FORMAT_FAIL "Failed to mount and format history flash filesystem"
+#define TXT_LOG_HIST_NVS_LOAD "Loaded %d watering record(s) from fast index cache"
+#define TXT_LOG_HIST_FS_LOAD "Loaded %d watering record(s) from history file (%s)"
+#define TXT_LOG_HIST_FS_REASON_REPLAY "replayed pending entries"
+#define TXT_LOG_HIST_FS_REASON_REBUILD "cache missing or out of sync with file"
+#define TXT_LOG_HIST_DISK_BUSY "History storage busy (compaction/export running) - queued record in memory"
+#define TXT_LOG_HIST_Q_FULL "In-memory history queue full during disk operation - newest record lost"
+#define TXT_LOG_HIST_ROT_START "History file reached limit (%u entries) - compacting old records in background"
+#define TXT_LOG_HIST_ROT_OPEN_FAIL "Could not start history compaction (temp file error) - appended directly instead"
+#define TXT_LOG_HIST_FILE_ERR "Failed to write watering record to flash file"
+#define TXT_LOG_HIST_LOGGED "Saved %s watering record (%04u-%02u-%02u %02u:%02u): %s"
+#define TXT_LOG_HIST_WIPED "All watering history records deleted"
+#define TXT_LOG_HIST_ROT_CORRUPT_SUM "Removed %u corrupted line(s) while compacting history file"
+#define TXT_LOG_HIST_ROT_DONE "History compaction complete (%d records kept)"
+#define TXT_LOG_HIST_RENAME_FAIL "Failed to replace history file after compaction - kept original file"
+#define TXT_LOG_HIST_EXPORT_FAIL "Failed to open history file for export"
 #define TXT_TERM_HIST_HDR "--- LAWN&ORDER HISTORY ---"
 #define TXT_TERM_HIST_CSV_HDR "Date,Type,Z1(min),Z2(min),Z3(min),Z4(min)"
 #define TXT_TERM_HIST_EMPTY "History is empty."
-#define TXT_TERM_HIST_EXPORT_END "--- END: %d records ---\n"
+#define TXT_TERM_HIST_EXPORT_END "--- END: %d records ---\r\n"
 #define TXT_LOG_I2C_SCAN_FOUND "Device found at 0x%02X"
 #define TXT_LOG_I2C_SDA_STUCK "I2C data line still held low after bus clear - check wiring or pull-ups"
 #define TXT_LOG_I2C_SCAN_NONE "No I2C devices found on bus - check wiring and power"
@@ -644,26 +653,47 @@
 #define TXT_LOG_SCHED_REC_GHOST "Recovery discarded: overrun by ghost cycle"
 #define TXT_LOG_SCHED_REC_GAP "Recovery discarded: 2h safety gap ignored"
 #define TXT_LOG_SCHED_CUSTOM_DAY "custom_ref_day set/reset: %lu"
-#define TXT_LOG_NVS_NS_FAIL "Failed to open namespace"
-#define TXT_LOG_NVS_READY "Ready"
-#define TXT_LOG_NVS_BLOB_INV                                                   \
-  "Invalid blob or incorrect version (%d) - using defaults"
-#define TXT_LOG_NVS_VAL_FAIL "Validation failed after read - using defaults"
-#define TXT_LOG_NVS_LOADED "Data loaded (Mode: %d, Susp: %d)"
-#define TXT_LOG_NVS_UPDATED "Data updated"
-#define TXT_LOG_NVS_WRITE_FAIL "NVS write failed"
-#define TXT_LOG_NVS_IMP_INV_LEN                                                \
-  "Import failed: invalid string length (%d vs %d)"
-#define TXT_LOG_NVS_IMP_INV_VER "Import failed: incompatible version (%d vs %d)"
-#define TXT_LOG_NVS_IMP_OK "Config imported successfully via hex string"
-#define TXT_LOG_NVS_IMP_INV_MODE "Import failed: invalid mode (%d)"
-#define TXT_LOG_NVS_OVERLAP "Custom schedule overlap detected"
-#define TXT_LOG_NVS_CRC_FAIL "CRC mismatch (%04X vs %04X) - rejected"
-#define TXT_LOG_NVS_IMP_ACTIVE "Import rejected: watering is currently active"
+#define TXT_LOG_NVS_NS_FAIL "Failed to open flash settings storage - configuration changes will not persist"
+#define TXT_LOG_NVS_READY "Flash settings storage opened"
+#define TXT_LOG_NVS_EMPTY "No saved settings found in flash (first boot) - using factory defaults"
+#define TXT_LOG_NVS_SIZE_MISMATCH "Saved settings size mismatch (%u vs %u bytes) - using factory defaults"
+#define TXT_LOG_NVS_VER_MISMATCH "Saved settings version v%u does not match firmware v%u - using factory defaults"
+#define TXT_LOG_NVS_BOOL_INV "Saved settings contain invalid flag values - using factory defaults"
+#define TXT_LOG_NVS_VAL_FAIL "Saved settings failed sanity checks after read - using factory defaults"
+#define TXT_LOG_NVS_LOADED "Loaded saved settings (Mode: %s, Suspended: %s)"
+#define TXT_LOG_NVS_UPDATED "Settings written to flash storage (Mode: %s)"
+#define TXT_LOG_NVS_WRITE_FAIL "Failed to write %s to flash storage"
+#define TXT_LOG_NVS_PART_CFG "configuration"
+#define TXT_LOG_NVS_PART_HIST "history cache"
+#define TXT_LOG_NVS_PART_TRIG "schedule trigger guard"
+#define TXT_LOG_NVS_PART_RECV "interrupted cycle recovery state"
+#define TXT_LOG_NVS_PART_IMP "imported configuration"
+#define TXT_LOG_NVS_IMP_INV_LEN "Configuration import rejected: got %u characters, expected %u"
+#define TXT_LOG_NVS_IMP_BAD_HEX "Configuration import rejected: invalid hexadecimal character at position %u"
+#define TXT_LOG_NVS_IMP_BAD_BOOL "Configuration import rejected: invalid true/false flag byte"
+#define TXT_LOG_NVS_IMP_INV_VER "Configuration import rejected: format version v%u incompatible with firmware v%u"
+#define TXT_LOG_NVS_IMP_OK "Configuration imported and saved to flash (Mode: %s)"
+#define TXT_LOG_NVS_IMP_INV_MODE "Configuration rejected: invalid watering mode (%u)"
+#define TXT_LOG_NVS_IMP_INV_FIELD "Configuration import rejected: invalid %s value"
+#define TXT_IMP_FLD_BACKLIGHT "backlight timeout"
+#define TXT_IMP_FLD_SUSP_END "suspension end date"
+#define TXT_IMP_FLD_REF_DAY "custom interval start date"
+#define TXT_IMP_FLD_ZONE_DUR "zone duration"
+#define TXT_IMP_FLD_INTERVAL "custom interval days"
+#define TXT_IMP_FLD_SLOTS "custom daily cycles"
+#define TXT_IMP_FLD_TIME "schedule slot time"
+#define TXT_NVS_RSN_SIZE "size mismatch"
+#define TXT_NVS_RSN_VER "version mismatch"
+#define TXT_NVS_RSN_BOOL "invalid active flag"
+#define TXT_LOG_NVS_OVERLAP "Configuration rejected: custom schedule cycles overlap zone watering duration"
+#define TXT_LOG_NVS_CRC_FAIL "Data integrity checksum failed for %s (stored 0x%04X, expected 0x%04X) - rejected"
+#define TXT_LOG_NVS_TRIG_CORRUPT "Schedule duplicate-protection data in flash was corrupted - reset"
+#define TXT_LOG_NVS_RECV_CORRUPT "Saved blackout recovery data in flash was corrupted (%s) - discarded"
+#define TXT_LOG_NVS_IMP_ACTIVE "Configuration import rejected because watering is currently active"
 #define TXT_LOG_REC_MAX_RETRY "Recovery aborted after %u failed boot attempts"
 #define TXT_LOG_REC_STABLE "Boot recovery stabilized - retry counter reset"
-#define TXT_LOG_HIST_FS_PRESERVED "LittleFS mount failed with NVS history present - skipping format"
-#define TXT_LOG_HIST_PEND_REPLAY "Replaying %d deferred history record(s) from pending log"
+#define TXT_LOG_HIST_FS_PRESERVED "History filesystem failed to mount, but record count backup exists - skipped format to preserve data"
+#define TXT_LOG_HIST_PEND_REPLAY "Recovered and replayed %d pending history record(s) interrupted by power loss"
 #define TXT_TERM_WIPE_EXPIRED "Confirmation timed out. Clear history cancelled."
 #elif defined(LANG_SERIAL_PT)
 // Etiquetas de formato de log e nomes de componentes
@@ -674,14 +704,19 @@
 #define TXT_LOG_LVL_DEBUG "DEPURACAO"
 
 #define TXT_LOG_TAG_SYS "Sistema"
+#define TXT_LOG_TAG_STORAGE "Definicoes"
 #define TXT_LOG_TAG_SCHEDULE "Agendamento"
+#define TXT_LOG_TAG_HIST "Historico"
 #define TXT_LOG_TAG_LCD "Ecra"
 #define TXT_LOG_TAG_I2C "Barramento I2C"
 
+#define TXT_SER_YES "Sim"
+#define TXT_SER_NO "Nao"
 #define TXT_SER_TRIG_AUTO "Automatica"
 #define TXT_SER_TRIG_MANUAL "Manual"
 #define TXT_SER_TRIG_CUSTOM "Personalizada"
 #define TXT_SER_TRIG_TEST "Teste"
+#define TXT_SER_ZONE_DUR_FMT "%sZona %d: %u min"
 
 // Motivos de reinicio e descricoes de erro
 #define TXT_RST_POWERON "Ligacao a corrente"
@@ -705,9 +740,10 @@
 #define TXT_I2C_DEV_UNKNOWN "Dispositivo desconhecido"
 
 #define TXT_LOG_START_EXPORT "A iniciar exportacao do historico..."
-#define TXT_LOG_EXPORT_DONE "Exportacao concluida: %d registos"
 #define TXT_LOG_NO_EXPORT_ROT                                                  \
-  "Nao e possivel exportar durante a rotacao de historico"
+  "Nao e possivel exportar enquanto a compactacao de ficheiros decorre"
+#define TXT_LOG_EXPORT_SUPPRESSED                                              \
+  "%u mensagem(ns) de diagnostico (%u aviso/erro) ocorreram durante a exportacao CSV e foram ocultadas"
 #define TXT_SYS_STATUS_HDR                                                     \
   "================== ESTADO DO SISTEMA =================="
 #define TXT_LOG_WAIT_ZONE_TRANS                                                \
@@ -716,7 +752,8 @@
 #define TXT_SETUP_DONE_LOG "Configuracao inicial concluida"
 #define TXT_LOG_DEFAULTS_LOADED                                                \
   "Predefinicoes inicializadas em memoria (Modo: %s, Zonas: %d)"
-#define TXT_LOG_MEM_CLEARED "Memoria limpa (Reset)"
+#define TXT_LOG_MEM_CLEARED                                                    \
+  "Todas as definicoes guardadas foram apagadas da memoria flash (reposicao de fabrica)"
 #define TXT_LOG_RESUME_ZONE "A retomar ciclo da zona %d"
 #define TXT_LOG_RTC_INVALID_RESUME                                             \
   "RTC invalido. Nao e possivel validar o tempo de retoma."
@@ -849,26 +886,44 @@
 #define TXT_LOG_ZONE_DONE_WAIT "Zona %d concluida - aguardar %lu s"
 #define TXT_LOG_CYCLE_DONE "Ciclo concluido"
 #define TXT_LOG_CYCLE_NO_DUR "Ciclo sem duracao efetiva - a ignorar historico"
-#define TXT_LOG_HIST_MOUNT_FAIL "Falha ao montar LittleFS"
-#define TXT_LOG_HIST_NVS_LOAD "Carregado via NVS - %d entradas"
-#define TXT_LOG_HIST_FS_LOAD "Carregado via LittleFS (Fallback) - %d entradas"
+#define TXT_LOG_HIST_MOUNT_FAIL                                                \
+  "Falha ao montar sistema de ficheiros flash do historico de regas"
+#define TXT_LOG_HIST_FORMATTED                                                 \
+  "Sistema de ficheiros do historico nao formatado ou danificado (sem indice de reserva) - formatado de raiz"
+#define TXT_LOG_HIST_FORMAT_FAIL                                               \
+  "Falha ao montar e formatar sistema de ficheiros flash do historico"
+#define TXT_LOG_HIST_NVS_LOAD                                                  \
+  "Carregado(s) %d registo(s) de rega a partir da cache de indice rapido"
+#define TXT_LOG_HIST_FS_LOAD                                                   \
+  "Carregado(s) %d registo(s) de rega do ficheiro de historico (%s)"
+#define TXT_LOG_HIST_FS_REASON_REPLAY "registos pendentes reprocessados"
+#define TXT_LOG_HIST_FS_REASON_REBUILD                                         \
+  "cache em falta ou dessincronizada com o ficheiro"
 #define TXT_LOG_HIST_DISK_BUSY                                                 \
-  "Disco ocupado - registo diferido"
-#define TXT_LOG_HIST_Q_FULL "Fila de deferidos cheia - registo perdido"
-#define TXT_LOG_HIST_ROT_START "Rotacao iniciada, NVS diferido"
-#define TXT_LOG_HIST_FILE_ERR "Falha ao abrir ficheiro"
-#define TXT_LOG_HIST_LOGGED "Registado: %s"
-#define TXT_LOG_HIST_WIPED "Historico apagado"
-#define TXT_LOG_HIST_ROT_CORRUPT "Linha corrompida expurgada do disco"
-#define TXT_LOG_HIST_ROT_DONE_NVS                                              \
-  "Rotacao concluida + NVS atualizado - entradas: %d"
-#define TXT_LOG_HIST_ROT_DONE "Rotacao concluida - entradas: %d"
-#define TXT_LOG_HIST_RENAME_FAIL "Falha ao renomear - original mantido"
-#define TXT_LOG_HIST_EXPORT_FAIL "Falha ao abrir ficheiro para exportacao"
+  "Armazenamento do historico ocupado (compactacao/exportacao em curso) - registo em fila na memoria"
+#define TXT_LOG_HIST_Q_FULL                                                    \
+  "Fila de historico em memoria cheia durante operacao em disco - registo mais recente perdido"
+#define TXT_LOG_HIST_ROT_START                                                 \
+  "Ficheiro de historico atingiu o limite (%u registos) - a compactar registos antigos em segundo plano"
+#define TXT_LOG_HIST_ROT_OPEN_FAIL                                             \
+  "Nao foi possivel iniciar a compactacao do historico (erro em ficheiro temporario) - adicionado diretamente"
+#define TXT_LOG_HIST_FILE_ERR                                                  \
+  "Falha ao gravar registo de rega no ficheiro em memoria flash"
+#define TXT_LOG_HIST_LOGGED                                                    \
+  "Registo de rega %s guardado (%04u-%02u-%02u %02u:%02u): %s"
+#define TXT_LOG_HIST_WIPED "Todos os registos de historico de regas apagados"
+#define TXT_LOG_HIST_ROT_CORRUPT_SUM                                           \
+  "Removida(s) %u linha(s) corrompida(s) durante a compactacao do historico"
+#define TXT_LOG_HIST_ROT_DONE                                                  \
+  "Compactacao do historico concluida (%d registos mantidos)"
+#define TXT_LOG_HIST_RENAME_FAIL                                               \
+  "Falha ao substituir ficheiro de historico apos compactacao - ficheiro original mantido"
+#define TXT_LOG_HIST_EXPORT_FAIL                                               \
+  "Falha ao abrir ficheiro de historico para exportacao"
 #define TXT_TERM_HIST_HDR "--- HISTORICO LAWN&ORDER ---"
 #define TXT_TERM_HIST_CSV_HDR "Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)"
 #define TXT_TERM_HIST_EMPTY "Historico vazio."
-#define TXT_TERM_HIST_EXPORT_END "--- FIM: %d registos ---\n"
+#define TXT_TERM_HIST_EXPORT_END "--- FIM: %d registos ---\r\n"
 #define TXT_LOG_I2C_SCAN_FOUND "Dispositivo encontrado em 0x%02X"
 #define TXT_LOG_I2C_SDA_STUCK                                                  \
   "Linha de dados I2C continua bloqueada em estado baixo apos limpeza - verifique a cablagem ou resistencias pull-up"
@@ -922,28 +977,66 @@
 #define TXT_LOG_SCHED_REC_GAP                                                  \
   "Recuperacao descartada: gap de seguranca 2h desrespeitado"
 #define TXT_LOG_SCHED_CUSTOM_DAY "custom_ref_day definido/redefinido: %lu"
-#define TXT_LOG_NVS_NS_FAIL "Falha ao abrir namespace"
-#define TXT_LOG_NVS_READY "Pronto"
-#define TXT_LOG_NVS_BLOB_INV                                                   \
-  "Blob invalido ou versao incorreta (%d) - a usar predefinicoes"
+#define TXT_LOG_NVS_NS_FAIL                                                    \
+  "Falha ao abrir armazenamento de definicoes em flash - alteracoes nao serao guardadas"
+#define TXT_LOG_NVS_READY "Armazenamento de definicoes em flash aberto"
+#define TXT_LOG_NVS_EMPTY                                                      \
+  "Nenhuma definicao guardada na flash (primeiro arranque) - a usar predefinicoes de fabrica"
+#define TXT_LOG_NVS_SIZE_MISMATCH                                              \
+  "Tamanho das definicoes guardadas incompativel (%u vs %u bytes) - a usar predefinicoes de fabrica"
+#define TXT_LOG_NVS_VER_MISMATCH                                               \
+  "Versao das definicoes guardadas v%u incompativel com firmware v%u - a usar predefinicoes de fabrica"
+#define TXT_LOG_NVS_BOOL_INV                                                   \
+  "Definicoes guardadas contem valores booleanos invalidos - a usar predefinicoes de fabrica"
 #define TXT_LOG_NVS_VAL_FAIL                                                   \
-  "Validacao falhou apos leitura - a usar predefinicoes"
-#define TXT_LOG_NVS_LOADED "Dados carregados (Modo: %d, Susp: %d)"
-#define TXT_LOG_NVS_UPDATED "Dados atualizados"
-#define TXT_LOG_NVS_WRITE_FAIL "Falha na escrita NVS"
+  "Definicoes guardadas falharam verificacoes de integridade apos leitura - a usar predefinicoes de fabrica"
+#define TXT_LOG_NVS_LOADED "Definicoes guardadas carregadas (Modo: %s, Suspensa: %s)"
+#define TXT_LOG_NVS_UPDATED "Definicoes gravadas na memoria flash (Modo: %s)"
+#define TXT_LOG_NVS_WRITE_FAIL "Falha ao gravar %s na memoria flash"
+#define TXT_LOG_NVS_PART_CFG "configuracao"
+#define TXT_LOG_NVS_PART_HIST "cache do historico"
+#define TXT_LOG_NVS_PART_TRIG "protecao de agendamento duplicado"
+#define TXT_LOG_NVS_PART_RECV "estado de recuperacao apos falha de energia"
+#define TXT_LOG_NVS_PART_IMP "configuracao importada"
 #define TXT_LOG_NVS_IMP_INV_LEN                                                \
-  "Importacao falhou: comprimento de string invalido (%d vs %d)"
+  "Importacao de configuracao rejeitada: recebidos %u caracteres, esperados %u"
+#define TXT_LOG_NVS_IMP_BAD_HEX                                                \
+  "Importacao de configuracao rejeitada: carater hexadecimal invalido na posicao %u"
+#define TXT_LOG_NVS_IMP_BAD_BOOL                                               \
+  "Importacao de configuracao rejeitada: byte de estado verdadeiro/falso invalido"
 #define TXT_LOG_NVS_IMP_INV_VER                                                \
-  "Importacao falhou: versao incompativel (%d vs %d)"
+  "Importacao de configuracao rejeitada: versao de formato v%u incompativel com firmware v%u"
 #define TXT_LOG_NVS_IMP_OK                                                     \
-  "Configuracoes importadas com sucesso via hex string"
-#define TXT_LOG_NVS_IMP_INV_MODE "Importacao falhou: modo invalido (%d)"
-#define TXT_LOG_NVS_OVERLAP "Detetada sobreposicao no horario personalizado"
-#define TXT_LOG_NVS_CRC_FAIL "CRC invalido (%04X vs %04X) - rejeitado"
-#define TXT_LOG_NVS_IMP_ACTIVE "Importacao rejeitada: rega ativa de momento"
+  "Configuracao importada e gravada na memoria flash (Modo: %s)"
+#define TXT_LOG_NVS_IMP_INV_MODE                                               \
+  "Configuracao rejeitada: modo de rega invalido (%u)"
+#define TXT_LOG_NVS_IMP_INV_FIELD                                              \
+  "Importacao de configuracao rejeitada: valor invalido em %s"
+#define TXT_IMP_FLD_BACKLIGHT "tempo de luz do ecra"
+#define TXT_IMP_FLD_SUSP_END "data de fim da suspensao"
+#define TXT_IMP_FLD_REF_DAY "data de referencia do intervalo"
+#define TXT_IMP_FLD_ZONE_DUR "duracao da zona"
+#define TXT_IMP_FLD_INTERVAL "dias de intervalo personalizado"
+#define TXT_IMP_FLD_SLOTS "ciclos diarios personalizados"
+#define TXT_IMP_FLD_TIME "hora de agendamento"
+#define TXT_NVS_RSN_SIZE "tamanho invalido"
+#define TXT_NVS_RSN_VER "versao incompativel"
+#define TXT_NVS_RSN_BOOL "estado invalido"
+#define TXT_LOG_NVS_OVERLAP                                                    \
+  "Configuracao rejeitada: horarios do modo personalizado sobrepoem-se a duracao da rega"
+#define TXT_LOG_NVS_CRC_FAIL                                                   \
+  "Verificacao de integridade falhou para %s (guardado 0x%04X, esperado 0x%04X) - rejeitado"
+#define TXT_LOG_NVS_TRIG_CORRUPT                                               \
+  "Dados de protecao contra rega duplicada na flash estavam corrompidos - repostos"
+#define TXT_LOG_NVS_RECV_CORRUPT                                               \
+  "Dados de recuperacao apos falha de energia na flash estavam corrompidos (%s) - descartados"
+#define TXT_LOG_NVS_IMP_ACTIVE                                                 \
+  "Importacao de configuracao rejeitada porque existe uma rega ativa"
 #define TXT_LOG_REC_MAX_RETRY "Recuperacao abortada apos %u tentativas falhadas de arranque"
 #define TXT_LOG_REC_STABLE "Recuperacao estabilizada - contador de tentativas reposto"
-#define TXT_LOG_HIST_FS_PRESERVED "LittleFS falhou com historico em NVS - formatacao evitada"
-#define TXT_LOG_HIST_PEND_REPLAY "A reprocessar %d registo(s) pendentes de rotacao"
+#define TXT_LOG_HIST_FS_PRESERVED                                              \
+  "Falha ao montar sistema de ficheiros do historico, mas existe reserva da contagem - formatacao evitada para preservar dados"
+#define TXT_LOG_HIST_PEND_REPLAY                                               \
+  "Recuperado(s) e reprocessado(s) %d registo(s) de historico pendentes por falha de energia"
 #define TXT_TERM_WIPE_EXPIRED "Confirmacao expirada. Limpeza de historico cancelada."
 #endif

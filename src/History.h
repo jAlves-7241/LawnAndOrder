@@ -50,6 +50,7 @@ private:
     uint16_t _rotKeep = 0;
     uint16_t _rotSkipped = 0;
     uint16_t _rotCopied = 0;
+    uint16_t _rotCorruptLines = 0;
 
     char _rotLineBuf[LINE_BUF] = {};
     size_t _rotLinePos = 0;
