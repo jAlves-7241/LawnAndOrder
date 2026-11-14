@@ -18,20 +18,22 @@
 //
 // Formato padrao (precisao ao segundo):
 //   [YYYY-MM-DD HH:MM:SS] [LEVEL] [Component] Mensagem
-//   [Uptime HH:MM:SS]     [LEVEL] [Component] Mensagem (quando hora nao validada)
+//   [Uptime HH:MM:SS] [LEVEL] [Component] Mensagem (quando hora nao validada)
 
+#ifndef LVL_NONE
 #define LVL_NONE   -1
 #define LVL_ERROR   0
 #define LVL_WARN    1
 #define LVL_INFO    2
 #define LVL_DEBUG   3
+#endif
 
 #ifndef LOG_LEVEL
 #define LOG_LEVEL LVL_INFO
 #endif
 
 // ── Suspensao temporaria de logs (exportacao CSV) ────────
-extern bool _log_suspended;
+inline bool _log_suspended = false;
 inline uint16_t _log_suppressed_total = 0;
 inline uint16_t _log_suppressed_warn_err = 0;
 
@@ -74,19 +76,27 @@ inline void _logWrite(bool isWarnOrErr, const char* level, const char* tag,
              TXT_LOG_UPTIME_PREFIX, h, m, s);
   }
 
+  const char* safeLevel = level ? level : "";
+  const char* safeTag   = tag   ? tag   : "";
+  const char* safeFmt   = fmt   ? fmt   : "";
+
   char line[LOG_FMT_BUF_SIZE];
-  int prefixLen = snprintf(line, sizeof(line), "[%s] [%s] [%s] ", ts, level, tag);
+  int prefixLen = snprintf(line, sizeof(line), "[%s] [%s] [%s] ", ts, safeLevel, safeTag);
   if (prefixLen < 0) prefixLen = 0;
 
   if ((size_t)prefixLen < sizeof(line) - 1U) {
     va_list args;
     va_start(args, fmt);
     int msgLen = vsnprintf(line + prefixLen, sizeof(line) - (size_t)prefixLen,
-                           fmt, args);
+                           safeFmt, args);
     va_end(args);
     if (msgLen >= (int)(sizeof(line) - (size_t)prefixLen)) {
-      strcpy(line + sizeof(line) - 4U, "...");
+      if (sizeof(line) >= 4U) {
+        strcpy(line + sizeof(line) - 4U, "...");
+      }
     }
+  } else if (sizeof(line) >= 4U) {
+    strcpy(line + sizeof(line) - 4U, "...");
   }
 
   terminalAwareLog(line);

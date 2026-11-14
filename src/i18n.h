@@ -435,7 +435,7 @@
 #define TXT_LOG_TAG_LCD "Display"
 #define TXT_LOG_TAG_UI "Interface"
 #define TXT_LOG_TAG_TERM "Terminal"
-#define TXT_LOG_TAG_I2C "I2C Bus"
+#define TXT_LOG_TAG_I2C "Hardware"
 
 #define TXT_SER_YES "Yes"
 #define TXT_SER_NO "No"
@@ -471,6 +471,7 @@
 #define TXT_LOG_START_EXPORT "Starting history export..."
 #define TXT_LOG_NO_EXPORT_ROT "Cannot export history while cleanup is running"
 #define TXT_LOG_EXPORT_SUPPRESSED "%u log message(s) hidden during export (%u warning/error)"
+#define TXT_LOG_EXPORT_SUPPRESSED_INFO "%u message(s) hidden during export"
 #define TXT_SYS_STATUS_HDR "================== SYSTEM STATUS =================="
 #define TXT_TERM_STAT_WAIT_ZONE "Waiting between zones (next is Zone %d)\r\n"
 #define TXT_TERM_STAT_WATER_PROG "Watering Zone %d - Progress: %d%%\r\n"
@@ -491,12 +492,12 @@
 #define TXT_LOG_NEXT_WATERING "Next automatic watering: %02d:%02d (Mode: %s)"
 #define TXT_LOG_NEXT_WATERING_SUSP "Next watering at %02d:%02d (%s), currently paused"
 #define TXT_LOG_NEXT_WATERING_OFF "Automatic watering is turned off"
-#define TXT_LOG_LCD_READY "LCD display ready (%dx%d at 0x%02X)"
-#define TXT_LOG_LCD_INIT_FAIL "LCD display not found at 0x%02X"
+#define TXT_LOG_LCD_READY "LCD display ready (%dx%d)"
+#define TXT_LOG_LCD_INIT_FAIL "LCD display not found"
 #define TXT_LOG_LCD_RECOVERED "LCD display reconnected"
 #define TXT_LOG_LCD_REC_FAIL "LCD display still not responding after connection reset"
 #define TXT_LOG_LCD_COMM_ERR "LCD failed to respond 3 times - resetting connection"
-#define TXT_LOG_TERM_READY "Serial console ready at 115200 baud (type 'help')"
+#define TXT_LOG_TERM_READY "Serial console ready (type 'help')"
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - TERMINAL SERVICE                  "
 // Terminal
 #define TXT_TERM_ERR_OVERFLOW "\r\nError: Command too long (buffer full)."
@@ -512,9 +513,9 @@
 #define TXT_TERM_HELP_3_EX                                                     \
   "                               Ex: set_time 2026-05-29 15:30:00"
 #define TXT_TERM_HELP_4                                                        \
-  "  export_config                - Export current configuration backup code"
+  "  export_config                - Export current settings backup code"
 #define TXT_TERM_HELP_5                                                        \
-  "  import_config <72_hex>       - Restore configuration from 72-char backup code"
+  "  import_config <code>         - Restore settings from 72-char backup code"
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Export watering history over Serial"
 #define TXT_TERM_HELP_7                                                        \
@@ -522,19 +523,19 @@
 #define TXT_TERM_HELP_8                                                        \
   "  reboot                       - Restart the controller"
 #define TXT_TERM_HELP_9                                                        \
-  "  i2c_scan                     - Scan the I2C hardware bus for devices"
+  "  i2c_scan                     - Scan connected hardware devices"
 #define TXT_TERM_HELP_10                                                       \
   "  stop                         - Immediately stop active watering"
 #define TXT_TERM_STAT_LOCAL "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d\r\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
   "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d (controller memory only)\r\n"
-#define TXT_TERM_STAT_UTC "  Unix Time:   %lu (UTC seconds since 1970)\r\n"
 #define TXT_TERM_STAT_RTC_OK "  Hardware Clock: Connected & Valid"
+#define TXT_TERM_STAT_RTC_SW "  Hardware Clock: Disconnected (using controller memory)"
 #define TXT_TERM_STAT_RTC_ERR "  Hardware Clock: Disconnected or needs setting"
 #define TXT_TERM_STAT_MODE "  Active Mode: %s\r\n"
 #define TXT_TERM_STAT_SUSP "  Watering State: SUSPENDED (%luh %lum remaining)\r\n"
 #define TXT_TERM_STAT_SUSP_NO_RTC "  Watering State: SUSPENDED (waiting for valid clock time)"
-#define TXT_TERM_STAT_INACTIVE "  Watering State: INACTIVE (Disabled on panel)"
+#define TXT_TERM_STAT_INACTIVE "  Watering State: INACTIVE (Disabled)"
 #define TXT_TERM_STAT_AWAIT_RTC "  Watering State: STANDBY (waiting for valid clock time to schedule)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
   "  Watering State: ACTIVE (Next watering scheduled for %02d:%02d)\r\n"
@@ -575,11 +576,12 @@
 #define TXT_TERM_WIPE_CONFIRM "Continue? [y/N]"
 #define TXT_TERM_WIPING "Clearing watering history..."
 #define TXT_TERM_WIPE_OK "Watering history cleared successfully."
+#define TXT_TERM_WIPE_FAIL "Error: Failed to clear watering history."
 #define TXT_TERM_REBOOT "Restarting Lawn & Order controller..."
 #define TXT_TERM_STOP_OK "Watering stopped successfully."
 #define TXT_TERM_STOP_IDLE "No watering currently active."
 #define TXT_TERM_I2C_FOUND "Device found at 0x%02X (%s)\r\n"
-#define TXT_TERM_I2C_NONE "No I2C devices found - check SDA/SCL wiring and power"
+#define TXT_TERM_I2C_NONE "No connected devices found - check wiring and power"
 #define TXT_TERM_I2C_DONE "Scan complete: %d device(s) found\r\n"
 
 // Modes for Terminal Status & Logs
@@ -600,18 +602,25 @@
 #define TXT_SER_DOW_SAT_SHORT "Sat"
 
 // Logs
-#define TXT_LOG_UI_CONFIRM_TAG "Confirmation code: %s"
+#define TXT_LOG_UI_CONFIRM_TAG "Confirmed action: %s"
 #define TXT_LOG_UI_RESET "Factory reset requested - erasing settings and restarting"
 #define TXT_LOG_UI_SKIP_CLOCK "Clock setup skipped during initial setup"
 #define TXT_LOG_UI_UNKNOWN_ACTION "Unknown menu action ignored: '%s'"
+#define TXT_LOG_UI_BL_SEC "Display light timeout set to %lu s"
+#define TXT_LOG_UI_BL_NEVER "Display light set to stay always on"
+#define TXT_LOG_UI_ZONE_SET "Zone %d (%s) updated: %s, %u min"
+#define TXT_LOG_UI_INTERVAL_SET "Custom watering interval set to every %u day(s)"
+#define TXT_LOG_UI_CYCLES_SET "Custom daily cycles set to %u"
+#define TXT_LOG_UI_SLOT_SET "Custom cycle %d time set to %02u:%02u"
 #define TXT_LOG_DST_TOGGLED "Automatic daylight saving time %s"
 #define TXT_LOG_SUSP_SET "Automatic watering paused for %d day(s)"
 #define TXT_LOG_SUSP_CANCELED "Watering pause cancelled"
-#define TXT_LOG_REC_STATE_INV "Saved resume data invalid (zones=%u, step=%u) - discarded"
-#define TXT_LOG_REC_ZONE_INV "Saved resume data invalid (zone=%u, ms=%lu) - discarded"
-#define TXT_LOG_REC_DUR_INV "Saved resume data invalid (zone=%u, min=%u) - discarded"
+#define TXT_LOG_REC_STATE_INV "Saved resume data was invalid - discarded"
+#define TXT_LOG_REC_ZONE_INV "Saved resume data was invalid - discarded"
+#define TXT_LOG_REC_DUR_INV "Saved resume data was invalid - discarded"
 #define TXT_LOG_START_GEN "Starting %s watering: %u zone(s), %lu min total"
 #define TXT_LOG_START_NO_ZONES "Cannot start watering: no enabled zones have time > 0 min"
+#define TXT_LOG_START_INV_DUR "Cannot start watering: invalid duration (%u min)"
 #define TXT_LOG_START_CUSTOM "Starting custom watering: Zones [%s], %u min each"
 #define TXT_LOG_START_TEST_ALL "Starting test for all %d zones (%lu s each)"
 #define TXT_LOG_START_TEST_ONE "Starting test for Zone %d (%s) for %lu s"
@@ -630,8 +639,10 @@
 #define TXT_LOG_HIST_DISK_BUSY "History storage busy - record kept in temporary memory"
 #define TXT_LOG_HIST_Q_FULL "Temporary history memory full - newest record lost"
 #define TXT_LOG_HIST_ROT_START "History reached limit (%u entries) - removing old records"
-#define TXT_LOG_HIST_ROT_OPEN_FAIL "Could not start history cleanup - saved entry directly"
+#define TXT_LOG_HIST_ROT_OPEN_FAIL "Could not clean up old history - saved entry directly"
 #define TXT_LOG_HIST_FILE_ERR "Failed to save record to history file"
+#define TXT_LOG_HIST_NOT_READY "History storage is unavailable"
+#define TXT_LOG_HIST_SKIP_NO_RTC "Watering not saved to history: clock time is not set"
 #define TXT_LOG_HIST_LOGGED "Saved %s watering (%04u-%02u-%02u %02u:%02u): %s"
 #define TXT_LOG_HIST_WIPED "All history records deleted"
 #define TXT_LOG_HIST_ROT_CORRUPT_SUM "Removed %u damaged line(s) during history cleanup"
@@ -644,9 +655,10 @@
 #define TXT_TERM_HIST_EXPORT_END "--- END: %d records ---\r\n"
 #define TXT_LOG_I2C_SDA_STUCK "Device data line (SDA) still stuck - check wiring"
 #define TXT_LOG_I2C_SCAN_NONE "No connected devices found - check wiring and power"
-#define TXT_LOG_I2C_SCAN_SUMMARY "Found %u I2C device(s): %s"
-#define TXT_LOG_I2C_REC_START "Resetting stuck device connection (I2C)..."
+#define TXT_LOG_I2C_SCAN_SUMMARY "Found %u connected device(s): %s"
+#define TXT_LOG_I2C_REC_START "Resetting stuck device connection..."
 #define TXT_LOG_I2C_REC_DONE "Device connection reset complete"
+#define TXT_LOG_I2C_REC_FAIL "Device connection reset failed - check wiring"
 #define TXT_LOG_SYS_BOOT "Lawn & Order %s (built %s) starting - reason: %s"
 #define TXT_LOG_WDT_INIT_FAIL "Safety reset timer failed to start (%s)"
 #define TXT_LOG_WDT_ADD_FAIL "Failed to attach main loop to safety timer (%s)"
@@ -654,6 +666,8 @@
 #define TXT_LOG_SUSP_KEPT_NO_CLK "Watering stays paused until clock time is set"
 #define TXT_LOG_SUSP_BOOT_ACTIVE "Watering paused until %04d-%02d-%02d %02d:%02d"
 #define TXT_LOG_SYS_READY "Startup complete - controller ready"
+#define TXT_LOG_BTN_STUCK_BOOT "Control button held down at startup"
+#define TXT_LOG_SLOW_LOOP "System responded slowly (%lu s)"
 #define TXT_LOG_RTC_NOT_FOUND "Hardware clock not found - using internal clock (schedule paused until set)"
 #define TXT_LOG_RTC_BAT_LOW "Clock lost power (check battery) - please set date and time"
 #define TXT_LOG_RTC_READ_CORRUPT "Clock gave invalid date/time (%04d-%02d-%02d %02d:%02d:%02d)"
@@ -661,9 +675,11 @@
 #define TXT_LOG_RTC_HOT_DETECT "Checking for reconnected hardware clock..."
 #define TXT_LOG_RTC_HOT_FOUND "Hardware clock connected"
 #define TXT_LOG_RTC_HOT_SYNC "Clock synced from connected clock: %04d-%02d-%02d %02d:%02d:%02d"
-#define TXT_LOG_RTC_BAT_FAIL_REC "Clock lost power while running - restored time from memory"
+#define TXT_LOG_RTC_HOT_RESTORED "Restored controller time to reconnected hardware clock"
+#define TXT_LOG_RTC_BAT_FAIL_REC "Clock lost power - restored time from memory"
 #define TXT_LOG_RTC_BAT_FAIL_RAM "Clock battery failed and time is lost - please set date and time"
 #define TXT_LOG_RTC_I2C_CORRUPT "Clock gave invalid time 3 times (%04d-%02d-%02d %02d:%02d:%02d) - resetting connection"
+#define TXT_LOG_RTC_TIME_JUMP "Hardware clock time jumped unexpectedly - updated schedule"
 #define TXT_LOG_RTC_SAVE_ATTEMPT "Saving time to clock..."
 #define TXT_LOG_RTC_SAVE_OK "Time saved to clock"
 #define TXT_LOG_RTC_TIME_SET "Clock set to %04d-%02d-%02d %02d:%02d:%02d (saved to clock)"
@@ -671,7 +687,7 @@
 #define TXT_LOG_RTC_INVALID_SET "Invalid clock time rejected (%04u-%02u-%02u %02u:%02u:%02u)"
 #define TXT_LOG_SUSP_CLR_TIME_SET "Pause cleared because new time is past pause end date"
 #define TXT_LOG_SCHED_SUSP_EXP "Pause ended - automatic watering resumed"
-#define TXT_LOG_SCHED_DUP_BLOCK "Skipped repeat %02d:%02d run during clock change"
+#define TXT_LOG_SCHED_DUP_BLOCK "Skipped already-completed %02d:%02d run"
 #define TXT_LOG_SCHED_AUTO_START "Starting scheduled watering for %02d:%02d"
 #define TXT_LOG_SCHED_COLLISION_SKIP "Skipped %02d:%02d schedule - watering already running"
 #define TXT_LOG_SCHED_MODE_CHG "Schedule updated (%s) - next run at %02d:%02d"
@@ -679,20 +695,19 @@
 #define TXT_LOG_SCHED_MODE_WAIT_CLK "Mode changed to %s (waiting for valid clock time)"
 #define TXT_LOG_SCHED_CYCLE_DONE "Cycle done - next automatic run at %02d:%02d"
 #define TXT_LOG_SCHED_CYCLE_DONE_OFF "Cycle done - automatic watering is off"
-#define TXT_LOG_SCHED_REC_DUR "Skipped resume: remaining time (%lu s) outside limit (1-%lu s)"
+#define TXT_LOG_SCHED_REC_DUR "Skipped resume: remaining time (%lu min) outside limit (1-%lu min)"
 #define TXT_LOG_SCHED_REC_MODE "Skipped resume: invalid mode (%u)"
 #define TXT_LOG_SCHED_REC_BACKWARD "Skipped resume: clock time is before cycle start"
-#define TXT_LOG_SCHED_REC_AGE "Skipped resume: power was off %lu min (limit %lu min)"
+#define TXT_LOG_SCHED_REC_AGE "Skipped resume: interrupted cycle is too old (%lu min, limit %lu min)"
 #define TXT_LOG_SCHED_REC_MISSED "Skipped resume: a newer schedule already passed while powered off"
 #define TXT_LOG_SCHED_REC_GAP "Skipped resume: remaining time plus %lu min gap overlaps next schedule"
 #define TXT_LOG_SCHED_CUSTOM_DAY "Custom schedule start day set to %04d-%02d-%02d (every %u day(s))"
 #define TXT_LOG_NVS_NS_FAIL "Could not open settings storage - changes will not be saved"
 #define TXT_LOG_NVS_READY "Settings storage ready"
 #define TXT_LOG_NVS_EMPTY "No saved settings found (first boot) - using defaults"
-#define TXT_LOG_NVS_SIZE_MISMATCH "Saved settings size changed (%u vs %u bytes) - using defaults"
+#define TXT_LOG_NVS_SIZE_MISMATCH "Saved settings format changed - using defaults"
 #define TXT_LOG_NVS_VER_MISMATCH "Saved settings format v%u differs from v%u - using defaults"
 #define TXT_LOG_NVS_BOOL_INV "Saved settings had invalid on/off flags - using defaults"
-#define TXT_LOG_NVS_VAL_FAIL "Saved settings had invalid values - using defaults"
 #define TXT_LOG_NVS_LOADED "Loaded settings (Mode: %s, Paused: %s)"
 #define TXT_LOG_NVS_UPDATED "Settings saved (Mode: %s)"
 #define TXT_LOG_NVS_WRITE_FAIL "Failed to save %s"
@@ -717,15 +732,17 @@
 #define TXT_IMP_FLD_TIME "schedule slot time"
 #define TXT_NVS_RSN_SIZE "size mismatch"
 #define TXT_NVS_RSN_VER "version mismatch"
-#define TXT_NVS_RSN_BOOL "invalid active flag"
+#define TXT_NVS_RSN_BOOL "invalid on/off setting"
 #define TXT_LOG_NVS_OVERLAP "Settings rejected: custom schedule times overlap"
-#define TXT_LOG_NVS_CRC_FAIL "Data check failed for %s (got 0x%04X, expected 0x%04X) - discarded"
+#define TXT_LOG_NVS_CUSTOM_RESPACED "Custom schedule times adjusted to avoid overlap"
+#define TXT_LOG_NVS_HIST_INV "Saved history cache format changed - rebuilding"
+#define TXT_LOG_NVS_CRC_FAIL "Saved %s data was damaged - discarded"
 #define TXT_LOG_NVS_TRIG_CORRUPT "Saved schedule guard data was damaged - reset"
 #define TXT_LOG_NVS_RECV_CORRUPT "Saved resume data was damaged (%s) - discarded"
 #define TXT_LOG_NVS_IMP_ACTIVE "Import rejected while watering is running"
 #define TXT_LOG_REC_MAX_RETRY "Resume cancelled after %u failed starts (safety limit)"
 #define TXT_LOG_REC_STABLE "System ran steady for 30 s - reset failure counter"
-#define TXT_LOG_HIST_FS_PRESERVED "History storage failed to open, but backup count exists - skipped reset to keep data"
+#define TXT_LOG_HIST_FS_PRESERVED "Could not open history, kept backup data safe"
 #define TXT_LOG_HIST_PEND_REPLAY "Restored %d pending history record(s) from before power loss"
 #define TXT_LOG_TERM_REBOOT "Reboot requested via terminal - restarting"
 #define TXT_TERM_WIPE_EXPIRED "Confirmation timed out. Clear history cancelled."
@@ -746,7 +763,7 @@
 #define TXT_LOG_TAG_LCD "Ecra"
 #define TXT_LOG_TAG_UI "Interface"
 #define TXT_LOG_TAG_TERM "Terminal"
-#define TXT_LOG_TAG_I2C "Barramento I2C"
+#define TXT_LOG_TAG_I2C "Dispositivos"
 
 #define TXT_SER_YES "Sim"
 #define TXT_SER_NO "Nao"
@@ -784,6 +801,7 @@
   "Nao e possivel exportar durante a limpeza do historico"
 #define TXT_LOG_EXPORT_SUPPRESSED                                              \
   "%u mensagem(ns) ocultada(s) na exportacao (%u aviso/erro)"
+#define TXT_LOG_EXPORT_SUPPRESSED_INFO "%u mensagem(ns) ocultada(s) na exportacao"
 #define TXT_SYS_STATUS_HDR                                                     \
   "================== ESTADO DO SISTEMA =================="
 #define TXT_TERM_STAT_WAIT_ZONE                                                \
@@ -794,7 +812,7 @@
   "Predefinicoes carregadas (Modo: %s, Zonas: %d)"
 #define TXT_LOG_MEM_CLEARED "Definicoes apagadas (reposicao de fabrica)"
 #define TXT_LOG_INT_FOUND_INFO                                                 \
-  "Ciclo %s interrompido na Zona %u - a verificar retoma"
+  "Ciclo interrompido (%s, Zona %u) - a verificar retoma"
 #define TXT_LOG_RESUME_ZONE "A retomar rega na Zona %u (%s)"
 #define TXT_LOG_RTC_INVALID_RESUME "Retoma ignorada: hora do relogio invalida"
 #define TXT_LOG_REC_SKIP_SUSP "Retoma ignorada: rega automatica em pausa"
@@ -809,12 +827,12 @@
 #define TXT_LOG_NEXT_WATERING_SUSP                                             \
   "Proxima rega as %02d:%02d (%s), atualmente em pausa"
 #define TXT_LOG_NEXT_WATERING_OFF "Rega automatica desativada"
-#define TXT_LOG_LCD_READY "Ecra LCD pronto (%dx%d em 0x%02X)"
-#define TXT_LOG_LCD_INIT_FAIL "Ecra LCD nao respondeu em 0x%02X"
+#define TXT_LOG_LCD_READY "Ecra LCD pronto (%dx%d)"
+#define TXT_LOG_LCD_INIT_FAIL "Ecra LCD nao respondeu"
 #define TXT_LOG_LCD_RECOVERED "Ecra LCD voltou a responder"
 #define TXT_LOG_LCD_REC_FAIL "Ecra LCD continua sem resposta apos reiniciar ligacao"
 #define TXT_LOG_LCD_COMM_ERR "Ecra LCD falhou 3 vezes - a reiniciar ligacao"
-#define TXT_LOG_TERM_READY "Consola serie pronta a 115200 baud (digite 'help')"
+#define TXT_LOG_TERM_READY "Consola serie pronta (digite 'help')"
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - SERVICO TERMINAL                  "
 // Terminal
 #define TXT_TERM_ERR_OVERFLOW "\r\nErro: Comando demasiado longo (buffer cheio)."
@@ -832,9 +850,9 @@
 #define TXT_TERM_HELP_3_EX                                                     \
   "                               Ex: set_time 2026-05-29 15:30:00"
 #define TXT_TERM_HELP_4                                                        \
-  "  export_config                - Exporta o codigo de seguranca da configuracao atual"
+  "  export_config                - Exporta o codigo de copia das definicoes atuais"
 #define TXT_TERM_HELP_5                                                        \
-  "  import_config <72_hex>       - Restaura configuracoes a partir do codigo de 72 caracteres"
+  "  import_config <codigo>       - Restaura definicoes a partir do codigo de 72 caracteres"
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Exporta o historico de regas por Serie"
 #define TXT_TERM_HELP_7                                                        \
@@ -843,19 +861,19 @@
 #define TXT_TERM_HELP_8                                                        \
   "  reboot                       - Reinicia o controlador"
 #define TXT_TERM_HELP_9                                                        \
-  "  i2c_scan                     - Analisa o barramento de hardware I2C"
+  "  i2c_scan                     - Analisa os dispositivos de hardware ligados"
 #define TXT_TERM_HELP_10                                                       \
   "  stop                         - Para imediatamente a rega ativa"
 #define TXT_TERM_STAT_LOCAL "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\r\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
   "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d (apenas na memoria do controlador)\r\n"
-#define TXT_TERM_STAT_UTC "  Tempo Unix:  %lu (segundos UTC desde 1970)\r\n"
 #define TXT_TERM_STAT_RTC_OK "  Relogio de Hardware: Ligado e Valido"
+#define TXT_TERM_STAT_RTC_SW "  Relogio de Hardware: Desligado (a usar memoria do controlador)"
 #define TXT_TERM_STAT_RTC_ERR "  Relogio de Hardware: Desligado ou por acertar"
 #define TXT_TERM_STAT_MODE "  Modo Ativo:  %s\r\n"
 #define TXT_TERM_STAT_SUSP "  Estado Rega: SUSPENSA (Restam %luh %lum)\r\n"
 #define TXT_TERM_STAT_SUSP_NO_RTC "  Estado Rega: SUSPENSA (a aguardar hora valida do relogio)"
-#define TXT_TERM_STAT_INACTIVE "  Estado Rega: INATIVA (Desativada no painel)"
+#define TXT_TERM_STAT_INACTIVE "  Estado Rega: INATIVA (Desativada)"
 #define TXT_TERM_STAT_AWAIT_RTC "  Estado Rega: EM ESPERA (a aguardar hora valida para agendar)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
   "  Estado Rega: ATIVA (Proxima rega agendada para %02d:%02d)\r\n"
@@ -885,7 +903,7 @@
 #define TXT_TERM_EXPORT_COPY "Copie a linha abaixo para salvaguarda:"
 #define TXT_TERM_EXPORT_SEP "==============================================="
 #define TXT_TERM_ERR_IMP_FMT                                                   \
-  "Erro: Comando import_config requer o codigo de seguranca de 72 caracteres."
+  "Erro: Comando import_config requer o codigo de copia de 72 caracteres."
 #define TXT_TERM_IMP_OK                                                        \
   "Configuracoes importadas e gravadas na memoria flash."
 #define TXT_TERM_ERR_IMP_BLOB                                                  \
@@ -897,12 +915,13 @@
 #define TXT_TERM_WIPE_CONFIRM "Continuar? [y/N]"
 #define TXT_TERM_WIPING "A limpar o historico de regas..."
 #define TXT_TERM_WIPE_OK "Historico de regas limpo com sucesso."
+#define TXT_TERM_WIPE_FAIL "Erro: Falha ao apagar o historico de regas."
 #define TXT_TERM_REBOOT "A reiniciar o controlador Lawn & Order..."
 #define TXT_TERM_STOP_OK "Rega parada com sucesso."
 #define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
 #define TXT_TERM_I2C_FOUND "Dispositivo encontrado em 0x%02X (%s)\r\n"
 #define TXT_TERM_I2C_NONE                                                      \
-  "Nenhum dispositivo I2C encontrado - verifique a cablagem SDA/SCL e a alimentacao"
+  "Nenhum dispositivo encontrado - verifique cablagem e alimentacao"
 #define TXT_TERM_I2C_DONE "Analise concluida: %d dispositivo(s) encontrado(s)\r\n"
 
 // Modos para o Status do Terminal e Logs
@@ -923,19 +942,26 @@
 #define TXT_SER_DOW_SAT_SHORT "Sab"
 
 // Logs
-#define TXT_LOG_UI_CONFIRM_TAG "Codigo de confirmacao: %s"
+#define TXT_LOG_UI_CONFIRM_TAG "Acao confirmada: %s"
 #define TXT_LOG_UI_RESET "Reposicao de fabrica pedida - a apagar dados e a reiniciar"
 #define TXT_LOG_UI_SKIP_CLOCK "Acerto inicial do relogio ignorado"
 #define TXT_LOG_UI_UNKNOWN_ACTION "Acao de menu desconhecida ignorada: '%s'"
+#define TXT_LOG_UI_BL_SEC "Luz do ecra definida para %lu s"
+#define TXT_LOG_UI_BL_NEVER "Luz do ecra definida para ficar sempre ligada"
+#define TXT_LOG_UI_ZONE_SET "Zona %d (%s) atualizada: %s, %u min"
+#define TXT_LOG_UI_INTERVAL_SET "Intervalo personalizado definido para cada %u dia(s)"
+#define TXT_LOG_UI_CYCLES_SET "Ciclos diarios personalizados definidos para %u"
+#define TXT_LOG_UI_SLOT_SET "Horario do ciclo %d definido para %02u:%02u"
 #define TXT_LOG_DST_TOGGLED "Horario de verao automatico %s"
 #define TXT_LOG_SUSP_SET "Rega automatica em pausa por %d dia(s)"
 #define TXT_LOG_SUSP_CANCELED "Pausa na rega cancelada"
-#define TXT_LOG_REC_STATE_INV "Dados de retoma invalidos (zonas=%u, passo=%u) - descartados"
-#define TXT_LOG_REC_ZONE_INV "Dados de retoma invalidos (zona=%u, ms=%lu) - descartados"
-#define TXT_LOG_REC_DUR_INV "Dados de retoma invalidos (zona=%u, min=%u) - descartados"
+#define TXT_LOG_REC_STATE_INV "Dados de retoma invalidos - descartados"
+#define TXT_LOG_REC_ZONE_INV "Dados de retoma invalidos - descartados"
+#define TXT_LOG_REC_DUR_INV "Dados de retoma invalidos - descartados"
 #define TXT_LOG_START_GEN "A iniciar rega %s: %u zona(s), %lu min no total"
 #define TXT_LOG_START_NO_ZONES                                                 \
   "Impossivel iniciar rega: nenhuma zona ativa com tempo > 0 min"
+#define TXT_LOG_START_INV_DUR "Impossivel iniciar rega: duracao invalida (%u min)"
 #define TXT_LOG_START_CUSTOM "A iniciar rega personalizada: Zonas [%s], %u min cada"
 #define TXT_LOG_START_TEST_ALL "A iniciar teste para todas as %d zonas (%lu s cada)"
 #define TXT_LOG_START_TEST_ONE "A iniciar teste para Zona %d (%s) por %lu s"
@@ -963,8 +989,11 @@
 #define TXT_LOG_HIST_ROT_START                                                 \
   "Historico atingiu o limite (%u registos) - a limpar antigos"
 #define TXT_LOG_HIST_ROT_OPEN_FAIL                                             \
-  "Falha ao iniciar limpeza do historico - registo adicionado"
+  "Falha ao limpar historico antigo - registo guardado"
 #define TXT_LOG_HIST_FILE_ERR "Falha ao gravar registo no ficheiro de historico"
+#define TXT_LOG_HIST_NOT_READY "Armazenamento do historico indisponivel"
+#define TXT_LOG_HIST_SKIP_NO_RTC                                               \
+  "Rega nao guardada no historico: hora do relogio nao definida"
 #define TXT_LOG_HIST_LOGGED "Registo %s guardado (%04u-%02u-%02u %02u:%02u): %s"
 #define TXT_LOG_HIST_WIPED "Todos os registos do historico apagados"
 #define TXT_LOG_HIST_ROT_CORRUPT_SUM                                           \
@@ -983,10 +1012,12 @@
   "Linha de dados (SDA) ainda bloqueada - verifique a cablagem"
 #define TXT_LOG_I2C_SCAN_NONE                                                  \
   "Nenhum dispositivo encontrado - verifique cabos e alimentacao"
-#define TXT_LOG_I2C_SCAN_SUMMARY "Encontrado(s) %u dispositivo(s) I2C: %s"
+#define TXT_LOG_I2C_SCAN_SUMMARY "Encontrado(s) %u dispositivo(s) ligado(s): %s"
 #define TXT_LOG_I2C_REC_START                                                  \
-  "A reiniciar ligacao bloqueada aos dispositivos (I2C)..."
+  "A reiniciar ligacao bloqueada aos dispositivos..."
 #define TXT_LOG_I2C_REC_DONE "Ligacao aos dispositivos restabelecida"
+#define TXT_LOG_I2C_REC_FAIL                                                   \
+  "Falha ao restabelecer ligacao aos dispositivos - verifique cablagem"
 #define TXT_LOG_SYS_BOOT                                                       \
   "Lawn & Order %s (compilado %s) a iniciar - motivo: %s"
 #define TXT_LOG_WDT_INIT_FAIL                                                  \
@@ -999,6 +1030,8 @@
 #define TXT_LOG_SUSP_BOOT_ACTIVE                                               \
   "Rega em pausa ate %04d-%02d-%02d %02d:%02d"
 #define TXT_LOG_SYS_READY "Arranque concluido - controlador pronto"
+#define TXT_LOG_BTN_STUCK_BOOT "Botao de controlo bloqueado no arranque"
+#define TXT_LOG_SLOW_LOOP "Sistema respondeu lentamente (%lu s)"
 #define TXT_LOG_RTC_NOT_FOUND                                                  \
   "Relogio externo nao encontrado - a usar relogio interno (agendamento em pausa ate acerto)"
 #define TXT_LOG_RTC_BAT_LOW                                                    \
@@ -1011,12 +1044,16 @@
 #define TXT_LOG_RTC_HOT_FOUND "Relogio de hardware ligado"
 #define TXT_LOG_RTC_HOT_SYNC                                                   \
   "Relogio sincronizado com modulo ligado: %04d-%02d-%02d %02d:%02d:%02d"
+#define TXT_LOG_RTC_HOT_RESTORED                                               \
+  "Hora do controlador reposta no relogio de hardware ligado"
 #define TXT_LOG_RTC_BAT_FAIL_REC                                               \
-  "Relogio perdeu energia - hora reposta a partir da memoria"
+  "Relogio perdeu energia - hora reposta da memoria"
 #define TXT_LOG_RTC_BAT_FAIL_RAM                                               \
   "Pilha do relogio falhou e a hora foi perdida - acerte a data e hora"
 #define TXT_LOG_RTC_I2C_CORRUPT                                                \
   "Relogio deu leituras invalidas 3 vezes (%04d-%02d-%02d %02d:%02d:%02d) - a reiniciar ligacao"
+#define TXT_LOG_RTC_TIME_JUMP                                                  \
+  "Hora do relogio saltou inesperadamente - agendamento atualizado"
 #define TXT_LOG_RTC_SAVE_ATTEMPT "A gravar hora no relogio..."
 #define TXT_LOG_RTC_SAVE_OK "Hora gravada no relogio"
 #define TXT_LOG_RTC_TIME_SET                                                   \
@@ -1029,7 +1066,7 @@
   "Pausa limpa porque a nova hora ultrapassa a data de fim"
 #define TXT_LOG_SCHED_SUSP_EXP "Pausa terminou - rega automatica reativada"
 #define TXT_LOG_SCHED_DUP_BLOCK                                                \
-  "Rega repetida das %02d:%02d ignorada na mudanca de hora"
+  "Rega das %02d:%02d ja concluida - ignorada"
 #define TXT_LOG_SCHED_AUTO_START "A iniciar rega agendada para %02d:%02d"
 #define TXT_LOG_SCHED_COLLISION_SKIP                                           \
   "Horario %02d:%02d ignorado - ja existe uma rega ativa"
@@ -1044,12 +1081,12 @@
 #define TXT_LOG_SCHED_CYCLE_DONE_OFF                                           \
   "Ciclo concluido - rega automatica desativada"
 #define TXT_LOG_SCHED_REC_DUR                                                  \
-  "Retoma ignorada: tempo restante (%lu s) fora do limite (1-%lu s)"
+  "Retoma ignorada: tempo restante (%lu min) fora do limite (1-%lu min)"
 #define TXT_LOG_SCHED_REC_MODE "Retoma ignorada: modo invalido (%u)"
 #define TXT_LOG_SCHED_REC_BACKWARD                                             \
   "Retoma ignorada: hora atual anterior ao inicio do ciclo"
 #define TXT_LOG_SCHED_REC_AGE                                                  \
-  "Retoma ignorada: corte durou %lu min (limite %lu min)"
+  "Retoma ignorada: ciclo interrompido antigo demais (%lu min, limite %lu min)"
 #define TXT_LOG_SCHED_REC_MISSED                                               \
   "Retoma ignorada: passou um horario mais recente sem energia"
 #define TXT_LOG_SCHED_REC_GAP                                                  \
@@ -1062,13 +1099,11 @@
 #define TXT_LOG_NVS_EMPTY                                                      \
   "Sem definicoes guardadas (primeiro arranque) - a usar predefinicoes"
 #define TXT_LOG_NVS_SIZE_MISMATCH                                              \
-  "Tamanho das definicoes mudou (%u vs %u bytes) - a usar predefinicoes"
+  "Formato das definicoes mudou - a usar predefinicoes"
 #define TXT_LOG_NVS_VER_MISMATCH                                               \
   "Formato guardado v%u diferente de v%u - a usar predefinicoes"
 #define TXT_LOG_NVS_BOOL_INV                                                   \
   "Definicoes tinham opcoes invalidas - a usar predefinicoes"
-#define TXT_LOG_NVS_VAL_FAIL                                                   \
-  "Definicoes guardadas tinham valores invalidos - a usar predefinicoes"
 #define TXT_LOG_NVS_LOADED "Definicoes carregadas (Modo: %s, Pausa: %s)"
 #define TXT_LOG_NVS_UPDATED "Definicoes guardadas (Modo: %s)"
 #define TXT_LOG_NVS_WRITE_FAIL "Falha ao guardar %s"
@@ -1080,7 +1115,7 @@
 #define TXT_LOG_NVS_IMP_INV_LEN                                                \
   "Importacao rejeitada: recebeu %u caracteres, precisa de %u"
 #define TXT_LOG_NVS_IMP_BAD_HEX                                                \
-  "Importacao rejeitada: carater invalido na posicao %u"
+  "Importacao rejeitada: caractere invalido na posicao %u"
 #define TXT_LOG_NVS_IMP_BAD_BOOL                                               \
   "Importacao rejeitada: valor verdadeiro/falso invalido"
 #define TXT_LOG_NVS_IMP_INV_VER                                                \
@@ -1102,8 +1137,12 @@
 #define TXT_NVS_RSN_BOOL "estado invalido"
 #define TXT_LOG_NVS_OVERLAP                                                    \
   "Definicoes rejeitadas: horarios personalizados sobrepoem-se"
+#define TXT_LOG_NVS_CUSTOM_RESPACED                                            \
+  "Horarios personalizados ajustados para evitar sobreposicao"
+#define TXT_LOG_NVS_HIST_INV                                                   \
+  "Memoria rapida do historico incompativel - a reconstruir"
 #define TXT_LOG_NVS_CRC_FAIL                                                   \
-  "Verificacao falhou para %s (obtido 0x%04X, esperado 0x%04X) - descartado"
+  "Dados guardados (%s) danificados - descartados"
 #define TXT_LOG_NVS_TRIG_CORRUPT                                               \
   "Dados de protecao de horario danificados - repostos"
 #define TXT_LOG_NVS_RECV_CORRUPT                                               \
@@ -1114,7 +1153,7 @@
 #define TXT_LOG_REC_STABLE                                                     \
   "Sistema estavel durante 30 s - contador de falhas limpo"
 #define TXT_LOG_HIST_FS_PRESERVED                                              \
-  "Falha ao abrir historico, mas existe contagem guardada - limpeza evitada para proteger dados"
+  "Falha ao abrir historico - dados protegidos"
 #define TXT_LOG_HIST_PEND_REPLAY                                               \
   "Recuperado(s) %d registo(s) do historico pendentes antes da falha de energia"
 #define TXT_LOG_TERM_REBOOT "Reinicio pedido via terminal - a reiniciar"
