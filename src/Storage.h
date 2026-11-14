@@ -92,7 +92,8 @@ public:
     bool save();
 
     // Erase the entire NVS namespace (factory reset).
-    void clear();
+    // Returns false if NVS is unavailable or the erase fails.
+    bool clear();
 
     // Persist atomic CRC-protected history cache (`hblob`) to NVS
     bool loadHistoryCache(void* dest, size_t size, uint16_t& lineCount, uint32_t* outFileSize = nullptr);

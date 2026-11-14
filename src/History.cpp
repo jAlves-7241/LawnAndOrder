@@ -13,9 +13,6 @@ History history;
 static const char* HIST_TMP_FILE     = "/hist_tmp.csv";
 static const char* HIST_PENDING_FILE = "/hist_pend.txt";
 
-// Flag global para suspensão temporária de logs durante exportação Serial
-bool _log_suspended = false;
-
 static bool _isValidCachedEntry(const HistoryEntry& e) {
     if (e.year < 2020 || e.year > 2099) return false;
     if (e.month < 1 || e.month > 12 || e.day < 1 || e.day > 31) return false;
@@ -53,6 +50,7 @@ bool History::begin(bool formatOnFail) {
     if (_exportFile) _exportFile.close();
     _rotState = RotState::IDLE;
     _exportState = ExportState::IDLE;
+    _exportReadErr = false;
     _pendingCacheSave = false;
     _rotWriteErr = false;
     _rotLineOverflow = false;
@@ -68,8 +66,10 @@ bool History::begin(bool formatOnFail) {
         // Retry once before considering format
         _ready = LittleFS.begin(false);
     }
+    bool formatAttempted = false;
     if (!_ready) {
         if (formatOnFail && !storage.hasHistoryData()) {
+            formatAttempted = true;
             _ready = LittleFS.begin(true); // nothing to lose
             if (_ready) {
                 LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
@@ -82,7 +82,9 @@ bool History::begin(bool formatOnFail) {
     }
 
     if (!_ready) {
-        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_MOUNT_FAIL);
+        if (!formatAttempted) {
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_MOUNT_FAIL);
+        }
         _lineCount = 0;
         _cacheCount = 0;
     } else {
@@ -96,14 +98,21 @@ bool History::begin(bool formatOnFail) {
             size_t linePos = 0;
             bool overflow = false;
             int replayed = 0;
+            bool replayWriteFailed = false;
             auto replayLine = [&](char* p) {
                 if (strlen(p) == 0) return;
                 HistoryEntry tmp = {};
                 if (_lineToEntry(p, tmp)) {
                     File dst = LittleFS.open(HISTORY_FILE, "a");
                     if (dst) {
-                        if (dst.println(p) > 0) replayed++;
+                        if (dst.println(p) > 0) {
+                            replayed++;
+                        } else {
+                            replayWriteFailed = true;
+                        }
                         dst.close();
+                    } else {
+                        replayWriteFailed = true;
                     }
                 }
             };
@@ -131,7 +140,11 @@ bool History::begin(bool formatOnFail) {
                 replayLine(p);
             }
             pendFile.close();
-            LittleFS.remove(HIST_PENDING_FILE);
+            if (replayWriteFailed) {
+                LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
+            } else {
+                LittleFS.remove(HIST_PENDING_FILE);
+            }
             if (replayed > 0) {
                 replayedPending = true;
                 LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_PEND_REPLAY, replayed);
@@ -202,12 +215,22 @@ bool History::begin(bool formatOnFail) {
 
 // ─────────────────────────────────────────────────────────
 void History::record(const HistoryEntry& entry) {
-    if (!_ready)                              return;
     if (entry.trigger == WaterTrigger::TEST)  return;
-    if (!gState.rtc_valid)                    return;
+    if (!_ready) {
+        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+        return;
+    }
+    if (!gState.rtc_valid) {
+        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_SKIP_NO_RTC);
+        return;
+    }
 
     if (_rotState != RotState::IDLE || _exportState != ExportState::IDLE) {
-        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_DISK_BUSY);
+        if (_rotState != RotState::IDLE) {
+            LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_DISK_BUSY);
+        } else {
+            LOG_D(TXT_LOG_TAG_HIST, TXT_LOG_HIST_DISK_BUSY);
+        }
         uint8_t nextHead = (_defHead + 1) % 4;
         if (nextHead != _defTail) {
             _deferredQueue[_defHead] = entry;
@@ -288,8 +311,11 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
     return n;
 }
 
-void History::clear() {
-    if (!_ready) return;
+bool History::clear() {
+    if (!_ready) {
+        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+        return false;
+    }
     
     if (_rotState != RotState::IDLE) {
         if (_rotSrc) _rotSrc.close();
@@ -301,13 +327,17 @@ void History::clear() {
     if (_exportState != ExportState::IDLE) {
         if (_exportFile) _exportFile.close();
         _exportState = ExportState::IDLE;
+        _exportReadErr = false;
         _log_suspended = false;
         _log_suppressed_total = 0;
         _log_suppressed_warn_err = 0;
     }
     
     LittleFS.remove(HIST_PENDING_FILE);
-    LittleFS.remove(HISTORY_FILE);
+    if (LittleFS.exists(HISTORY_FILE) && !LittleFS.remove(HISTORY_FILE)) {
+        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
+        return false;
+    }
     _lineCount = 0;
     _cacheCount = 0;
     _pendingCacheSave = false;
@@ -317,6 +347,7 @@ void History::clear() {
     for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = HistoryEntry{};
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, 0);
     LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_WIPED);
+    return true;
 }
 
 uint16_t History::entryCount() const { return _lineCount; }
@@ -525,28 +556,33 @@ void History::_rotateAndAppend(const char* newLine) {
         _rotDiscard = step;
     }
 
-    _rotSrc = LittleFS.open(HISTORY_FILE, "r");
-    if (!_rotSrc) {
-        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_ROT_OPEN_FAIL);
-        // Se falhar, tentamos apenas adicionar
+    auto fallbackAppend = [&]() {
         File f = LittleFS.open(HISTORY_FILE, "a");
+        bool wrote = false;
         if (f) {
-            if (f.println(newLine) > 0) _lineCount++;
+            if (f.println(newLine) > 0) {
+                _lineCount++;
+                wrote = true;
+            }
             f.close();
         }
+        if (wrote) {
+            LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_ROT_OPEN_FAIL);
+        } else {
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
+        }
+    };
+
+    _rotSrc = LittleFS.open(HISTORY_FILE, "r");
+    if (!_rotSrc) {
+        fallbackAppend();
         return;
     }
 
     _rotDst = LittleFS.open(HIST_TMP_FILE, "w");
     if (!_rotDst) {
         _rotSrc.close();
-        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_ROT_OPEN_FAIL);
-        // Fallback: append directly if we can't create tmp file
-        File f = LittleFS.open(HISTORY_FILE, "a");
-        if (f) {
-            if (f.println(newLine) > 0) _lineCount++;
-            f.close();
-        }
+        fallbackAppend();
         return;
     }
 
@@ -715,8 +751,11 @@ void History::update() {
                 }
             }
         } else {
-            // EOF — process last line if no trailing newline
-            if (_exportLinePos > 0) {
+            if (bytesRead < 0 || _exportFile.available() > 0) {
+                _exportReadErr = true;
+                _exportLinePos = 0; // discard incomplete partial line
+            } else if (_exportLinePos > 0) {
+                // EOF — process last line if no trailing newline
                 _exportLineBuf[_exportLinePos] = '\0';
                 while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
                     _exportLineBuf[--_exportLinePos] = '\0';
@@ -736,10 +775,23 @@ void History::update() {
         _exportFile.close();
         Serial.printf(TXT_TERM_HIST_EXPORT_END, _exportSent);
         _log_suspended = false;
-        if (_log_suppressed_total > 0) {
+        if (_exportReadErr) {
+            _exportReadErr = false;
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
+        }
+        if (_log_suppressed_warn_err > 0) {
+#if LOG_LEVEL >= LVL_WARN
             LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_EXPORT_SUPPRESSED,
                   (unsigned)_log_suppressed_total,
                   (unsigned)_log_suppressed_warn_err);
+#elif LOG_LEVEL == LVL_ERROR
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_EXPORT_SUPPRESSED,
+                  (unsigned)_log_suppressed_total,
+                  (unsigned)_log_suppressed_warn_err);
+#endif
+        } else if (_log_suppressed_total > 0) {
+            LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_EXPORT_SUPPRESSED_INFO,
+                  (unsigned)_log_suppressed_total);
         }
         _log_suppressed_total = 0;
         _log_suppressed_warn_err = 0;
@@ -758,23 +810,32 @@ void History::update() {
 // Serial Export
 // ─────────────────────────────────────────────────────────
 
-void History::startExport() {
-    if (!_ready || _lineCount == 0) return;
-    if (_exportState != ExportState::IDLE) return;
+bool History::startExport(bool announce) {
+    if (!_ready) {
+        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+        return false;
+    }
+    if (_lineCount == 0) return false;
+    if (_exportState != ExportState::IDLE) return false;
     if (_rotState != RotState::IDLE) {
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_NO_EXPORT_ROT);
-        return;
+        return false;
     }
 
     _exportFile = LittleFS.open(HISTORY_FILE, "r");
     if (!_exportFile) {
         LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_EXPORT_FAIL);
-        return;
+        return false;
     }
 
     _exportSent = 0;
     _exportTotal = _lineCount;
     _exportLinePos = 0;
+    _exportReadErr = false;
+
+    if (announce) {
+        Serial.println(TXT_LOG_START_EXPORT);
+    }
 
     // Suspender logs temporariamente para evitar corromper o output CSV no serial
     _log_suppressed_total = 0;
@@ -787,6 +848,7 @@ void History::startExport() {
     Serial.println(TXT_TERM_HIST_CSV_HDR);
 
     _exportState = ExportState::SENDING;
+    return true;
 }
 
 bool History::isExporting() const {

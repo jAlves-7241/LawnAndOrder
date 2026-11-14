@@ -10,6 +10,7 @@ static const char* NVS_NS       = "rega";
 static const char* KEY_CFG      = "cfg";
 static const char* KEY_HBLOB    = "hblob";
 static const char* KEY_SCHED_TR = "sched_tr";
+static const char* KEY_RECV     = "recv";
 static const size_t HIST_CACHE_MAX_BYTES = 256;
 
 struct __attribute__((packed)) HistoryNvsHeader {
@@ -136,8 +137,7 @@ bool Storage::load() {
         return false;
     }
     if (readBytes != sizeof(blob)) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH,
-              (unsigned)readBytes, (unsigned)sizeof(blob));
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
         return false;
     }
     if (blob.version != NVS_VERSION) {
@@ -153,13 +153,11 @@ bool Storage::load() {
     uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
                                   offsetof(AppConfigBlob, crc16));
     if (blob.crc16 != expectedCrc) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL,
-              TXT_LOG_NVS_PART_CFG, (unsigned)blob.crc16, (unsigned)expectedCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
 
     if (!_blobToState(blob)) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_VAL_FAIL);
         return false;
     }
 
@@ -171,7 +169,10 @@ bool Storage::load() {
 
 // ─────────────────────────────────────────────────────────
 bool Storage::save() {
-    if (!_ready) return false;
+    if (!_ready) {
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
+        return false;
+    }
 
     for (int i = 0; i < NUM_ZONES; i++) {
         if (gState.zones[i].duration_min == 0) {
@@ -201,10 +202,17 @@ bool Storage::save() {
 
 
 // ─────────────────────────────────────────────────────────
-void Storage::clear() {
-    if (!_ready) return;
-    prefs.clear();   // erases all keys in the namespace
+bool Storage::clear() {
+    if (!_ready) {
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_NS_FAIL);
+        return false;
+    }
+    if (!prefs.clear()) {   // erases all keys in the namespace
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
+        return false;
+    }
     LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_MEM_CLEARED);
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -216,18 +224,24 @@ bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount, uin
     const size_t expectedLen = sizeof(HistoryNvsHeader) + size + sizeof(uint16_t);
     uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
     size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, sizeof(buf));
-    if (readBytes != expectedLen) return false;
+    if (readBytes == 0) return false;
+    if (readBytes != expectedLen) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_HIST_INV);
+        return false;
+    }
 
     HistoryNvsHeader hdr = {};
     memcpy(&hdr, buf, sizeof(hdr));
-    if (hdr.version != NVS_VERSION || hdr.dataSize != size) return false;
+    if (hdr.version != NVS_VERSION || hdr.dataSize != size) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_HIST_INV);
+        return false;
+    }
 
     uint16_t storedCrc = 0;
     memcpy(&storedCrc, buf + sizeof(hdr) + size, sizeof(storedCrc));
     uint16_t calcCrc = _crc16(buf, sizeof(hdr) + size);
     if (storedCrc != calcCrc) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL,
-              TXT_LOG_NVS_PART_HIST, (unsigned)storedCrc, (unsigned)calcCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_HIST);
         return false;
     }
 
@@ -259,7 +273,7 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount,
         return;
     }
 
-    if (prefs.putBytes(KEY_HBLOB, buf, totalLen) == 0) {
+    if (prefs.putBytes(KEY_HBLOB, buf, totalLen) != totalLen) {
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_HIST);
     }
 }
@@ -301,8 +315,7 @@ bool Storage::loadLastTriggers(uint32_t* out, size_t count) {
     uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
                                   offsetof(SchedTriggersBlob, crc16));
     if (blob.crc16 != expectedCrc) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL,
-              TXT_LOG_NVS_PART_TRIG, (unsigned)blob.crc16, (unsigned)expectedCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_TRIG);
         return false;
     }
 
@@ -330,7 +343,7 @@ void Storage::saveLastTriggers(const uint32_t* in, size_t count) {
         return;
     }
 
-    if (prefs.putBytes(KEY_SCHED_TR, &blob, sizeof(blob)) == 0) {
+    if (prefs.putBytes(KEY_SCHED_TR, &blob, sizeof(blob)) != sizeof(blob)) {
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_TRIG);
     }
 }
@@ -338,7 +351,7 @@ void Storage::saveLastTriggers(const uint32_t* in, size_t count) {
 // ─────────────────────────────────────────────────────────
 bool Storage::loadRecoveryState(RecoveryState& rs) {
     if (!_ready) return false;
-    size_t readBytes = prefs.getBytes("recv", &rs, sizeof(rs));
+    size_t readBytes = prefs.getBytes(KEY_RECV, &rs, sizeof(rs));
     if (readBytes == 0) return false;
     if (readBytes != sizeof(rs)) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_SIZE);
@@ -364,9 +377,9 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
     copy.version = NVS_VERSION;
     
     RecoveryState current = {};
-    if (prefs.getBytes("recv", &current, sizeof(current)) != sizeof(current) ||
+    if (prefs.getBytes(KEY_RECV, &current, sizeof(current)) != sizeof(current) ||
         memcmp(&copy, &current, sizeof(copy)) != 0) {
-        if (prefs.putBytes("recv", &copy, sizeof(copy)) == 0) {
+        if (prefs.putBytes(KEY_RECV, &copy, sizeof(copy)) != sizeof(copy)) {
             LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_RECV);
         }
     }
@@ -435,8 +448,7 @@ bool Storage::importConfigHex(const char* hexIn) {
     uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
                                   offsetof(AppConfigBlob, crc16));
     if (blob.crc16 != expectedCrc) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL,
-              TXT_LOG_NVS_PART_IMP, (unsigned)blob.crc16, (unsigned)expectedCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_IMP);
         return false;
     }
 
@@ -604,6 +616,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
                     }
                 }
             }
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CUSTOM_RESPACED);
         }
     }
 
