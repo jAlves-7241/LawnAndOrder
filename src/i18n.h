@@ -434,6 +434,7 @@
 #define TXT_LOG_TAG_HIST "History"
 #define TXT_LOG_TAG_LCD "Display"
 #define TXT_LOG_TAG_UI "Interface"
+#define TXT_LOG_TAG_TERM "Terminal"
 #define TXT_LOG_TAG_I2C "I2C Bus"
 
 #define TXT_SER_YES "Yes"
@@ -471,9 +472,8 @@
 #define TXT_LOG_NO_EXPORT_ROT "Cannot export history while file compaction is running"
 #define TXT_LOG_EXPORT_SUPPRESSED "%u diagnostic log message(s) (%u warning/error) occurred during CSV export and were hidden"
 #define TXT_SYS_STATUS_HDR "================== SYSTEM STATUS =================="
-#define TXT_LOG_WAIT_ZONE_TRANS                                                \
-  "Waiting for zone transition (currently Zone %d)\n"
-#define TXT_LOG_WATERING_PROG "Watering Zone %d - Progress: %d%%\n"
+#define TXT_TERM_STAT_WAIT_ZONE "Waiting between zones (next is Zone %d)\r\n"
+#define TXT_TERM_STAT_WATER_PROG "Watering Zone %d - Progress: %d%%\r\n"
 #define TXT_SETUP_DONE_LOG "Initial setup wizard completed by user"
 #define TXT_LOG_DEFAULTS_LOADED "Initialized default settings in memory (Mode: %s, Zones: %d)"
 #define TXT_LOG_MEM_CLEARED "All saved settings cleared from flash storage (factory reset)"
@@ -494,13 +494,13 @@
 #define TXT_LOG_LCD_RECOVERED "LCD display communication restored"
 #define TXT_LOG_LCD_REC_FAIL "LCD display still unreachable after I2C bus recovery"
 #define TXT_LOG_LCD_COMM_ERR "LCD communication failed 3 times in a row - starting I2C bus recovery"
-#define TXT_LOG_TERM_READY "Serial command terminal activated at 115200 baud."
+#define TXT_LOG_TERM_READY "Serial command console ready at 115200 baud (type 'help' for commands)"
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - TERMINAL SERVICE                  "
 // Terminal
-#define TXT_TERM_ERR_OVERFLOW "\n[ERROR: Command too long]"
+#define TXT_TERM_ERR_OVERFLOW "\r\nError: Command too long (buffer full)."
 #define TXT_TERM_CANCELLED "Operation cancelled."
 #define TXT_TERM_UNKNOWN_CMD                                                   \
-  "Unknown command: '%s'. Type 'help' or '?' to see the command list.\n"
+  "Unknown command: '%s'. Type 'help' or '?' to see the command list.\r\n"
 #define TXT_TERM_HELP_TITLE "Available Commands:"
 #define TXT_TERM_HELP_1 "  help, ?                      - Show this help menu"
 #define TXT_TERM_HELP_2                                                        \
@@ -510,68 +510,75 @@
 #define TXT_TERM_HELP_3_EX                                                     \
   "                               Ex: set_time 2026-05-29 15:30:00"
 #define TXT_TERM_HELP_4                                                        \
-  "  export_config                - Export current config (Hex Blob)"
+  "  export_config                - Export current configuration backup code"
 #define TXT_TERM_HELP_5                                                        \
-  "  import_config <72_hex>       - Import config from Hex Blob"
+  "  import_config <72_hex>       - Restore configuration from 72-char backup code"
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Export watering history over Serial"
 #define TXT_TERM_HELP_7                                                        \
-  "  clear_history                - Completely wipe system watering history"
+  "  clear_history                - Permanently delete system watering history"
 #define TXT_TERM_HELP_8                                                        \
-  "  reboot                       - Restart the ESP32 controller"
+  "  reboot                       - Restart the controller"
 #define TXT_TERM_HELP_9                                                        \
-  "  i2c_scan                     - Run an I2C bus scan"
+  "  i2c_scan                     - Scan the I2C hardware bus for devices"
 #define TXT_TERM_HELP_10                                                       \
-  "  stop                         - Immediately abort active watering"
-#define TXT_TERM_STAT_LOCAL "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d\n"
+  "  stop                         - Immediately stop active watering"
+#define TXT_TERM_STAT_LOCAL "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d\r\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
-  "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n"
-#define TXT_TERM_STAT_UTC "  Epoch UTC:   %lu (seconds since 1970)\n"
-#define TXT_TERM_STAT_RTC_OK "  Hardware RTC: Connected & Valid [OK]"
-#define TXT_TERM_STAT_RTC_ERR "  Hardware RTC: Disconnected/Invalid [FAIL]"
-#define TXT_TERM_STAT_MODE "  Active Mode: %s\n"
-#define TXT_TERM_STAT_SUSP "  Watering State: SUSPENDED (%luh %lum remaining)\n"
-#define TXT_TERM_STAT_SUSP_NO_RTC "  Watering State: SUSPENDED (awaiting valid RTC time)"
+  "  Local Time:  %04d-%02d-%02d %02d:%02d:%02d (controller memory only)\r\n"
+#define TXT_TERM_STAT_UTC "  Unix Time:   %lu (UTC seconds since 1970)\r\n"
+#define TXT_TERM_STAT_RTC_OK "  Hardware Clock: Connected & Valid"
+#define TXT_TERM_STAT_RTC_ERR "  Hardware Clock: Disconnected or needs setting"
+#define TXT_TERM_STAT_MODE "  Active Mode: %s\r\n"
+#define TXT_TERM_STAT_SUSP "  Watering State: SUSPENDED (%luh %lum remaining)\r\n"
+#define TXT_TERM_STAT_SUSP_NO_RTC "  Watering State: SUSPENDED (waiting for valid clock time)"
 #define TXT_TERM_STAT_INACTIVE "  Watering State: INACTIVE (Disabled on panel)"
-#define TXT_TERM_STAT_AWAIT_RTC "  Watering State: STANDBY (awaiting valid time to schedule)"
+#define TXT_TERM_STAT_AWAIT_RTC "  Watering State: STANDBY (waiting for valid clock time to schedule)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
-  "  Watering State: ACTIVE (Next watering scheduled for %02d:%02d)\n"
+  "  Watering State: ACTIVE (Next watering scheduled for %02d:%02d)\r\n"
 #define TXT_TERM_STAT_ZONES "  Watering Zones:"
-#define TXT_TERM_STAT_Z_FMT "    Z%d: [%s] Duration: %d min - Name: %.11s\n"
+#define TXT_TERM_STAT_Z_FMT "    Zone %d: [%s] Duration: %d min - Name: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Active Watering: "
 #define TXT_TERM_STAT_ACT_NO "No"
 #define TXT_TERM_STAT_SEP                                                      \
   "======================================================="
 #define TXT_TERM_ERR_SET_TIME_ARGS                                             \
-  "Error: set_time command requires arguments: set_time YYYY-MM-DD HH:MM:SS"
+  "Error: set_time requires arguments: set_time YYYY-MM-DD HH:MM:SS"
 #define TXT_TERM_ERR_FORMAT                                                    \
   "Error: Invalid date/time format. Use: set_time YYYY-MM-DD HH:MM:SS"
-#define TXT_TERM_ERR_YEAR "Error: Year outside supported range [%d - %d].\n"
+#define TXT_TERM_ERR_YEAR "Error: Year outside supported range [%d - %d].\r\n"
 #define TXT_TERM_ERR_MONTH "Error: Month must be between 1 and 12."
 #define TXT_TERM_ERR_DAY                                                       \
   "Error: Invalid day for the specified month and year (%d/%d/%04d). The "     \
-  "limit is %d days.\n"
+  "limit is %d days.\r\n"
 #define TXT_TERM_ERR_HOUR "Error: Hour must be between 0 and 23."
 #define TXT_TERM_ERR_MIN "Error: Minute must be between 0 and 59."
 #define TXT_TERM_ERR_SEC "Error: Second must be between 0 and 59."
 #define TXT_TERM_TIME_SET                                                      \
-  "Time successfully set to: %04d-%02d-%02d %02d:%02d:%02d\n"
+  "Time set to %04d-%02d-%02d %02d:%02d:%02d (saved to hardware clock).\r\n"
+#define TXT_TERM_TIME_SET_SW                                                   \
+  "Warning: Hardware clock unavailable. Time set to %04d-%02d-%02d %02d:%02d:%02d in controller memory only.\r\n"
 #define TXT_TERM_EXPORT_HDR "=== LAWN&ORDER CONFIG EXPORT ==="
 #define TXT_TERM_EXPORT_COPY "Copy the line below for backup:"
 #define TXT_TERM_EXPORT_SEP "==============================================="
 #define TXT_TERM_ERR_IMP_FMT                                                   \
-  "Error: import_config command requires the corresponding hex string."
-#define TXT_TERM_IMP_OK "Config imported and saved to NVS successfully!"
+  "Error: import_config command requires the 72-character backup code."
+#define TXT_TERM_IMP_OK "Configuration imported and saved to flash storage."
 #define TXT_TERM_ERR_IMP_BLOB                                                  \
-  "Error: Hex Blob import failed. Check string integrity."
+  "Error: Configuration import failed. Check backup code formatting and integrity."
+#define TXT_TERM_ERR_IMP_ACTIVE                                                \
+  "Error: Cannot import configuration while watering is active. Stop watering first."
 #define TXT_TERM_WIPE_WARN                                                     \
   "WARNING: Are you sure you want to permanently delete history?"
 #define TXT_TERM_WIPE_CONFIRM "Continue? [y/N]"
 #define TXT_TERM_WIPING "Clearing watering history..."
-#define TXT_TERM_WIPE_OK "Watering history cleared successfully!"
+#define TXT_TERM_WIPE_OK "Watering history cleared successfully."
 #define TXT_TERM_REBOOT "Restarting Lawn & Order controller..."
 #define TXT_TERM_STOP_OK "Watering stopped successfully."
 #define TXT_TERM_STOP_IDLE "No watering currently active."
+#define TXT_TERM_I2C_FOUND "Device found at 0x%02X (%s)\r\n"
+#define TXT_TERM_I2C_NONE "No I2C devices found - check SDA/SCL wiring and power"
+#define TXT_TERM_I2C_DONE "Scan complete: %d device(s) found\r\n"
 
 // Modes for Terminal Status & Logs
 #define TXT_TERM_MODE_INTENSE "Intense"
@@ -633,10 +640,8 @@
 #define TXT_TERM_HIST_CSV_HDR "Date,Type,Z1(min),Z2(min),Z3(min),Z4(min)"
 #define TXT_TERM_HIST_EMPTY "History is empty."
 #define TXT_TERM_HIST_EXPORT_END "--- END: %d records ---\r\n"
-#define TXT_LOG_I2C_SCAN_FOUND "Device found at 0x%02X"
 #define TXT_LOG_I2C_SDA_STUCK "I2C data line still held low after bus clear - check wiring or pull-ups"
 #define TXT_LOG_I2C_SCAN_NONE "No I2C devices found on bus - check wiring and power"
-#define TXT_LOG_I2C_SCAN_DONE "Scan complete: %d device(s)"
 #define TXT_LOG_I2C_SCAN_SUMMARY "Detected %u I2C device(s): %s"
 #define TXT_LOG_I2C_REC_START "Recovering stuck I2C hardware bus..."
 #define TXT_LOG_I2C_REC_DONE "I2C bus recovery complete"
@@ -720,6 +725,7 @@
 #define TXT_LOG_REC_STABLE "System ran stably for 30 s during recovery - cleared boot retry counter"
 #define TXT_LOG_HIST_FS_PRESERVED "History filesystem failed to mount, but record count backup exists - skipped format to preserve data"
 #define TXT_LOG_HIST_PEND_REPLAY "Recovered and replayed %d pending history record(s) interrupted by power loss"
+#define TXT_LOG_TERM_REBOOT "Reboot requested via serial terminal - restarting controller"
 #define TXT_TERM_WIPE_EXPIRED "Confirmation timed out. Clear history cancelled."
 #elif defined(LANG_SERIAL_PT)
 // Etiquetas de formato de log e nomes de componentes
@@ -737,6 +743,7 @@
 #define TXT_LOG_TAG_HIST "Historico"
 #define TXT_LOG_TAG_LCD "Ecra"
 #define TXT_LOG_TAG_UI "Interface"
+#define TXT_LOG_TAG_TERM "Terminal"
 #define TXT_LOG_TAG_I2C "Barramento I2C"
 
 #define TXT_SER_YES "Sim"
@@ -777,9 +784,9 @@
   "%u mensagem(ns) de diagnostico (%u aviso/erro) ocorreram durante a exportacao CSV e foram ocultadas"
 #define TXT_SYS_STATUS_HDR                                                     \
   "================== ESTADO DO SISTEMA =================="
-#define TXT_LOG_WAIT_ZONE_TRANS                                                \
-  "A aguardar transicao de zona (atualmente Zona %d)\n"
-#define TXT_LOG_WATERING_PROG "A regar Zona %d - Progresso: %d%%\n"
+#define TXT_TERM_STAT_WAIT_ZONE                                                \
+  "A aguardar entre zonas (proxima e a Zona %d)\r\n"
+#define TXT_TERM_STAT_WATER_PROG "A regar Zona %d - Progresso: %d%%\r\n"
 #define TXT_SETUP_DONE_LOG "Assistente de configuracao inicial concluido pelo utilizador"
 #define TXT_LOG_DEFAULTS_LOADED                                                \
   "Predefinicoes inicializadas em memoria (Modo: %s, Zonas: %d)"
@@ -812,54 +819,54 @@
   "Ecra LCD continua inalcancavel apos recuperacao do barramento I2C"
 #define TXT_LOG_LCD_COMM_ERR                                                   \
   "Comunicacao com o ecra LCD falhou 3 vezes seguidas - a iniciar recuperacao do barramento I2C"
-#define TXT_LOG_TERM_READY "Terminal de comando serial ativado a 115200 baud."
+#define TXT_LOG_TERM_READY                                                     \
+  "Consola de comandos serie pronta a 115200 baud (digite 'help' para ver comandos)"
 #define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - SERVICO TERMINAL                  "
 // Terminal
-#define TXT_TERM_ERR_OVERFLOW "\n[ERRO: Comando demasiado longo]"
+#define TXT_TERM_ERR_OVERFLOW "\r\nErro: Comando demasiado longo (buffer cheio)."
 #define TXT_TERM_CANCELLED "Operacao cancelada."
 #define TXT_TERM_UNKNOWN_CMD                                                   \
   "Comando desconhecido: '%s'. Digite 'help' ou '?' para ver a lista de "      \
-  "comandos.\n"
+  "comandos.\r\n"
 #define TXT_TERM_HELP_TITLE "Comandos Disponiveis:"
 #define TXT_TERM_HELP_1                                                        \
   "  help, ?                      - Mostra este menu de ajuda"
 #define TXT_TERM_HELP_2                                                        \
   "  status                       - Relatorio em tempo real do sistema"
 #define TXT_TERM_HELP_3                                                        \
-  "  set_time AAAA-MM-DD HH:MM:SS - Define a data e hora local do relogio"
+  "  set_time AAAA-MM-DD HH:MM:SS - Define a data e hora local"
 #define TXT_TERM_HELP_3_EX                                                     \
   "                               Ex: set_time 2026-05-29 15:30:00"
 #define TXT_TERM_HELP_4                                                        \
-  "  export_config                - Exporta a configuracao atual (Hex Blob)"
+  "  export_config                - Exporta o codigo de seguranca da configuracao atual"
 #define TXT_TERM_HELP_5                                                        \
-  "  import_config <72_hex>       - Importa configuracoes a partir do Hex "    \
-  "Blob"
+  "  import_config <72_hex>       - Restaura configuracoes a partir do codigo de 72 caracteres"
 #define TXT_TERM_HELP_6                                                        \
-  "  export_history               - Exporta o historico de regas por Serial"
+  "  export_history               - Exporta o historico de regas por Serie"
 #define TXT_TERM_HELP_7                                                        \
-  "  clear_history                - Apaga completamente o historico de regas " \
+  "  clear_history                - Apaga permanentemente o historico de regas " \
   "do sistema"
 #define TXT_TERM_HELP_8                                                        \
-  "  reboot                       - Reinicia o controlador ESP32"
+  "  reboot                       - Reinicia o controlador"
 #define TXT_TERM_HELP_9                                                        \
-  "  i2c_scan                     - Executa um scan ao barramento I2C"
+  "  i2c_scan                     - Analisa o barramento de hardware I2C"
 #define TXT_TERM_HELP_10                                                       \
-  "  stop                         - Aborta imediatamente a rega ativa"
-#define TXT_TERM_STAT_LOCAL "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\n"
+  "  stop                         - Para imediatamente a rega ativa"
+#define TXT_TERM_STAT_LOCAL "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d\r\n"
 #define TXT_TERM_STAT_LOCAL_SW                                                 \
-  "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d (SOFTWARE ONLY)\n"
-#define TXT_TERM_STAT_UTC "  Epoch UTC:   %lu (segundos desde 1970)\n"
-#define TXT_TERM_STAT_RTC_OK "  Hardware RTC: Ligado e Valido [OK]"
-#define TXT_TERM_STAT_RTC_ERR "  Hardware RTC: Desconectado/Invalido [FALHA]"
-#define TXT_TERM_STAT_MODE "  Modo Ativo:  %s\n"
-#define TXT_TERM_STAT_SUSP "  Estado Rega: SUSPENSA (Resta %luh %lum)\n"
-#define TXT_TERM_STAT_SUSP_NO_RTC "  Estado Rega: SUSPENSA (a aguardar hora valida do RTC)"
+  "  Hora Local:  %04d-%02d-%02d %02d:%02d:%02d (apenas na memoria do controlador)\r\n"
+#define TXT_TERM_STAT_UTC "  Tempo Unix:  %lu (segundos UTC desde 1970)\r\n"
+#define TXT_TERM_STAT_RTC_OK "  Relogio de Hardware: Ligado e Valido"
+#define TXT_TERM_STAT_RTC_ERR "  Relogio de Hardware: Desligado ou por acertar"
+#define TXT_TERM_STAT_MODE "  Modo Ativo:  %s\r\n"
+#define TXT_TERM_STAT_SUSP "  Estado Rega: SUSPENSA (Restam %luh %lum)\r\n"
+#define TXT_TERM_STAT_SUSP_NO_RTC "  Estado Rega: SUSPENSA (a aguardar hora valida do relogio)"
 #define TXT_TERM_STAT_INACTIVE "  Estado Rega: INATIVA (Desativada no painel)"
-#define TXT_TERM_STAT_AWAIT_RTC "  Estado Rega: EM ESPERA (a aguardar hora valida p/ agendar)"
+#define TXT_TERM_STAT_AWAIT_RTC "  Estado Rega: EM ESPERA (a aguardar hora valida para agendar)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
-  "  Estado Rega: ATIVA (Proxima rega agendada para %02d:%02d)\n"
+  "  Estado Rega: ATIVA (Proxima rega agendada para %02d:%02d)\r\n"
 #define TXT_TERM_STAT_ZONES "  Zonas de Rega:"
-#define TXT_TERM_STAT_Z_FMT "    Z%d: [%s] Duracao: %d min - Nome: %.11s\n"
+#define TXT_TERM_STAT_Z_FMT "    Zona %d: [%s] Duracao: %d min - Nome: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Rega Ativa:  "
 #define TXT_TERM_STAT_ACT_NO "Nao"
 #define TXT_TERM_STAT_SEP                                                      \
@@ -868,33 +875,41 @@
   "Erro: Comando set_time requer argumentos: set_time AAAA-MM-DD HH:MM:SS"
 #define TXT_TERM_ERR_FORMAT                                                    \
   "Erro: Formato de data/hora incorreto. Use: set_time AAAA-MM-DD HH:MM:SS"
-#define TXT_TERM_ERR_YEAR "Erro: Ano fora do intervalo suportado [%d - %d].\n"
+#define TXT_TERM_ERR_YEAR "Erro: Ano fora do intervalo suportado [%d - %d].\r\n"
 #define TXT_TERM_ERR_MONTH "Erro: Mes deve estar entre 1 e 12."
 #define TXT_TERM_ERR_DAY                                                       \
   "Erro: Dia invalido para o mes e ano especificados (%d/%d/%04d). O limite "  \
-  "e %d dias.\n"
+  "e %d dias.\r\n"
 #define TXT_TERM_ERR_HOUR "Erro: Hora deve estar entre 0 e 23."
 #define TXT_TERM_ERR_MIN "Erro: Minuto deve estar entre 0 e 59."
 #define TXT_TERM_ERR_SEC "Erro: Segundo deve estar entre 0 e 59."
 #define TXT_TERM_TIME_SET                                                      \
-  "Hora definida com sucesso para: %04d-%02d-%02d %02d:%02d:%02d\n"
+  "Hora definida para %04d-%02d-%02d %02d:%02d:%02d (gravada no relogio de hardware).\r\n"
+#define TXT_TERM_TIME_SET_SW                                                   \
+  "Aviso: Relogio de hardware indisponivel. Hora definida para %04d-%02d-%02d %02d:%02d:%02d apenas na memoria do controlador.\r\n"
 #define TXT_TERM_EXPORT_HDR "=== EXPORTACAO DE CONFIGURACOES LAWN&ORDER ==="
 #define TXT_TERM_EXPORT_COPY "Copie a linha abaixo para salvaguarda:"
 #define TXT_TERM_EXPORT_SEP "==============================================="
 #define TXT_TERM_ERR_IMP_FMT                                                   \
-  "Erro: Comando import_config requer a string hexadecimal correspondente."
+  "Erro: Comando import_config requer o codigo de seguranca de 72 caracteres."
 #define TXT_TERM_IMP_OK                                                        \
-  "Configuracoes importadas e gravadas em NVS com sucesso!"
+  "Configuracoes importadas e gravadas na memoria flash."
 #define TXT_TERM_ERR_IMP_BLOB                                                  \
-  "Erro: Falha na importacao do Hex Blob. Verifique a integridade da string."
+  "Erro: Falha na importacao da configuracao. Verifique o formato e a integridade do codigo."
+#define TXT_TERM_ERR_IMP_ACTIVE                                                \
+  "Erro: Nao e possivel importar configuracoes enquanto a rega esta ativa. Pare a rega primeiro."
 #define TXT_TERM_WIPE_WARN                                                     \
   "AVISO: Tem a certeza que deseja apagar permanentemente o historico?"
 #define TXT_TERM_WIPE_CONFIRM "Continuar? [y/N]"
 #define TXT_TERM_WIPING "A limpar o historico de regas..."
-#define TXT_TERM_WIPE_OK "Historico de regas limpo com sucesso!"
+#define TXT_TERM_WIPE_OK "Historico de regas limpo com sucesso."
 #define TXT_TERM_REBOOT "A reiniciar o controlador Lawn & Order..."
 #define TXT_TERM_STOP_OK "Rega parada com sucesso."
 #define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
+#define TXT_TERM_I2C_FOUND "Dispositivo encontrado em 0x%02X (%s)\r\n"
+#define TXT_TERM_I2C_NONE                                                      \
+  "Nenhum dispositivo I2C encontrado - verifique a cablagem SDA/SCL e a alimentacao"
+#define TXT_TERM_I2C_DONE "Analise concluida: %d dispositivo(s) encontrado(s)\r\n"
 
 // Modos para o Status do Terminal e Logs
 #define TXT_TERM_MODE_INTENSE "Intenso"
@@ -986,12 +1001,10 @@
 #define TXT_TERM_HIST_CSV_HDR "Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)"
 #define TXT_TERM_HIST_EMPTY "Historico vazio."
 #define TXT_TERM_HIST_EXPORT_END "--- FIM: %d registos ---\r\n"
-#define TXT_LOG_I2C_SCAN_FOUND "Dispositivo encontrado em 0x%02X"
 #define TXT_LOG_I2C_SDA_STUCK                                                  \
   "Linha de dados I2C continua bloqueada em estado baixo apos limpeza - verifique a cablagem ou resistencias pull-up"
 #define TXT_LOG_I2C_SCAN_NONE                                                  \
   "Nenhum dispositivo I2C encontrado no barramento - verifique a cablagem e a alimentacao"
-#define TXT_LOG_I2C_SCAN_DONE "Scan completo: %d dispositivo(s)"
 #define TXT_LOG_I2C_SCAN_SUMMARY "Detetado(s) %u dispositivo(s) I2C: %s"
 #define TXT_LOG_I2C_REC_START "A recuperar barramento de hardware I2C bloqueado..."
 #define TXT_LOG_I2C_REC_DONE "Recuperacao do barramento I2C concluida"
@@ -1131,5 +1144,7 @@
   "Falha ao montar sistema de ficheiros do historico, mas existe reserva da contagem - formatacao evitada para preservar dados"
 #define TXT_LOG_HIST_PEND_REPLAY                                               \
   "Recuperado(s) e reprocessado(s) %d registo(s) de historico pendentes por falha de energia"
+#define TXT_LOG_TERM_REBOOT                                                    \
+  "Reinicio pedido via terminal serie - a reiniciar controlador"
 #define TXT_TERM_WIPE_EXPIRED "Confirmacao expirada. Limpeza de historico cancelada."
 #endif

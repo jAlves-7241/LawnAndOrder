@@ -125,17 +125,6 @@ static bool parseExactSetTime(const char* s, int& yr, int& mo, int& dy,
     return true;
 }
 
-static const char *getModeStr(AppMode mode) {
-    switch (mode) {
-    case AppMode::INTENSO:      return TXT_TERM_MODE_INTENSE;
-    case AppMode::MEDIO:        return TXT_TERM_MODE_MEDIUM;
-    case AppMode::FRACO:        return TXT_TERM_MODE_WEAK;
-    case AppMode::DESATIVADO:   return TXT_TERM_MODE_DISABLED;
-    case AppMode::PERSONALIZADO: return TXT_TERM_MODE_CUSTOM;
-    default:                     return TXT_TERM_MODE_UNKNOWN;
-    }
-}
-
 // ═════════════════════════════════════════════════════════
 // Construction / Init
 // ═════════════════════════════════════════════════════════
@@ -158,7 +147,7 @@ void Terminal::begin() {
     _ignore_rest = false;
     _tailDirty = false;
     _last_c = 0;
-    LOG_I("TERM", TXT_LOG_TERM_READY);
+    LOG_I(TXT_LOG_TAG_TERM, TXT_LOG_TERM_READY);
 }
 
 // ═════════════════════════════════════════════════════════
@@ -612,7 +601,7 @@ void Terminal::_cmdStatus(char* /*args*/) {
     }
 
     // 2. Estado Geral
-    Serial.printf(TXT_TERM_STAT_MODE, getModeStr(gState.mode));
+    Serial.printf(TXT_TERM_STAT_MODE, serialModeName(gState.mode));
 
     if (gState.suspended) {
         if (gState.rtc_valid) {
@@ -621,7 +610,8 @@ void Terminal::_cmdStatus(char* /*args*/) {
                                      : 0;
             uint32_t hours = remaining / 3600;
             uint32_t mins  = (remaining % 3600) / 60;
-            Serial.printf(TXT_TERM_STAT_SUSP, hours, mins);
+            Serial.printf(TXT_TERM_STAT_SUSP,
+                          (unsigned long)hours, (unsigned long)mins);
         } else {
             Serial.println(TXT_TERM_STAT_SUSP_NO_RTC);
         }
@@ -646,11 +636,12 @@ void Terminal::_cmdStatus(char* /*args*/) {
     Serial.print(TXT_TERM_STAT_ACT);
     if (gState.watering.active) {
         if (gState.watering.is_waiting) {
-            Serial.printf(TXT_LOG_WAIT_ZONE_TRANS,
-                          gState.watering.zone_idx + 1);
+            Serial.printf(TXT_TERM_STAT_WAIT_ZONE,
+                          (int)gState.watering.zone_idx + 1);
         } else {
-            Serial.printf(TXT_LOG_WATERING_PROG,
-                          gState.watering.zone_idx + 1, gState.watering.progress_pct);
+            Serial.printf(TXT_TERM_STAT_WATER_PROG,
+                          (int)gState.watering.zone_idx + 1,
+                          (int)gState.watering.progress_pct);
         }
     } else {
         Serial.println(TXT_TERM_STAT_ACT_NO);
@@ -713,18 +704,19 @@ void Terminal::_cmdSetTime(char *args) {
         return;
     }
 
-    // Acertar a hora local
-    if (!rtclock.set((uint16_t)yr, (uint8_t)mo, (uint8_t)dy, (uint8_t)hh, (uint8_t)mm,
-                     (uint8_t)ss)) {
-        Serial.println(TXT_LOG_RTC_NOT_FOUND);
-        return;
-    }
+    // Acertar a hora local (campos ja validados acima)
+    const bool hwSaved = rtclock.set((uint16_t)yr, (uint8_t)mo, (uint8_t)dy,
+                                     (uint8_t)hh, (uint8_t)mm, (uint8_t)ss);
 
-    // Atualizar o scheduler e editores de relógio imediatamente baseado no novo relógio
+    // Atualizar o scheduler e editores de relogio imediatamente (hardware ou fallback software)
     scheduler.onModeChanged();
     ui.refreshClockEditors();
 
-    Serial.printf(TXT_TERM_TIME_SET, yr, mo, dy, hh, mm, ss);
+    if (hwSaved) {
+        Serial.printf(TXT_TERM_TIME_SET, yr, mo, dy, hh, mm, ss);
+    } else {
+        Serial.printf(TXT_TERM_TIME_SET_SW, yr, mo, dy, hh, mm, ss);
+    }
 }
 
 void Terminal::_cmdExportConfig(char* /*args*/) {
@@ -744,8 +736,8 @@ void Terminal::_cmdImportConfig(char *args) {
     }
 
     if (gState.watering.active) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_ACTIVE);
-        Serial.println(TXT_TERM_ERR_IMP_BLOB);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_ACTIVE);
+        Serial.println(TXT_TERM_ERR_IMP_ACTIVE);
         return;
     }
 
@@ -781,6 +773,7 @@ void Terminal::_cmdClearHistory(char* /*args*/) {
 }
 
 void Terminal::_cmdReboot(char* /*args*/) {
+    LOG_I(TXT_LOG_TAG_TERM, TXT_LOG_TERM_REBOOT);
     wateringCtrl.deenergizeRelays();
     ui.goIdle();
     Serial.println(TXT_TERM_REBOOT);
@@ -795,17 +788,15 @@ void Terminal::_cmdI2cScan(char* /*args*/) {
         esp_task_wdt_reset();
         Wire.beginTransmission(i);
         if (Wire.endTransmission() == 0) {
-            Serial.printf(TXT_LOG_I2C_SCAN_FOUND, i);
-            Serial.println();
+            Serial.printf(TXT_TERM_I2C_FOUND, i, i2cDeviceName(i));
             i2cCount++;
             delay(1);
         }
     }
     if (i2cCount == 0) {
-        Serial.println(TXT_LOG_I2C_SCAN_NONE);
+        Serial.println(TXT_TERM_I2C_NONE);
     } else {
-        Serial.printf(TXT_LOG_I2C_SCAN_DONE, i2cCount);
-        Serial.println();
+        Serial.printf(TXT_TERM_I2C_DONE, (int)i2cCount);
     }
 }
 

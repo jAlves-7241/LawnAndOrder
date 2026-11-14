@@ -400,7 +400,7 @@ void test_terminal_import_active_guard_setup_sync_and_set_time_strict(void) {
     std::string cmd = std::string("import_config ") + hexSetupTrue + "\r\n";
     Serial.feedInput(cmd);
     while (Serial.available() > 0) terminal.update();
-    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_IMP_BLOB) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_IMP_ACTIVE) != std::string::npos);
     wateringCtrl.stop();
 
     // Importing valid config calls syncSetupState() and leaves setup if setup_done==true
@@ -457,6 +457,120 @@ void test_terminal_midline_batch_coalesces_tail_redraw(void) {
     TEST_ASSERT_EQUAL_UINT32(1, countK);
 }
 
+void test_logging_standardized_format_and_seconds_precision(void) {
+    // 1. Pre-RTC uptime format: second precision only (no milliseconds)
+    gState.rtc_valid = false;
+    advanceMockMillis(5123);
+    unsigned long upSec = millis() / 1000UL;
+    unsigned long h = upSec / 3600UL;
+    unsigned long m = (upSec % 3600UL) / 60UL;
+    unsigned long s = upSec % 60UL;
+
+    char expectedUptime[192];
+    snprintf(expectedUptime, sizeof(expectedUptime), "[%s %02lu:%02lu:%02lu] [%s] [%s] %s",
+             TXT_LOG_UPTIME_PREFIX, h, m, s,
+             TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
+
+    Serial.reset();
+    _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", TXT_LOG_SYS_READY);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedUptime) != std::string::npos);
+    TEST_ASSERT_EQUAL_PTR(nullptr, strstr(Serial.outputBuffer.c_str(), ".123"));
+
+    Serial.reset();
+    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedUptime) != std::string::npos);
+#else
+    TEST_ASSERT_TRUE(Serial.outputBuffer.empty());
+#endif
+
+    // 2. Post-RTC calendar timestamp format: [YYYY-MM-DD HH:MM:SS] [LEVEL] [Component]
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 9, 5, 7, 1, 1781514307UL };
+    char expectedRtc[128];
+    snprintf(expectedRtc, sizeof(expectedRtc), "[2026-06-15 09:05:07] [%s] [%s]",
+             TXT_LOG_LVL_WARN, TXT_LOG_TAG_CLOCK);
+
+    Serial.reset();
+    _logWrite(true, TXT_LOG_LVL_WARN, TXT_LOG_TAG_CLOCK, "%s", TXT_LOG_RTC_BAT_LOW);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedRtc) != std::string::npos);
+
+    Serial.reset();
+    LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedRtc) != std::string::npos);
+#else
+    TEST_ASSERT_TRUE(Serial.outputBuffer.empty());
+#endif
+
+    // 3. Long message indicates truncation cleanly with '...'
+    std::string longText(300, 'A');
+    Serial.reset();
+    _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", longText.c_str());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("...") != std::string::npos);
+}
+
+void test_logging_export_suppression_summary_and_human_modes(void) {
+    // Human-readable mode names (never raw enum integers)
+    TEST_ASSERT_EQUAL_STRING(TXT_TERM_MODE_DISABLED, serialModeName(AppMode::DESATIVADO));
+    TEST_ASSERT_EQUAL_STRING(TXT_TERM_MODE_CUSTOM, serialModeName(AppMode::PERSONALIZADO));
+
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 1, 8, 5, 0, 1, 1780301100UL };
+    history.clear();
+    Serial.reset();
+    HistoryEntry e = { 2026, 6, 1, 8, 0, { 10, 10, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedZ1[32];
+    snprintf(expectedZ1, sizeof(expectedZ1), TXT_SER_ZONE_DUR_FMT, "", 1, 10U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedZ1) != std::string::npos);
+#endif
+
+    Serial.reset();
+    history.startExport();
+    TEST_ASSERT_TRUE(_log_suspended);
+
+    // Emit logs while CSV export is active: must NOT appear in CSV, but must be counted
+    unsigned expectedTotal = 0;
+    unsigned expectedWarnErr = 0;
+    _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", TXT_LOG_SYS_READY);
+    expectedTotal++;
+    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
+#if LOG_LEVEL >= LVL_INFO
+    expectedTotal++;
+#endif
+    LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
+#if LOG_LEVEL >= LVL_WARN
+    expectedTotal++;
+    expectedWarnErr++;
+#endif
+    LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
+#if LOG_LEVEL >= LVL_ERROR
+    expectedTotal++;
+    expectedWarnErr++;
+#endif
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_SYS_READY) == std::string::npos);
+    TEST_ASSERT_EQUAL_UINT16(expectedTotal, _log_suppressed_total);
+    TEST_ASSERT_EQUAL_UINT16(expectedWarnErr, _log_suppressed_warn_err);
+
+    int safety = 100;
+    while (history.isExporting() && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_FALSE(_log_suspended);
+    TEST_ASSERT_EQUAL_UINT16(0, _log_suppressed_total);
+    TEST_ASSERT_EQUAL_UINT16(0, _log_suppressed_warn_err);
+
+#if LOG_LEVEL >= LVL_WARN
+    char expectedSummary[256];
+    snprintf(expectedSummary, sizeof(expectedSummary), TXT_LOG_EXPORT_SUPPRESSED,
+             expectedTotal, expectedWarnErr);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedSummary) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -478,5 +592,7 @@ int main(void) {
     RUN_TEST(test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow);
     RUN_TEST(test_terminal_import_active_guard_setup_sync_and_set_time_strict);
     RUN_TEST(test_terminal_midline_batch_coalesces_tail_redraw);
+    RUN_TEST(test_logging_standardized_format_and_seconds_precision);
+    RUN_TEST(test_logging_export_suppression_summary_and_human_modes);
     return UNITY_END();
 }
