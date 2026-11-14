@@ -426,6 +426,7 @@
 #define TXT_LOG_TAG_STORAGE "Settings"
 #define TXT_LOG_TAG_CLOCK "Clock"
 #define TXT_LOG_TAG_SCHEDULE "Schedule"
+#define TXT_LOG_TAG_WATER "Watering"
 #define TXT_LOG_TAG_HIST "History"
 #define TXT_LOG_TAG_LCD "Display"
 #define TXT_LOG_TAG_I2C "I2C Bus"
@@ -469,12 +470,15 @@
 #define TXT_SETUP_DONE_LOG "Initial setup complete"
 #define TXT_LOG_DEFAULTS_LOADED "Initialized default settings in memory (Mode: %s, Zones: %d)"
 #define TXT_LOG_MEM_CLEARED "All saved settings cleared from flash storage (factory reset)"
-#define TXT_LOG_RESUME_ZONE "Resuming zone %d cycle"
-#define TXT_LOG_RTC_INVALID_RESUME "Invalid RTC. Cannot validate resume time."
-#define TXT_LOG_ZONE_DEACTIVATED_INT "Zone %d (%s) deactivated (interrupted)"
-#define TXT_LOG_ZONE_DEACTIVATED "Zone %d (%s) deactivated"
-#define TXT_LOG_ZONE_ACTIVE_MIN "Zone %d (%s) active - dur=%lu min"
-#define TXT_LOG_ZONE_ACTIVE_SEC "Zone %d (%s) active - dur=%lu s"
+#define TXT_LOG_INT_FOUND_INFO "Found interrupted %s watering cycle (stopped on Zone %u) - checking if safe to resume"
+#define TXT_LOG_RESUME_ZONE "Resuming interrupted watering at Zone %u (%s)"
+#define TXT_LOG_RTC_INVALID_RESUME "Discarded interrupted watering recovery: controller clock time is invalid"
+#define TXT_LOG_REC_SKIP_SUSP "Discarded interrupted automatic watering recovery because watering is currently suspended"
+#define TXT_LOG_ZONE_DEACTIVATED_INT "Zone %d (%s) stopped early after %u min (%lu s elapsed)"
+#define TXT_LOG_STOP_DURING_WAIT "Watering stopped during zone transition (next was Zone %d - %s)"
+#define TXT_LOG_ZONE_DEACTIVATED "Zone %d (%s) finished (%u min)"
+#define TXT_LOG_ZONE_ACTIVE_MIN "Zone %d (%s) turned ON for %lu min"
+#define TXT_LOG_ZONE_ACTIVE_SEC "Zone %d (%s) turned ON for %lu s"
 #define TXT_LOG_NEXT_WATERING "Next automatic watering: %02d:%02d (Mode: %s)"
 #define TXT_LOG_NEXT_WATERING_SUSP "Next scheduled slot is %02d:%02d (Mode: %s), currently paused by suspension"
 #define TXT_LOG_NEXT_WATERING_OFF "Automatic watering is disabled (no schedule active)"
@@ -582,17 +586,19 @@
 // Logs
 #define TXT_LOG_UI_CONFIRM_TAG "Confirmed tag: %s"
 #define TXT_LOG_UI_UNKNOWN_ACTION "dispatchAction: unknown '%s'"
-#define TXT_LOG_REC_STATE_INV "Recovery state invalid, discarding"
-#define TXT_LOG_REC_ZONE_INV "Recovery zone_idx invalid"
-#define TXT_LOG_INTERRUPT_FOUND "Interrupted cycle found - evaluating resume..."
-#define TXT_LOG_START_GEN "Starting general watering"
-#define TXT_LOG_START_CUSTOM "Starting custom watering - %d min"
-#define TXT_LOG_START_TEST "Starting test zone=%d"
-#define TXT_LOG_WATER_INT "Watering interrupted"
-#define TXT_LOG_ZONE_OOB "Zone %d out of bounds"
-#define TXT_LOG_ZONE_DONE_WAIT "Zone %d completed - waiting %lu s"
-#define TXT_LOG_CYCLE_DONE "Cycle completed"
-#define TXT_LOG_CYCLE_NO_DUR "Cycle without effective duration - ignoring history"
+#define TXT_LOG_REC_STATE_INV "Saved interrupted watering record has invalid metadata (queue len=%u, pos=%u) - discarded"
+#define TXT_LOG_REC_ZONE_INV "Saved interrupted watering record has invalid zone %u or duration (%lu ms) - discarded"
+#define TXT_LOG_REC_DUR_INV "Saved interrupted watering record has invalid zone %u minutes (%u) - discarded"
+#define TXT_LOG_START_GEN "Starting full watering (%s): %u zone(s), %lu min total"
+#define TXT_LOG_START_NO_ZONES "Cannot start full watering: no zones are enabled with duration > 0 min"
+#define TXT_LOG_START_CUSTOM "Starting custom watering: Zones [%s], %u min per zone"
+#define TXT_LOG_START_TEST_ALL "Starting hardware test for all %d zones (%lu s each)"
+#define TXT_LOG_START_TEST_ONE "Starting hardware test for Zone %d (%s) for %lu s"
+#define TXT_LOG_WATER_INT "Watering cycle stopped before completion"
+#define TXT_LOG_ZONE_OOB "Invalid zone number %u (valid range 1-%u) - stopping watering"
+#define TXT_LOG_ZONE_DONE_WAIT "Zone %d completed - waiting %lu s before opening next valve"
+#define TXT_LOG_CYCLE_DONE "Watering cycle finished"
+#define TXT_LOG_CYCLE_NO_DUR "Watering stopped under 30 s (0 min recorded) - not saved to history"
 #define TXT_LOG_HIST_MOUNT_FAIL "Failed to mount flash filesystem for watering history"
 #define TXT_LOG_HIST_FORMATTED "History flash filesystem unformatted or damaged (no backup index) - formatted clean filesystem"
 #define TXT_LOG_HIST_FORMAT_FAIL "Failed to mount and format history flash filesystem"
@@ -698,8 +704,8 @@
 #define TXT_LOG_NVS_TRIG_CORRUPT "Schedule duplicate-protection data in flash was corrupted - reset"
 #define TXT_LOG_NVS_RECV_CORRUPT "Saved blackout recovery data in flash was corrupted (%s) - discarded"
 #define TXT_LOG_NVS_IMP_ACTIVE "Configuration import rejected because watering is currently active"
-#define TXT_LOG_REC_MAX_RETRY "Recovery aborted after %u failed boot attempts"
-#define TXT_LOG_REC_STABLE "Boot recovery stabilized - retry counter reset"
+#define TXT_LOG_REC_MAX_RETRY "Interrupted cycle recovery aborted after %u failed boot attempts (protecting against power loop)"
+#define TXT_LOG_REC_STABLE "System ran stably for 30 s during recovery - cleared boot retry counter"
 #define TXT_LOG_HIST_FS_PRESERVED "History filesystem failed to mount, but record count backup exists - skipped format to preserve data"
 #define TXT_LOG_HIST_PEND_REPLAY "Recovered and replayed %d pending history record(s) interrupted by power loss"
 #define TXT_TERM_WIPE_EXPIRED "Confirmation timed out. Clear history cancelled."
@@ -715,6 +721,7 @@
 #define TXT_LOG_TAG_STORAGE "Definicoes"
 #define TXT_LOG_TAG_CLOCK "Relogio"
 #define TXT_LOG_TAG_SCHEDULE "Agendamento"
+#define TXT_LOG_TAG_WATER "Rega"
 #define TXT_LOG_TAG_HIST "Historico"
 #define TXT_LOG_TAG_LCD "Ecra"
 #define TXT_LOG_TAG_I2C "Barramento I2C"
@@ -763,13 +770,20 @@
   "Predefinicoes inicializadas em memoria (Modo: %s, Zonas: %d)"
 #define TXT_LOG_MEM_CLEARED                                                    \
   "Todas as definicoes guardadas foram apagadas da memoria flash (reposicao de fabrica)"
-#define TXT_LOG_RESUME_ZONE "A retomar ciclo da zona %d"
+#define TXT_LOG_INT_FOUND_INFO                                                 \
+  "Encontrado ciclo de rega %s interrompido (parou na Zona %u) - a verificar se e seguro retomar"
+#define TXT_LOG_RESUME_ZONE "A retomar rega interrompida na Zona %u (%s)"
 #define TXT_LOG_RTC_INVALID_RESUME                                             \
-  "RTC invalido. Nao e possivel validar o tempo de retoma."
-#define TXT_LOG_ZONE_DEACTIVATED_INT "Zona %d (%s) desativada (interrompida)"
-#define TXT_LOG_ZONE_DEACTIVATED "Zona %d (%s) desativada"
-#define TXT_LOG_ZONE_ACTIVE_MIN "Zona %d (%s) ativa - dur=%lu min"
-#define TXT_LOG_ZONE_ACTIVE_SEC "Zona %d (%s) ativa - dur=%lu s"
+  "Recuperacao de rega interrompida descartada: hora do controlador invalida"
+#define TXT_LOG_REC_SKIP_SUSP                                                  \
+  "Recuperacao de rega automatica interrompida descartada porque a rega esta suspensa"
+#define TXT_LOG_ZONE_DEACTIVATED_INT                                           \
+  "Zona %d (%s) parada antecipadamente apos %u min (%lu s decorridos)"
+#define TXT_LOG_STOP_DURING_WAIT                                               \
+  "Rega parada durante a transicao entre zonas (proxima era a Zona %d - %s)"
+#define TXT_LOG_ZONE_DEACTIVATED "Zona %d (%s) concluida (%u min)"
+#define TXT_LOG_ZONE_ACTIVE_MIN "Zona %d (%s) ligada por %lu min"
+#define TXT_LOG_ZONE_ACTIVE_SEC "Zona %d (%s) ligada por %lu s"
 #define TXT_LOG_NEXT_WATERING "Proxima rega automatica: %02d:%02d (Modo: %s)"
 #define TXT_LOG_NEXT_WATERING_SUSP                                             \
   "Proximo horario agendado e %02d:%02d (Modo: %s), atualmente em pausa por suspensao"
@@ -887,18 +901,30 @@
 // Logs
 #define TXT_LOG_UI_CONFIRM_TAG "Tag confirmada: %s"
 #define TXT_LOG_UI_UNKNOWN_ACTION "dispatchAction: acao desconhecida '%s'"
-#define TXT_LOG_REC_STATE_INV "Estado de recuperacao invalido, a descartar"
-#define TXT_LOG_REC_ZONE_INV "zone_idx de recuperacao invalido"
-#define TXT_LOG_INTERRUPT_FOUND                                                \
-  "Encontrado ciclo interrompido - a avaliar retoma..."
-#define TXT_LOG_START_GEN "A iniciar rega geral"
-#define TXT_LOG_START_CUSTOM "Iniciar rega personalizada - %d min"
-#define TXT_LOG_START_TEST "Iniciar teste zona=%d"
-#define TXT_LOG_WATER_INT "Rega interrompida"
-#define TXT_LOG_ZONE_OOB "Zona %d fora dos limites"
-#define TXT_LOG_ZONE_DONE_WAIT "Zona %d concluida - aguardar %lu s"
-#define TXT_LOG_CYCLE_DONE "Ciclo concluido"
-#define TXT_LOG_CYCLE_NO_DUR "Ciclo sem duracao efetiva - a ignorar historico"
+#define TXT_LOG_REC_STATE_INV                                                  \
+  "Registo de rega interrompida guardado tem metadados invalidos (fila=%u, pos=%u) - descartado"
+#define TXT_LOG_REC_ZONE_INV                                                   \
+  "Registo de rega interrompida guardado tem zona %u ou duracao (%lu ms) invalida - descartado"
+#define TXT_LOG_REC_DUR_INV                                                    \
+  "Registo de rega interrompida guardado tem minutos invalidos na zona %u (%u) - descartado"
+#define TXT_LOG_START_GEN                                                      \
+  "A iniciar rega completa (%s): %u zona(s), %lu min no total"
+#define TXT_LOG_START_NO_ZONES                                                 \
+  "Nao e possivel iniciar rega completa: nenhuma zona ativa com duracao > 0 min"
+#define TXT_LOG_START_CUSTOM                                                   \
+  "A iniciar rega personalizada: Zonas [%s], %u min por zona"
+#define TXT_LOG_START_TEST_ALL                                                 \
+  "A iniciar teste de hardware para todas as %d zonas (%lu s cada)"
+#define TXT_LOG_START_TEST_ONE                                                 \
+  "A iniciar teste de hardware para a Zona %d (%s) durante %lu s"
+#define TXT_LOG_WATER_INT "Ciclo de rega parado antes da conclusao"
+#define TXT_LOG_ZONE_OOB                                                       \
+  "Numero de zona invalido %u (intervalo valido 1-%u) - a parar rega"
+#define TXT_LOG_ZONE_DONE_WAIT                                                 \
+  "Zona %d concluida - a aguardar %lu s antes de abrir a proxima valvula"
+#define TXT_LOG_CYCLE_DONE "Ciclo de rega concluido"
+#define TXT_LOG_CYCLE_NO_DUR                                                   \
+  "Rega parada antes de 30 s (0 min registados) - nao guardada no historico"
 #define TXT_LOG_HIST_MOUNT_FAIL                                                \
   "Falha ao montar sistema de ficheiros flash do historico de regas"
 #define TXT_LOG_HIST_FORMATTED                                                 \
@@ -1074,8 +1100,10 @@
   "Dados de recuperacao apos falha de energia na flash estavam corrompidos (%s) - descartados"
 #define TXT_LOG_NVS_IMP_ACTIVE                                                 \
   "Importacao de configuracao rejeitada porque existe uma rega ativa"
-#define TXT_LOG_REC_MAX_RETRY "Recuperacao abortada apos %u tentativas falhadas de arranque"
-#define TXT_LOG_REC_STABLE "Recuperacao estabilizada - contador de tentativas reposto"
+#define TXT_LOG_REC_MAX_RETRY                                                  \
+  "Recuperacao de ciclo interrompido abortada apos %u arranques falhados (protecao contra ciclo de reinicios)"
+#define TXT_LOG_REC_STABLE                                                     \
+  "Sistema funcionou de forma estavel durante 30 s na recuperacao - contador de tentativas limpo"
 #define TXT_LOG_HIST_FS_PRESERVED                                              \
   "Falha ao montar sistema de ficheiros do historico, mas existe reserva da contagem - formatacao evitada para preservar dados"
 #define TXT_LOG_HIST_PEND_REPLAY                                               \
