@@ -51,6 +51,7 @@ private:
     bool _backlightOn;
     bool _displayOn;
     bool _busFault = false;
+    bool _commErrWarned = false;
     uint8_t _consecErrors = 0;
     uint32_t _lastRecoverMs = 0;
     ErrorCallback _onError = nullptr;
@@ -60,6 +61,6 @@ private:
     bool _dirty[LCD_ROWS];
     uint32_t _lastFullRefresh;
 
-    bool _writeRow(uint8_t row, const char* text);
+    bool _writeRow(uint8_t row, const char* text, bool* wroteFull = nullptr);
     void _invalidateShadow();  // force full redraw on next setRows()
 };

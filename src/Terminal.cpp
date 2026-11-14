@@ -493,11 +493,19 @@ void Terminal::update() {
         char c = Serial.read();
 
         if (_feedAnsi(c))          continue;
-        if (_handleLineEnd(c))     continue;
+        if (_handleLineEnd(c)) {
+            if (history.isExporting()) {
+                _drainInput();
+                break;
+            }
+            continue;
+        }
         if (_handleControlChar(c)) continue;
         _insertChar(c);
     }
-    _flushTail();
+    if (!history.isExporting()) {
+        _flushTail();
+    }
 }
 
 // ═════════════════════════════════════════════════════════
@@ -522,13 +530,16 @@ void Terminal::_processCommand(char *cmd) {
         if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 ||
             strcasecmp(trimmed, "s") == 0 || strcasecmp(trimmed, "sim") == 0)) {
             Serial.println(TXT_TERM_WIPING);
-            history.clear();
-            // Reposicionar ecrã físico para Idle para refletir o histórico limpo
-            // imediatamente (sem sair do wizard de configuração inicial)
-            if (!ui.inSetup()) {
-                ui.goIdle();
+            if (history.clear()) {
+                // Reposicionar ecrã físico para Idle para refletir o histórico limpo
+                // imediatamente (sem sair do wizard de configuração inicial)
+                if (!ui.inSetup()) {
+                    ui.goIdle();
+                }
+                Serial.println(TXT_TERM_WIPE_OK);
+            } else {
+                Serial.println(TXT_TERM_WIPE_FAIL);
             }
-            Serial.println(TXT_TERM_WIPE_OK);
         } else {
             Serial.println(TXT_TERM_CANCELLED);
         }
@@ -587,12 +598,16 @@ void Terminal::_cmdStatus(char* /*args*/) {
     Serial.println(TXT_SYS_STATUS_HDR);
 
     // 1. Relógio / RTC
-    if (gState.rtc_valid) {
+    if (gState.rtc_valid && rtclock.isPresent()) {
         Serial.printf(TXT_TERM_STAT_LOCAL,
                       gState.now.year, gState.now.month, gState.now.day,
                       gState.now.hour, gState.now.min, gState.now.sec);
-        Serial.printf(TXT_TERM_STAT_UTC, (unsigned long)gState.now.unix);
         Serial.println(TXT_TERM_STAT_RTC_OK);
+    } else if (gState.rtc_valid) {
+        Serial.printf(TXT_TERM_STAT_LOCAL_SW,
+                      gState.now.year, gState.now.month, gState.now.day,
+                      gState.now.hour, gState.now.min, gState.now.sec);
+        Serial.println(TXT_TERM_STAT_RTC_SW);
     } else {
         Serial.printf(TXT_TERM_STAT_LOCAL_SW,
                       gState.now.year, gState.now.month, gState.now.day,
@@ -709,7 +724,7 @@ void Terminal::_cmdSetTime(char *args) {
                                      (uint8_t)hh, (uint8_t)mm, (uint8_t)ss);
 
     // Atualizar o scheduler e editores de relogio imediatamente (hardware ou fallback software)
-    scheduler.onModeChanged();
+    scheduler.onModeChanged(false);
     ui.refreshClockEditors();
 
     if (hwSaved) {
@@ -760,8 +775,7 @@ void Terminal::_cmdExportHistory(char* /*args*/) {
         Serial.println(TXT_TERM_HIST_EMPTY);
         return;
     }
-    Serial.println(TXT_LOG_START_EXPORT);
-    history.startExport();
+    history.startExport(true);
 }
 
 void Terminal::_cmdClearHistory(char* /*args*/) {

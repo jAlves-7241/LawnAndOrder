@@ -1,4 +1,6 @@
 #include "Encoder.h"
+#include "log.h"
+#include "i18n.h"
 #include <esp_timer.h>
 #include <driver/gpio.h>
 
@@ -22,6 +24,9 @@ void Encoder::begin() {
     _btn_prev = (digitalRead(_sw) == LOW);
     _last_reading = _btn_prev;
     _btn_last_ms = millis();
+    if (_btn_prev) {
+        LOG_W(TXT_LOG_TAG_SYS, TXT_LOG_BTN_STUCK_BOOT);
+    }
 
     portENTER_CRITICAL(&mux);
     _delta = 0;

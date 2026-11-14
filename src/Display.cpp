@@ -31,10 +31,11 @@ void Display::begin() {
     _lastFullRefresh = millis();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = _busFault ? 1 : 0;
+    _commErrWarned = false;
     if (_busFault) {
-        LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_INIT_FAIL, LCD_ADDR);
+        LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_INIT_FAIL);
     } else {
-        LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_READY, LCD_COLS, LCD_ROWS, LCD_ADDR);
+        LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_READY, LCD_COLS, LCD_ROWS);
     }
 }
 
@@ -61,26 +62,34 @@ void Display::recover() {
     if (_busFault) {
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
     } else {
+        _commErrWarned = false;
         LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
     }
 }
 
 void Display::backlightOn() {
     if (_backlightOn) return;
+    _lcd.clearError();
     _lcd.backlight();
+    _busFault = (_lcd.lastError() != 0);
     _backlightOn = true;
     _invalidateShadow(); // Forçar redesenho completo ao acordar para corrigir glitches físicos
 }
 
 void Display::backlightOff() {
     if (!_backlightOn) return;
+    _lcd.clearError();
     _lcd.noBacklight();
+    _busFault = (_lcd.lastError() != 0);
+    if (_busFault) _invalidateShadow();
     _backlightOn = false;
 }
 
 void Display::displayOn() {
     if (_displayOn) return;
+    _lcd.clearError();
     _lcd.display();
+    _busFault = (_lcd.lastError() != 0);
     _displayOn = true;
     // Force redraw because state might be stale
     _invalidateShadow();
@@ -88,7 +97,10 @@ void Display::displayOn() {
 
 void Display::displayOff() {
     if (!_displayOn) return;
+    _lcd.clearError();
     _lcd.noDisplay();
+    _busFault = (_lcd.lastError() != 0);
+    if (_busFault) _invalidateShadow();
     _displayOn = false;
 }
 
@@ -104,11 +116,12 @@ void Display::setRows(const char* r0, const char* r1,
     _lcd.clearError();
     bool frameError = false;
     bool wroteAny = false;
+    bool fullRowWritten[LCD_ROWS] = { false, false, false, false };
     const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
     for (int r = 0; r < LCD_ROWS; r++) {
         if (rows[r]) {
             wroteAny = true;
-            if (!_writeRow(r, rows[r])) {
+            if (!_writeRow(r, rows[r], &fullRowWritten[r])) {
                 frameError = true;
                 break;
             }
@@ -121,6 +134,7 @@ void Display::setRows(const char* r0, const char* r1,
                 break;
             }
             _dirty[r] = false;
+            fullRowWritten[r] = true;
         }
     }
 
@@ -129,6 +143,7 @@ void Display::setRows(const char* r0, const char* r1,
         uint32_t now = millis();
         if (now - _lastFullRefresh >= 60000UL) {
             for (int r = 0; r < LCD_ROWS; r++) {
+                if (fullRowWritten[r]) continue;
                 wroteAny = true;
                 _lcd.setCursor(0, r);
                 _lcd.print(_shadow[r]);
@@ -147,11 +162,15 @@ void Display::setRows(const char* r0, const char* r1,
     if (frameError) {
         _invalidateShadow();
         _busFault = true;
-        if (_consecErrors < 255) _consecErrors++;
-        if (_consecErrors >= 3) {
-            uint32_t now = millis();
-            if (_lastRecoverMs == 0 || (now - _lastRecoverMs) >= 10000UL) {
-                LOG_W(TXT_LOG_TAG_LCD, TXT_LOG_LCD_COMM_ERR);
+        uint32_t now = millis();
+        bool inCooldown = (_lastRecoverMs != 0 && (now - _lastRecoverMs) < 10000UL);
+        if (!inCooldown) {
+            if (_consecErrors < 255) _consecErrors++;
+            if (_consecErrors >= 3) {
+                if (!_commErrWarned) {
+                    LOG_W(TXT_LOG_TAG_LCD, TXT_LOG_LCD_COMM_ERR);
+                    _commErrWarned = true;
+                }
                 _lastRecoverMs = now;
                 _consecErrors = 0;
                 if (_onError) {
@@ -164,11 +183,13 @@ void Display::setRows(const char* r0, const char* r1,
     } else if (wroteAny) {
         _busFault = false;
         _consecErrors = 0;
+        _commErrWarned = false;
     }
 }
 
 // Only send to LCD if the row content differs from shadow
-bool Display::_writeRow(uint8_t row, const char* text) {
+bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull) {
+    if (wroteFull) *wroteFull = false;
     if (row >= LCD_ROWS) return true;  // bounds guard
     if (!text) text = "";
     // Build padded version
@@ -187,6 +208,7 @@ bool Display::_writeRow(uint8_t row, const char* text) {
             return false;
         }
         _dirty[row] = false;
+        if (wroteFull) *wroteFull = true;
         return true;
     }
 
@@ -215,6 +237,9 @@ bool Display::_writeRow(uint8_t row, const char* text) {
     if (_lcd.lastError() != 0) {
         _dirty[row] = true;
         return false;
+    }
+    if (wroteFull && diffStart == 0 && diffEnd == LCD_COLS - 1) {
+        *wroteFull = true;
     }
     return true;
 }

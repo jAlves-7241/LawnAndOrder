@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include "log.h"
 
 // Nota: extern wateringCtrl, rtclock, scheduler, storage, history
@@ -208,6 +209,7 @@ bool UI::executeConfirmed(const char* tag) {
 
     if (!strcmp(tag, "skip_clock")) {
         LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_SKIP_CLOCK);
+        scheduler.onModeChanged(false);
         advanceSetup();
         return true;
     }
@@ -218,6 +220,7 @@ bool UI::executeConfirmed(const char* tag) {
             if (gState.zones[i].enabled && gState.zones[i].duration_min > 0) any = true;
         }
         if (!any) {
+            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
             _screenInfo.setup(TXT_ERR_ACTIVE_ZONES, TXT_NO_ACTIVE_ZONES,
                               TXT_ERR_ACTIVATE_ZONES, TXT_ERR_SCHEDULE,
                               MenuID::MANUAL);
@@ -246,7 +249,10 @@ bool UI::executeConfirmed(const char* tag) {
         }
     }
 
-    return false;
+    LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, tag);
+    _screenInfo.setup(TXT_ERR_TITLE, TXT_UNKNOWN, "", "", MenuID::MAIN);
+    changeScreen(&_screenInfo);
+    return true;
 }
 
 void UI::dispatchAction(const char* action) {
@@ -283,6 +289,7 @@ void UI::dispatchAction(const char* action) {
                     }
                 }
                 if (overlap) {
+                    LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_NVS_CUSTOM_RESPACED);
                     uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
                     uint16_t stepMins = 1440 / cs.slot_count;
                     for (int i = 1; i < cs.slot_count; i++) {
@@ -376,20 +383,33 @@ void UI::dispatchAction(const char* action) {
 
     if (!strcmp(action, "toggle_dst")) {
         gState.auto_dst = !gState.auto_dst;
-        LOG_I(TXT_LOG_TAG_UI, TXT_LOG_DST_TOGGLED,
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_DST_TOGGLED,
               gState.auto_dst ? TXT_SER_ENABLED : TXT_SER_DISABLED);
         _configChanged = true;
         if (gState.rtc_valid) {
             rtclock.refreshLocalTime();
         }
-        scheduler.onModeChanged();
+        scheduler.onModeChanged(false);
         goMenu(MenuID::DEF_AVANCADO);
         return;
     }
 
     if (strncmp(action, "bl:", 3) == 0) {
-        uint32_t ms = strtoul(action+3, nullptr, 10);
-        gState.backlight_timeout_ms = ms;
+        char* endp = nullptr;
+        errno = 0;
+        unsigned long ms = strtoul(action + 3, &endp, 10);
+        if (action[3] < '0' || action[3] > '9' || endp == action + 3 ||
+            *endp != '\0' || errno == ERANGE || ms > BACKLIGHT_TIMEOUT_NEVER) {
+            LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
+            return;
+        }
+        gState.backlight_timeout_ms = (uint32_t)ms;
+        if (gState.backlight_timeout_ms == BACKLIGHT_TIMEOUT_NEVER) {
+            LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_BL_NEVER);
+        } else {
+            LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_BL_SEC,
+                  (unsigned long)(gState.backlight_timeout_ms / 1000UL));
+        }
         _configChanged = true;
         _d.displayOn();
         _d.backlightOn();
@@ -449,7 +469,7 @@ void UI::dispatchAction(const char* action) {
                 // Linha horas B: ciclo 3 + frequência (ou só frequência para 3 ciclos)
                 if (cs.slot_count == 4) {
                     snprintf(l3, sizeof(l3), "  %02d:%02d (%dd)",
-                             cs.slots[3].hour, cs.slots[3].minute,
+                             (int)(cs.slots[3].hour % 24U), (int)(cs.slots[3].minute % 60U),
                              cs.interval_days);
                 } else {
                     if (cs.interval_days == 1) snprintf(l3, sizeof(l3), "%s", TXT_PROG_EVERY_1_DAY);
