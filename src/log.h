@@ -1,21 +1,24 @@
 #pragma once
 #include <Arduino.h>
+#include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
+#include "AppState.h"
+#include "i18n.h"
 
-// ── Níveis de log ─────────────────────────────────────────
-// Definir LOG_LEVEL em config.h para filtrar mensagens em compile-time.
-// Quanto mais alto o nível, mais verboso o output.
+// ── Niveis de log ─────────────────────────────────────────
+// Definir LOG_LEVEL em config.h (ou build flags) para filtrar em compile-time.
+// Quanto mais alto o nivel, mais detalhado o output.
 //
 //   LVL_NONE  - desliga todos os logs
-//   LVL_ERROR - apenas erros críticos (falhas de hardware, limites ultrapassados)
-//   LVL_WARN  - avisos (dados incompatíveis, bateria fraca)
-//   LVL_INFO  - operações normais (boot, acções do utilizador, rega)
-//   LVL_DEBUG - detalhes internos (transições de estado, valores intermédios)
+//   LVL_ERROR - erros criticos (falhas de hardware, limites ultrapassados)
+//   LVL_WARN  - avisos (dados incompativeis, bateria fraca, quedas recuperadas)
+//   LVL_INFO  - eventos relevantes (arranque, acoes do utilizador, ciclos de rega)
+//   LVL_DEBUG - detalhes internos de diagnostico e manutencao
 //
-// Uso:
-//   LOG_I("NVS", "Dados carregados (Modo: %d)", mode);
-//   LOG_E("RTC", "Modulo nao encontrado");
-//   LOG_D("SCHED", "custom_ref_day definido: %lu", day);
+// Formato padrao (precisao ao segundo):
+//   [YYYY-MM-DD HH:MM:SS] [LEVEL] [Component] Mensagem
+//   [Uptime HH:MM:SS]     [LEVEL] [Component] Mensagem (quando hora nao validada)
 
 #define LVL_NONE   -1
 #define LVL_ERROR   0
@@ -27,82 +30,96 @@
 #define LOG_LEVEL LVL_INFO
 #endif
 
-// ── Suspensão temporária de logs ─────────────────────────
-// Quando true, todas as macros LOG_* são silenciadas em runtime.
-// Usado pelo módulo History para evitar intercalar logs com dados
-// CSV durante a exportação via Serial.
+// ── Suspensao temporaria de logs (exportacao CSV) ────────
 extern bool _log_suspended;
+inline uint16_t _log_suppressed_total = 0;
+inline uint16_t _log_suppressed_warn_err = 0;
 
 // ── Terminal-aware logging ────────────────────────────────
-// Tamanho do buffer de formatação para cada invocação de LOG_*.
-// Alocado na stack apenas quando o log realmente dispara.
-#define LOG_FMT_BUF_SIZE 192
+#define LOG_FMT_BUF_SIZE 256
 
-// Imprime msg numa linha própria, preservando qualquer input
-// parcial do utilizador no terminal série (usa ANSI escapes).
+// Imprime msg numa linha propria, preservando qualquer input
+// parcial do utilizador no terminal serie (usa ANSI escapes).
 void terminalAwareLog(const char* msg);
 
-// ── Prefixo de severidade dependente do idioma ───────────
-#if defined(LANG_SERIAL_PT)
-  #define LOG_PREF_ERROR "ERRO: "
-  #define LOG_PREF_WARN  "AVISO: "
-#else
-  #define LOG_PREF_ERROR "ERROR: "
-  #define LOG_PREF_WARN  "WARNING: "
-#endif
+// Formata e emite uma linha de log padronizada; contabiliza linhas ocultadas
+// durante a exportacao CSV em _log_suppressed_*.
+// Nao chamar dentro de ISR (IRAM_ATTR).
+inline void _logWrite(bool isWarnOrErr, const char* level, const char* tag,
+                      const char* fmt, ...) __attribute__((format(printf, 4, 5)));
+
+inline void _logWrite(bool isWarnOrErr, const char* level, const char* tag,
+                      const char* fmt, ...) {
+  if (_log_suspended) {
+    if (_log_suppressed_total < 0xFFFFU) _log_suppressed_total++;
+    if (isWarnOrErr && _log_suppressed_warn_err < 0xFFFFU) {
+      _log_suppressed_warn_err++;
+    }
+    return;
+  }
+
+  char ts[32];
+  if (gState.rtc_valid && gState.now.year >= 2000 &&
+      gState.now.month >= 1 && gState.now.day >= 1) {
+    snprintf(ts, sizeof(ts), "%04u-%02u-%02u %02u:%02u:%02u",
+             (unsigned)gState.now.year, (unsigned)gState.now.month,
+             (unsigned)gState.now.day, (unsigned)gState.now.hour,
+             (unsigned)gState.now.min, (unsigned)gState.now.sec);
+  } else {
+    unsigned long upSec = millis() / 1000UL;
+    unsigned long h = upSec / 3600UL;
+    unsigned long m = (upSec % 3600UL) / 60UL;
+    unsigned long s = upSec % 60UL;
+    snprintf(ts, sizeof(ts), "%s %02lu:%02lu:%02lu",
+             TXT_LOG_UPTIME_PREFIX, h, m, s);
+  }
+
+  char line[LOG_FMT_BUF_SIZE];
+  int prefixLen = snprintf(line, sizeof(line), "[%s] [%s] [%s] ", ts, level, tag);
+  if (prefixLen < 0) prefixLen = 0;
+
+  if ((size_t)prefixLen < sizeof(line) - 1U) {
+    va_list args;
+    va_start(args, fmt);
+    int msgLen = vsnprintf(line + prefixLen, sizeof(line) - (size_t)prefixLen,
+                           fmt, args);
+    va_end(args);
+    if (msgLen >= (int)(sizeof(line) - (size_t)prefixLen)) {
+      strcpy(line + sizeof(line) - 4U, "...");
+    }
+  }
+
+  terminalAwareLog(line);
+}
 
 // ── Macros ────────────────────────────────────────────────
-// A tag é uma string literal (ex: "NVS", "RTC", "WATER").
-// O \n é adicionado automaticamente - não incluir no fmt.
-//
-// AVISO: Estas macros usam Serial.printf() e NÃO são seguras
-// para uso dentro de ISR (IRAM_ATTR). Utilizar apenas no loop()
-// ou em funções chamadas a partir do loop().
+// Nao incluir '\n' no fmt; o terminalAwareLog adiciona terminacao de linha.
+// Nao utilizar dentro de ISR (IRAM_ATTR).
 
 #if LOG_LEVEL >= LVL_ERROR
-  #define LOG_E(tag, fmt, ...) do { \
-    if (!_log_suspended) { \
-      char _lb[LOG_FMT_BUF_SIZE]; \
-      snprintf(_lb, sizeof(_lb), "[" tag "] " LOG_PREF_ERROR fmt, ##__VA_ARGS__); \
-      terminalAwareLog(_lb); \
-    } \
-  } while(0)
+  #define LOG_E(tag, fmt, ...) \
+    _logWrite(true, TXT_LOG_LVL_ERROR, tag, fmt, ##__VA_ARGS__)
 #else
   #define LOG_E(tag, fmt, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL >= LVL_WARN
-  #define LOG_W(tag, fmt, ...) do { \
-    if (!_log_suspended) { \
-      char _lb[LOG_FMT_BUF_SIZE]; \
-      snprintf(_lb, sizeof(_lb), "[" tag "] " LOG_PREF_WARN fmt, ##__VA_ARGS__); \
-      terminalAwareLog(_lb); \
-    } \
-  } while(0)
+  #define LOG_W(tag, fmt, ...) \
+    _logWrite(true, TXT_LOG_LVL_WARN, tag, fmt, ##__VA_ARGS__)
 #else
   #define LOG_W(tag, fmt, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL >= LVL_INFO
-  #define LOG_I(tag, fmt, ...) do { \
-    if (!_log_suspended) { \
-      char _lb[LOG_FMT_BUF_SIZE]; \
-      snprintf(_lb, sizeof(_lb), "[" tag "] " fmt, ##__VA_ARGS__); \
-      terminalAwareLog(_lb); \
-    } \
-  } while(0)
+  #define LOG_I(tag, fmt, ...) \
+    _logWrite(false, TXT_LOG_LVL_INFO, tag, fmt, ##__VA_ARGS__)
 #else
   #define LOG_I(tag, fmt, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL >= LVL_DEBUG
-  #define LOG_D(tag, fmt, ...) do { \
-    if (!_log_suspended) { \
-      char _lb[LOG_FMT_BUF_SIZE]; \
-      snprintf(_lb, sizeof(_lb), "[" tag "] " fmt, ##__VA_ARGS__); \
-      terminalAwareLog(_lb); \
-    } \
-  } while(0)
+  #define LOG_D(tag, fmt, ...) \
+    _logWrite(false, TXT_LOG_LVL_DEBUG, tag, fmt, ##__VA_ARGS__)
 #else
   #define LOG_D(tag, fmt, ...) ((void)0)
 #endif

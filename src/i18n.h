@@ -415,6 +415,26 @@
 #endif
 
 #if defined(LANG_SERIAL_EN)
+// Log format labels & component names
+#define TXT_LOG_UPTIME_PREFIX "Uptime"
+#define TXT_LOG_LVL_ERROR "ERROR"
+#define TXT_LOG_LVL_WARN "WARNING"
+#define TXT_LOG_LVL_INFO "INFO"
+#define TXT_LOG_LVL_DEBUG "DEBUG"
+
+#define TXT_LOG_TAG_SYS "System"
+
+#define TXT_SER_TRIG_AUTO "Automatic"
+#define TXT_SER_TRIG_MANUAL "Manual"
+#define TXT_SER_TRIG_CUSTOM "Custom"
+#define TXT_SER_TRIG_TEST "Test"
+
+// I2C friendly device names
+#define TXT_I2C_DEV_LCD "LCD Display"
+#define TXT_I2C_DEV_RTC "Hardware Clock"
+#define TXT_I2C_DEV_EEPROM "Clock Module Memory"
+#define TXT_I2C_DEV_UNKNOWN "Unknown device"
+
 #define TXT_LOG_START_EXPORT "Starting history export..."
 #define TXT_LOG_EXPORT_DONE "Export complete: %d records"
 #define TXT_LOG_NO_EXPORT_ROT "Cannot export during history rotation"
@@ -423,7 +443,7 @@
   "Waiting for zone transition (currently Zone %d)\n"
 #define TXT_LOG_WATERING_PROG "Watering Zone %d - Progress: %d%%\n"
 #define TXT_SETUP_DONE_LOG "Initial setup complete"
-#define TXT_LOG_DEFAULTS_LOADED "Defaults loaded - Mode: %d, Zones: %d"
+#define TXT_LOG_DEFAULTS_LOADED "Initialized default settings in memory (Mode: %s, Zones: %d)"
 #define TXT_LOG_MEM_CLEARED "Memory cleared (Reset)"
 #define TXT_LOG_RESUME_ZONE "Resuming zone %d cycle"
 #define TXT_LOG_RTC_INVALID_RESUME "Invalid RTC. Cannot validate resume time."
@@ -513,7 +533,7 @@
 #define TXT_TERM_STOP_OK "Watering stopped successfully."
 #define TXT_TERM_STOP_IDLE "No watering currently active."
 
-// Modes for Terminal Status
+// Modes for Terminal Status & Logs
 #define TXT_TERM_MODE_INTENSE "Intense"
 #define TXT_TERM_MODE_MEDIUM "Medium"
 #define TXT_TERM_MODE_WEAK "Weak"
@@ -622,6 +642,26 @@
 #define TXT_LOG_HIST_PEND_REPLAY "Replaying %d deferred history record(s) from pending log"
 #define TXT_TERM_WIPE_EXPIRED "Confirmation timed out. Clear history cancelled."
 #elif defined(LANG_SERIAL_PT)
+// Etiquetas de formato de log e nomes de componentes
+#define TXT_LOG_UPTIME_PREFIX "Ligado"
+#define TXT_LOG_LVL_ERROR "ERRO"
+#define TXT_LOG_LVL_WARN "AVISO"
+#define TXT_LOG_LVL_INFO "INFO"
+#define TXT_LOG_LVL_DEBUG "DEPURACAO"
+
+#define TXT_LOG_TAG_SYS "Sistema"
+
+#define TXT_SER_TRIG_AUTO "Automatica"
+#define TXT_SER_TRIG_MANUAL "Manual"
+#define TXT_SER_TRIG_CUSTOM "Personalizada"
+#define TXT_SER_TRIG_TEST "Teste"
+
+// Nomes amigaveis de dispositivos I2C
+#define TXT_I2C_DEV_LCD "Ecra LCD"
+#define TXT_I2C_DEV_RTC "Relogio de Hardware"
+#define TXT_I2C_DEV_EEPROM "Memoria do Modulo de Relogio"
+#define TXT_I2C_DEV_UNKNOWN "Dispositivo desconhecido"
+
 #define TXT_LOG_START_EXPORT "A iniciar exportacao do historico..."
 #define TXT_LOG_EXPORT_DONE "Exportacao concluida: %d registos"
 #define TXT_LOG_NO_EXPORT_ROT                                                  \
@@ -632,7 +672,8 @@
   "A aguardar transicao de zona (atualmente Zona %d)\n"
 #define TXT_LOG_WATERING_PROG "A regar Zona %d - Progresso: %d%%\n"
 #define TXT_SETUP_DONE_LOG "Configuracao inicial concluida"
-#define TXT_LOG_DEFAULTS_LOADED "Predefinicoes carregadas - Modo: %d, Zonas: %d"
+#define TXT_LOG_DEFAULTS_LOADED                                                \
+  "Predefinicoes inicializadas em memoria (Modo: %s, Zonas: %d)"
 #define TXT_LOG_MEM_CLEARED "Memoria limpa (Reset)"
 #define TXT_LOG_RESUME_ZONE "A retomar ciclo da zona %d"
 #define TXT_LOG_RTC_INVALID_RESUME                                             \
@@ -728,7 +769,7 @@
 #define TXT_TERM_STOP_OK "Rega parada com sucesso."
 #define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
 
-// Modos para o Status do Terminal
+// Modos para o Status do Terminal e Logs
 #define TXT_TERM_MODE_INTENSE "Intenso"
 #define TXT_TERM_MODE_MEDIUM "Medio"
 #define TXT_TERM_MODE_WEAK "Fraco"
