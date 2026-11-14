@@ -450,6 +450,79 @@ void test_watering_invalid_custom_duration_preserves_active_cycle(void) {
     TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_2));
 }
 
+void test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime(void) {
+    // 1. 5 s hardware test completion must log seconds, never "(1 min)"
+    wateringCtrl.startTest(0);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    Serial.reset();
+
+    advanceMockMillis(ZONE_TEST_DURATION_S * 1000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+#if LOG_LEVEL >= LVL_INFO
+    char expectedTestDone[128];
+    snprintf(expectedTestDone, sizeof(expectedTestDone),
+             TXT_LOG_ZONE_DEACTIVATED_SEC,
+             1, gState.zones[0].name, (unsigned long)ZONE_TEST_DURATION_S);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedTestDone) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("(1 min)") == std::string::npos);
+#endif
+
+    // 2. Stopping during initial pre-Zone-1 dead-time must NOT log inter-zone transition
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 5;
+    gState.zones[1].enabled = true;
+    gState.zones[1].duration_min = 5;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    TEST_ASSERT_TRUE(wateringCtrl._isRelayDeadTimeWaiting);
+    Serial.reset();
+
+    wateringCtrl.stop();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    char unexpectedTrans[128];
+    snprintf(unexpectedTrans, sizeof(unexpectedTrans),
+             TXT_LOG_STOP_DURING_WAIT, 1, gState.zones[0].name);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(unexpectedTrans) == std::string::npos);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_WATER_INT) != std::string::npos);
+#endif
+
+    // 3. Early stop under 60 s after zone starts must log seconds
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    advanceMockMillis(12000);
+    Serial.reset();
+
+    wateringCtrl.stop();
+#if LOG_LEVEL >= LVL_INFO
+    char expectedIntSec[128];
+    snprintf(expectedIntSec, sizeof(expectedIntSec),
+             TXT_LOG_ZONE_DEACTIVATED_INT_SEC,
+             1, gState.zones[0].name, 12UL);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedIntSec) != std::string::npos);
+#endif
+
+    // 4. Stopping during inter-zone pause must log TXT_LOG_STOP_DURING_WAIT for next zone
+    gState.zones[0].duration_min = 1;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    advanceMockMillis(60000);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl._isWaiting);
+    Serial.reset();
+
+    wateringCtrl.stop();
+#if LOG_LEVEL >= LVL_INFO
+    char expectedWaitStop[128];
+    snprintf(expectedWaitStop, sizeof(expectedWaitStop),
+             TXT_LOG_STOP_DURING_WAIT, 2, gState.zones[1].name);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedWaitStop) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -466,5 +539,6 @@ int main(void) {
     RUN_TEST(test_watering_deenergize_relays_preserves_recovery_state);
     RUN_TEST(test_watering_recovery_retry_cap_and_stable_reset);
     RUN_TEST(test_watering_invalid_custom_duration_preserves_active_cycle);
+    RUN_TEST(test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime);
     return UNITY_END();
 }

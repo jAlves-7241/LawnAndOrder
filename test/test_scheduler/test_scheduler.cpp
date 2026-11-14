@@ -390,8 +390,18 @@ void test_scheduler_recovery_max_age_2h(void) {
     gState.mode = AppMode::DESATIVADO;
     uint32_t startUnix = 1781500000UL;
 
-    SystemTime overLimit = { 2026, 6, 15, 11, 0, 0, 1, startUnix + RECOVERY_MAX_AGE_S + 1 };
-    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, overLimit, 10800));
+    SystemTime atLimit = { 2026, 6, 15, 11, 0, 0, 1, startUnix + RECOVERY_MAX_AGE_S };
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, atLimit, 3600));
+
+    SystemTime overLimit = { 2026, 6, 15, 11, 0, 30, 1, startUnix + RECOVERY_MAX_AGE_S + 30 };
+    Serial.reset();
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, overLimit, 3600));
+#if LOG_LEVEL >= LVL_WARN
+    char expectedAgeMsg[160];
+    snprintf(expectedAgeMsg, sizeof(expectedAgeMsg), TXT_LOG_SCHED_REC_AGE,
+             121UL, (unsigned long)(RECOVERY_MAX_AGE_S / 60UL));
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedAgeMsg) != std::string::npos);
+#endif
 
     SystemTime withinLimit = { 2026, 6, 15, 8, 30, 0, 1, startUnix + 1800 };
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, withinLimit, 3600));
