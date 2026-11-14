@@ -401,6 +401,81 @@ void test_history_rejects_test_trigger_and_long_corrupt_line(void) {
     TEST_ASSERT_EQUAL_UINT8(5, out[0].day);
 }
 
+void test_history_rotation_double_fail_export_suppression_and_guards(void) {
+    // 1. record() without valid RTC logs TXT_LOG_HIST_SKIP_NO_RTC and drops entry
+    history.clear();
+    gState.rtc_valid = false;
+    Serial.reset();
+    HistoryEntry e1 = { 2026, 6, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e1);
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_SKIP_NO_RTC) != std::string::npos);
+#endif
+    gState.rtc_valid = true;
+
+    // 2. clear() and startExport() when !_ready return false and log TXT_LOG_HIST_NOT_READY
+    history._ready = false;
+    Serial.reset();
+    TEST_ASSERT_FALSE(history.clear());
+    TEST_ASSERT_FALSE(history.startExport(true));
+#if LOG_LEVEL >= LVL_ERROR
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_NOT_READY) != std::string::npos);
+#endif
+    history._ready = true;
+
+    // 3. Rotation fallback double-failure (_rotSrc missing + writeFail = true) logs FILE_ERR without false ROT_OPEN_FAIL
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    LittleFS.remove(HISTORY_FILE);
+    LittleFS.writeFail = true;
+    Serial.reset();
+    history.record(e1);
+    TEST_ASSERT_EQUAL_UINT16(HISTORY_MAX_ENTRIES, history.entryCount());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_ROT_OPEN_FAIL) == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_LOGGED) == std::string::npos);
+#if LOG_LEVEL >= LVL_ERROR
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_FILE_ERR) != std::string::npos);
+#endif
+    LittleFS.writeFail = false;
+
+    // When fallback append succeeds (_rotSrc missing, writeFail = false), ROT_OPEN_FAIL is logged
+    LittleFS.remove(HISTORY_FILE);
+    Serial.reset();
+    history.record(e1);
+    TEST_ASSERT_EQUAL_UINT16(HISTORY_MAX_ENTRIES + 1, history.entryCount());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_ROT_OPEN_FAIL) != std::string::npos);
+#endif
+
+    // 4. record() during CSV export defers cleanly without triggering warn/err suppression alert
+    history.clear();
+    history.record(e1);
+    Serial.reset();
+    TEST_ASSERT_TRUE(history.startExport(true));
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_START_EXPORT) != std::string::npos);
+
+    HistoryEntry e2 = { 2026, 6, 2, 8, 0, { 12, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e2);
+    TEST_ASSERT_EQUAL_UINT16(0, _log_suppressed_warn_err);
+
+    // Emit an info-only log during export -> footer logs TXT_LOG_EXPORT_SUPPRESSED_INFO, not warning
+    _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", TXT_LOG_SYS_READY);
+    int safety = 100;
+    while (history.isExporting() && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+#if LOG_LEVEL >= LVL_INFO
+    char expectedInfoSup[128];
+    snprintf(expectedInfoSup, sizeof(expectedInfoSup), TXT_LOG_EXPORT_SUPPRESSED_INFO, 1U);
+    // Note: if LOG_LEVEL == LVL_DEBUG, record() also emitted 1 debug log -> count is 2
+#if LOG_LEVEL >= LVL_DEBUG
+    snprintf(expectedInfoSup, sizeof(expectedInfoSup), TXT_LOG_EXPORT_SUPPRESSED_INFO, 2U);
+#endif
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedInfoSup) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -419,5 +494,6 @@ int main(void) {
     RUN_TEST(test_history_begin_detects_truncated_file_via_filesize);
     RUN_TEST(test_history_pending_record_persisted_and_replayed_across_rotation);
     RUN_TEST(test_history_rejects_test_trigger_and_long_corrupt_line);
+    RUN_TEST(test_history_rotation_double_fail_export_suppression_and_guards);
     return UNITY_END();
 }

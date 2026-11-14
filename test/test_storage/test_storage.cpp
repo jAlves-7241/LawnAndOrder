@@ -1,7 +1,6 @@
 #include <unity.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
-bool _log_suspended = false;
 #include "../../src/AppState.cpp"
 #define private public
 #include "Storage.h"
@@ -375,6 +374,44 @@ void test_storage_last_triggers_roundtrip(void) {
     TEST_ASSERT_FALSE(storage.loadLastTriggers(loaded, MAX_SLOTS_PER_MODE));
 }
 
+void test_storage_clear_guard_invalid_hist_cache_and_respace_logs(void) {
+    // 1. storage.clear() when !_ready returns false and logs NS_FAIL without MEM_CLEARED
+    storage._ready = false;
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.clear());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_MEM_CLEARED) == std::string::npos);
+#if LOG_LEVEL >= LVL_ERROR
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_NS_FAIL) != std::string::npos);
+#endif
+    storage._ready = true;
+
+    // 2. loadHistoryCache() with truncated/invalid header logs TXT_LOG_NVS_HIST_INV
+    uint8_t badByte = 0xAA;
+    prefs.putBytes(KEY_HBLOB, &badByte, 1);
+    HistoryEntry loaded[2] = {};
+    uint16_t lineCount = 0;
+    uint32_t fileSize = 0;
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadHistoryCache(loaded, sizeof(loaded), lineCount, &fileSize));
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_HIST_INV) != std::string::npos);
+#endif
+
+    // 3. Dormant custom slots overlapping on load() auto-respace and log TXT_LOG_NVS_CUSTOM_RESPACED
+    gState.mode = AppMode::MEDIO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 10 };
+    TEST_ASSERT_TRUE(storage.save());
+
+    Serial.reset();
+    TEST_ASSERT_TRUE(storage.load());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_CUSTOM_RESPACED) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
@@ -392,5 +429,6 @@ int main(void) {
     RUN_TEST(test_storage_nvs_load_crc_rejection_and_clamping);
     RUN_TEST(test_storage_history_blob_atomic_and_filesize);
     RUN_TEST(test_storage_last_triggers_roundtrip);
+    RUN_TEST(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);
     return UNITY_END();
 }

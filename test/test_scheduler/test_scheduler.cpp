@@ -393,9 +393,10 @@ void test_scheduler_recovery_max_age_2h(void) {
     SystemTime atLimit = { 2026, 6, 15, 11, 0, 0, 1, startUnix + RECOVERY_MAX_AGE_S };
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, atLimit, 3600));
 
-    SystemTime overLimit = { 2026, 6, 15, 11, 0, 30, 1, startUnix + RECOVERY_MAX_AGE_S + 30 };
+    // Exact +1 s boundary (7201 s) expires and logs ceiling 121 min
+    SystemTime overLimitBy1s = { 2026, 6, 15, 11, 0, 1, 1, startUnix + RECOVERY_MAX_AGE_S + 1 };
     Serial.reset();
-    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, overLimit, 3600));
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, overLimitBy1s, 3600));
 #if LOG_LEVEL >= LVL_WARN
     char expectedAgeMsg[160];
     snprintf(expectedAgeMsg, sizeof(expectedAgeMsg), TXT_LOG_SCHED_REC_AGE,
@@ -403,6 +404,27 @@ void test_scheduler_recovery_max_age_2h(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedAgeMsg) != std::string::npos);
 #endif
 
+    // Remaining duration > max_cycle_sec (4801 s -> ceiling 81 min vs 80 min limit) logs in minutes
+    Serial.reset();
+    const uint32_t maxCycleSec = (uint32_t)NUM_ZONES * 20UL * 60UL;
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, atLimit, maxCycleSec + 1UL));
+#if LOG_LEVEL >= LVL_WARN
+    char expectedDurMsg[160];
+    snprintf(expectedDurMsg, sizeof(expectedDurMsg), TXT_LOG_SCHED_REC_DUR,
+             81UL, (unsigned long)(maxCycleSec / 60UL));
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedDurMsg) != std::string::npos);
+#endif
+
+    // onModeChanged(false) refreshes next slot quietly without emitting mode-change log
+    gState.mode = AppMode::MEDIO;
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 7, 0, 0, 1, startUnix };
+    Serial.reset();
+    scheduler.onModeChanged(false);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT0_H, gState.next_hour);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.empty());
+
+    gState.mode = AppMode::DESATIVADO;
     SystemTime withinLimit = { 2026, 6, 15, 8, 30, 0, 1, startUnix + 1800 };
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, withinLimit, 3600));
 }

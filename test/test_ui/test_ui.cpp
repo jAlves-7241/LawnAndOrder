@@ -367,28 +367,52 @@ void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
 
     testDisp._lcd.mockI2cError = 1;
     // Trigger 3 consecutive failed frames -> error callback fires once at 3rd error
+    Serial.reset();
     for (int i = 0; i < 3; i++) {
         testDisp.setRows("A", "B", "C", "D");
     }
     TEST_ASSERT_TRUE(testDisp.hasBusFault());
     TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+    TEST_ASSERT_TRUE(testDisp._commErrWarned);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_COMM_ERR) != std::string::npos);
+#endif
 
-    // Additional failures inside 10s cooldown (even >= 3 frames) must NOT re-trigger callback
+    // Additional failures inside 10s cooldown (even >= 3 frames) must NOT re-trigger callback or increment _consecErrors
     advanceMockMillis(2000);
     for (int i = 0; i < 3; i++) {
         testDisp.setRows("E", "F", "G", "H");
     }
     TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+    TEST_ASSERT_EQUAL_UINT8(0, testDisp._consecErrors);
 
-    // After 10s cooldown, callback triggers again on fault, then clears once I2C recovers
+    // After 10s cooldown, 3 fresh failed frames are required before callback triggers again; warning stays deduplicated
     advanceMockMillis(10000);
+    Serial.reset();
+    testDisp.setRows("I", "J", "K", "L");
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+    testDisp.setRows("I", "J", "K", "L");
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
     testDisp.setRows("I", "J", "K", "L");
     TEST_ASSERT_EQUAL_UINT8(2, _i2cRecoverCallbackCalls);
     TEST_ASSERT_TRUE(testDisp.hasBusFault());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_COMM_ERR) == std::string::npos);
 
+    // Wake/sleep helpers must clear stale _lcd._i2cErr once bus recovers
     testDisp._lcd.mockI2cError = 0;
+    testDisp.displayOff();
+    TEST_ASSERT_FALSE(testDisp.isDisplayOn());
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    testDisp.displayOn();
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+    testDisp.backlightOff();
+    TEST_ASSERT_FALSE(testDisp.isBacklightOn());
+    testDisp.backlightOn();
+    TEST_ASSERT_TRUE(testDisp.isBacklightOn());
+
     testDisp.setRows("Row0", "Row1", "Row2", "Row3");
     TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    TEST_ASSERT_FALSE(testDisp._commErrWarned);
     TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
 }
 
@@ -458,6 +482,121 @@ void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
 }
 
+void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
+    gState.setup_done = true;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    testUi.begin();
+
+    // 1. Backlight timeout actions: seconds, always-on, and invalid format guard
+    Serial.reset();
+    testUi.dispatchAction("bl:30000");
+    TEST_ASSERT_EQUAL_UINT32(30000UL, gState.backlight_timeout_ms);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedBlSec[96];
+    snprintf(expectedBlSec, sizeof(expectedBlSec), TXT_LOG_UI_BL_SEC, 30UL);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedBlSec) != std::string::npos);
+#endif
+
+    Serial.reset();
+    testUi.dispatchAction("bl:4294967295");
+    TEST_ASSERT_EQUAL_UINT32(BACKLIGHT_TIMEOUT_NEVER, gState.backlight_timeout_ms);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_UI_BL_NEVER) != std::string::npos);
+#endif
+
+    Serial.reset();
+    testUi.dispatchAction("bl:invalid");
+#if LOG_LEVEL >= LVL_WARN
+    char expectedBadBl[96];
+    snprintf(expectedBadBl, sizeof(expectedBadBl), TXT_LOG_UI_UNKNOWN_ACTION, "bl:invalid");
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedBadBl) != std::string::npos);
+#endif
+
+    // 2. Editor save logs: CFG_ZONE, FREQ_DAYS, NUM_CYCLES, CUSTOM_CYCLE (quiet scheduler refresh)
+    Serial.reset();
+    testUi.getScreenDurPick().setup(12, DurContext::CFG_ZONE, 0, MenuID::CFG_ZONAS);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedZoneSet[96];
+    snprintf(expectedZoneSet, sizeof(expectedZoneSet), TXT_LOG_UI_ZONE_SET,
+             1, gState.zones[0].name, TXT_SER_ENABLED, 12U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedZoneSet) != std::string::npos);
+#endif
+
+    Serial.reset();
+    testUi.getScreenDurPick().setup(4, DurContext::FREQ_DAYS, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedFreq[96];
+    snprintf(expectedFreq, sizeof(expectedFreq), TXT_LOG_UI_INTERVAL_SET, 4U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedFreq) != std::string::npos);
+#endif
+
+    Serial.reset();
+    testUi.getScreenDurPick().setup(2, DurContext::NUM_CYCLES, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedCycles[96];
+    snprintf(expectedCycles, sizeof(expectedCycles), TXT_LOG_UI_CYCLES_SET, 2U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedCycles) != std::string::npos);
+#endif
+
+    Serial.reset();
+    testUi.getScreenTimeEdit().setup(TimeEditContext::CUSTOM_CYCLE, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    simulateClick(testUi); // hours -> minutes
+    simulateClick(testUi); // save slot
+#if LOG_LEVEL >= LVL_INFO
+    char expectedSlot[96];
+    snprintf(expectedSlot, sizeof(expectedSlot), TXT_LOG_UI_SLOT_SET,
+             1, (unsigned)MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].hour,
+             (unsigned)MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[0].minute);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedSlot) != std::string::npos);
+#endif
+
+    // 3. Confirming "general" with all zones disabled logs TXT_LOG_START_NO_ZONES
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = false;
+        gState.zones[i].duration_min = 0;
+    }
+    Serial.reset();
+    TEST_ASSERT_TRUE(testUi.executeConfirmed("general"));
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_START_NO_ZONES) != std::string::npos);
+#endif
+
+    // 4. Unknown confirm tag logs warning and shows error screen instead of "-- EXECUTED --"
+    testUi.getScreenConfirm().setup("Test?", "", MenuID::MAIN, "bogus_tag");
+    testUi.changeScreen(&testUi.getScreenConfirm());
+    testUi.getScreenConfirm()._selectionOk = true;
+    Serial.reset();
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[0], TXT_ERR_TITLE));
+#if LOG_LEVEL >= LVL_WARN
+    char expectedUnknown[96];
+    snprintf(expectedUnknown, sizeof(expectedUnknown), TXT_LOG_UI_UNKNOWN_ACTION, "bogus_tag");
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedUnknown) != std::string::npos);
+#endif
+
+    // 5. ScreenTimeEdit(RTC) when hardware RTC is disconnected logs TXT_LOG_RTC_NOT_FOUND
+    rtclock._found = false;
+    rtclock._rtc.mockPresent = false;
+    testUi.getScreenTimeEdit().setup(TimeEditContext::RTC, 0, MenuID::DEF);
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    simulateClick(testUi); // hours -> minutes
+    Serial.reset();
+    simulateClick(testUi); // attempt save -> missing RTC
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_NOT_FOUND) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -472,5 +611,6 @@ int main(void) {
     RUN_TEST(test_display_i2c_fault_abort_cooldown_and_recovery_callback);
     RUN_TEST(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
     RUN_TEST(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
+    RUN_TEST(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
     return UNITY_END();
 }

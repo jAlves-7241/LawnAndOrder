@@ -4,6 +4,10 @@
 #include "../../test/mocks/TestCommon.cpp"
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
+#define private public
+#include "RTClock.h"
+#include "History.h"
+#undef private
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
 #include "../../src/WateringController.cpp"
@@ -503,11 +507,14 @@ void test_logging_standardized_format_and_seconds_precision(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.empty());
 #endif
 
-    // 3. Long message indicates truncation cleanly with '...'
+    // 3. Long message indicates truncation cleanly with '...' at exact 255-char cap (LOG_FMT_BUF_SIZE - 1)
     std::string longText(300, 'A');
     Serial.reset();
     _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", longText.c_str());
-    TEST_ASSERT_TRUE(Serial.outputBuffer.find("...") != std::string::npos);
+    size_t eol = Serial.outputBuffer.find("\r\n");
+    TEST_ASSERT_TRUE(eol != std::string::npos);
+    TEST_ASSERT_EQUAL_UINT32(LOG_FMT_BUF_SIZE - 1, (uint32_t)eol);
+    TEST_ASSERT_EQUAL_STRING("...", Serial.outputBuffer.substr(eol - 3, 3).c_str());
 }
 
 void test_logging_export_suppression_summary_and_human_modes(void) {
@@ -571,6 +578,68 @@ void test_logging_export_suppression_summary_and_human_modes(void) {
 #endif
 }
 
+void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
+    // 1. Software clock (rtc_valid == true, mockPresent == false) reports TXT_TERM_STAT_RTC_SW and omits Unix Time
+    rtclock._found = false;
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 11, 20, 0));
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+
+    Serial.reset();
+    Serial.feedInput("status\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_SW) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_OK) == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("Unix") == std::string::npos);
+
+    // 2. Blocked export_history (while rotation is running) does NOT print TXT_LOG_START_EXPORT
+    history.clear();
+    HistoryEntry e = { 2026, 6, 15, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e);
+    history._rotState = History::RotState::COPYING;
+    Serial.reset();
+    Serial.feedInput("export_history\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_START_EXPORT) == std::string::npos);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NO_EXPORT_ROT) != std::string::npos);
+#endif
+    history._rotState = History::RotState::IDLE;
+
+    // 3. Pipelined "export_history\nstatus\n" in one batch drains trailing command so CSV stream stays uncorrupted
+    Serial.reset();
+    Serial.feedInput("export_history\nstatus\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(history.isExporting());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_START_EXPORT) != std::string::npos);
+
+    // Emit an info-only log during export -> footer logs TXT_LOG_EXPORT_SUPPRESSED_INFO
+    _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", TXT_LOG_SYS_READY);
+    int safety = 100;
+    while (history.isExporting() && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-15T08:00,A,10,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_SYS_STATUS_HDR) == std::string::npos);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedInfoSup[128];
+    snprintf(expectedInfoSup, sizeof(expectedInfoSup), TXT_LOG_EXPORT_SUPPRESSED_INFO, 1U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedInfoSup) != std::string::npos);
+#endif
+
+    // 4. clear_history when History is not ready prints TXT_TERM_WIPE_FAIL instead of TXT_TERM_WIPE_OK
+    history._ready = false;
+    Serial.reset();
+    Serial.feedInput("clear_history\n");
+    terminal.update();
+    Serial.feedInput("y\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_FAIL) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) == std::string::npos);
+    history._ready = true;
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -594,5 +663,6 @@ int main(void) {
     RUN_TEST(test_terminal_midline_batch_coalesces_tail_redraw);
     RUN_TEST(test_logging_standardized_format_and_seconds_precision);
     RUN_TEST(test_logging_export_suppression_summary_and_human_modes);
+    RUN_TEST(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
     return UNITY_END();
 }
