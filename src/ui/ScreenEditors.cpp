@@ -4,6 +4,7 @@
 #include "../AppState.h"
 #include "../Scheduler.h"
 #include "../RTClock.h"
+#include "../log.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -89,6 +90,11 @@ void ScreenDurPick::handleClick(UI& ui) {
             }
         }
 
+        LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_ZONE_SET,
+              (int)_durZoneIdx + 1,
+              gState.zones[_durZoneIdx].name,
+              gState.zones[_durZoneIdx].enabled ? TXT_SER_ENABLED : TXT_SER_DISABLED,
+              (unsigned)gState.zones[_durZoneIdx].duration_min);
         ui.flagConfigChanged();
         ui.goMenu(_backMenu);
         return;
@@ -101,8 +107,9 @@ void ScreenDurPick::handleClick(UI& ui) {
             DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
             gState.custom_ref_day = localDate.unixtime() / 86400UL;
         }
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_INTERVAL_SET, (unsigned)cs.interval_days);
         ui.flagConfigChanged();
-        scheduler.onModeChanged();
+        scheduler.onModeChanged(false);
         ui.goMenu(_backMenu);
         return;
     }
@@ -141,8 +148,9 @@ void ScreenDurPick::handleClick(UI& ui) {
                 }
             }
         }
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_CYCLES_SET, (unsigned)cs.slot_count);
         ui.flagConfigChanged();
-        scheduler.onModeChanged();
+        scheduler.onModeChanged(false);
         ui.goMenu(_backMenu);
         return;
     }
@@ -155,6 +163,7 @@ void ScreenDurPick::handleClick(UI& ui) {
         }
         gState.suspended = true;
         gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_SET, (int)_durValue);
         ui.flagConfigChanged();
         char msg[21];
         snprintf(msg, sizeof(msg), TXT_PAUSE_DAYS, _durValue);
@@ -362,6 +371,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
     if (_teContext == TimeEditContext::RTC) {
         if (!rtclock.isPresent() && !rtclock.probe()) {
+            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_NOT_FOUND);
             if (ui.inSetup()) {
                 ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
                                             MenuID::SETUP_MODE, "skip_clock");
@@ -376,19 +386,20 @@ void ScreenTimeEdit::handleClick(UI& ui) {
 
         bool hwOk = rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
                     ui.getDateEditDay(), _teHour, _teMin, 0);
-        scheduler.onModeChanged();
         if (!hwOk) {
             if (ui.inSetup()) {
                 ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
                                             MenuID::SETUP_MODE, "skip_clock");
                 ui.changeScreen(&ui.getScreenConfirm());
             } else {
+                scheduler.onModeChanged(false);
                 ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT,
                                          TXT_FOUND, "", MenuID::DEF);
                 ui.changeScreen(&ui.getScreenInfo());
             }
             return;
         }
+        scheduler.onModeChanged(false);
 
         if (ui.inSetup()) {
             ui.advanceSetup();
@@ -457,8 +468,10 @@ void ScreenTimeEdit::handleClick(UI& ui) {
             }
         }
 
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_SLOT_SET,
+              (int)_teCycleIdx + 1, (unsigned)_teHour, (unsigned)_teMin);
         ui.flagConfigChanged();
-        scheduler.onModeChanged();
+        scheduler.onModeChanged(false);
         ui.goMenu(_backMenu);
     }
 }

@@ -54,6 +54,34 @@ ModeSchedule MODE_SCHEDULES[(uint8_t)AppMode::_COUNT] = {
     },
 };
 
+const char* serialModeName(AppMode m) {
+    switch (m) {
+        case AppMode::INTENSO:       return TXT_TERM_MODE_INTENSE;
+        case AppMode::MEDIO:         return TXT_TERM_MODE_MEDIUM;
+        case AppMode::FRACO:         return TXT_TERM_MODE_WEAK;
+        case AppMode::DESATIVADO:    return TXT_TERM_MODE_DISABLED;
+        case AppMode::PERSONALIZADO: return TXT_TERM_MODE_CUSTOM;
+        default:                     return TXT_TERM_MODE_UNKNOWN;
+    }
+}
+
+const char* serialTriggerName(WaterTrigger t) {
+    switch (t) {
+        case WaterTrigger::AUTO:   return TXT_SER_TRIG_AUTO;
+        case WaterTrigger::MANUAL: return TXT_SER_TRIG_MANUAL;
+        case WaterTrigger::CUSTOM: return TXT_SER_TRIG_CUSTOM;
+        case WaterTrigger::TEST:   return TXT_SER_TRIG_TEST;
+        default:                   return TXT_TERM_MODE_UNKNOWN;
+    }
+}
+
+const char* i2cDeviceName(uint8_t addr) {
+    if (addr == LCD_ADDR || addr == 0x27 || addr == 0x3F) return TXT_I2C_DEV_LCD;
+    if (addr == 0x68)                                     return TXT_I2C_DEV_RTC;
+    if (addr >= 0x50 && addr <= 0x57)                     return TXT_I2C_DEV_EEPROM;
+    return TXT_I2C_DEV_UNKNOWN;
+}
+
 // ─────────────────────────────────────────────────────────
 void initAppState() {
     // ── Zone defaults ────────────────────────────────────
@@ -107,6 +135,6 @@ void initAppState() {
         MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].slots[i].minute = 0;
     }
 
-    LOG_I("APP", TXT_LOG_DEFAULTS_LOADED,
-          (uint8_t)gState.mode, NUM_ZONES);
+    LOG_D(TXT_LOG_TAG_SYS, TXT_LOG_DEFAULTS_LOADED,
+          serialModeName(gState.mode), NUM_ZONES);
 }

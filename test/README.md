@@ -60,13 +60,13 @@ test/
 ### `test_appstate`
 * `test_struct_sizes_and_alignment`: Validates compile-time size and packed layout invariants (`sizeof(HistoryEntry) == 12`, `sizeof(RecoveryState) == 34`, `sizeof(AppConfigBlob) == 36`).
 * `test_init_app_state_defaults`: Verifies `initAppState()` establishes default zone mappings, durations, disabled modes, and initial sentinel values.
-* `test_mode_schedules_table`: Validates static `MODE_SCHEDULES` matrix against compile-time configuration defines (`INTENSO`, `MEDIO`, `FRACO`, `DESATIVADO`, `PERSONALIZADO`).
+* `test_mode_schedules_table`: Validates static `MODE_SCHEDULES` matrix against compile-time configuration defines (`INTENSO`, `MEDIO`, `FRACO`, `DESATIVADO`, `PERSONALIZADO`) and human-readable serial name helpers (`i2cDeviceName`, `serialTriggerName`, `serialModeName`).
 
 ### `test_encoder`
 * `test_encoder_click_debounce_and_single_trigger`: Verifies 50ms pushbutton debounce, single click emission per physical press, immunity to held buttons, and release transition handling.
 * `test_encoder_rotation_delta_and_clamping`: Tests positive/negative rotation tracking via ISR, delta consumption on read, and clamp-and-preserve arithmetic at ±127 bounds.
 * `test_encoder_isr_rate_limiting`: Verifies 2000µs ISR debounce filter drops pulses arriving faster than 2ms.
-* `test_encoder_begin_resets_isr_and_accepts_early_boot_pulse`: Verifies `begin()` clears stale deltas and accepts immediate boot-time pulses (`micros() < 2000`) without unsigned underflow.
+* `test_encoder_begin_resets_isr_and_accepts_early_boot_pulse`: Verifies `begin()` clears stale deltas, accepts immediate boot-time pulses (`micros() < 2000`) without unsigned underflow, and logs a warning if the pushbutton is held LOW at startup.
 
 ### `test_rtclock`
 * `test_eu_dst_winter_and_summer_months`: Tests DST state classification across non-boundary months.
@@ -81,6 +81,7 @@ test/
 * `test_rtclock_refresh_local_time_on_dst_toggle`: Verifies immediate local hour recalculation when `auto_dst` is toggled.
 * `test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set`: Verifies initial boot preserves DS3231 OSF when RAM is invalid and `set()` validates calendar bounds & hardware presence.
 * `test_rtclock_hotplug_validates_reading_and_tracks_revision`: Verifies hotplug keeps `rtc_valid` false on invalid hardware dates and `set()` increments `revision()`.
+* `test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs`: Verifies `_batRecoveryWarned` deduplication across repeated 30s polls with persistent `lostPower()`, hardware poll deferral while CSV export is active (`_log_suspended`), hotplug `revision()` increment and `HOT_RESTORED`/`BAT_LOW` logs, and deduplicated `set()` logs.
 
 ### `test_scheduler`
 * `test_scheduler_medio_next_slot`: Slot selection for 2-slot daily schedule across morning, midday, and night rollovers.
@@ -100,7 +101,7 @@ test/
 * `test_scheduler_cycle_expired_bounds_and_overflow_safety`: Verifies `isCycleExpired()` rejects zero or out-of-range `remaining_duration_sec` without `uint32_t` wraparound.
 * `test_scheduler_last_triggers_persist_across_reboot`: Verifies `sched_tr` NVS persistence blocks duplicate DST fallback triggers across reboots.
 * `test_scheduler_clock_set_clears_last_triggers`: Verifies `rtclock.revision()` changes clear cached/persisted trigger locks when time is set manually.
-* `test_scheduler_recovery_max_age_2h`: Verifies absolute `RECOVERY_MAX_AGE_S` (7200s / 2h) expiration ceiling across all modes.
+* `test_scheduler_recovery_max_age_2h`: Verifies absolute `RECOVERY_MAX_AGE_S` (7200s / 2h) expiration ceiling (`+1s` boundary), minute-based `TXT_LOG_SCHED_REC_DUR` logging, and quiet `onModeChanged(false)` refresh.
 
 ### `test_storage`
 * `test_storage_export_hex_length_and_format`: Verifies exported string length equals `sizeof(AppConfigBlob) * 2` (72 hex chars for NVS v5 + CRC16) with valid uppercase hexadecimal representation.
@@ -118,6 +119,7 @@ test/
 * `test_storage_nvs_load_crc_rejection_and_clamping`: Verifies `load()` rejects CRC mismatches while still defensively clamping valid-CRC out-of-range stored durations.
 * `test_storage_history_blob_atomic_and_filesize`: Verifies atomic CRC16 `hblob` persistence (`lineCount`, `fileSize`), `hasHistoryData()`, and corruption rejection.
 * `test_storage_last_triggers_roundtrip`: Verifies `sched_tr` timestamp array persistence and erasure on `clear()`.
+* `test_storage_clear_guard_invalid_hist_cache_and_respace_logs`: Verifies `storage.clear()` failure guard when NVS is uninitialized, `loadHistoryCache()` invalid-header warning (`TXT_LOG_NVS_HIST_INV`), and dormant custom slot auto-respace warning (`TXT_LOG_NVS_CUSTOM_RESPACED`).
 
 ### `test_history`
 * `test_history_entry_to_line_format`: Validates ISO 8601 formatting (`YYYY-MM-DDTHH:MM,<trigger>,d0,d1,d2,d3`) across `AUTO` ('A'), `MANUAL` ('M'), and `CUSTOM` ('C') triggers.
@@ -136,6 +138,7 @@ test/
 * `test_history_begin_detects_truncated_file_via_filesize`: Verifies `hblob` `fileSize` mismatch forces LittleFS cache rebuild.
 * `test_history_pending_record_persisted_and_replayed_across_rotation`: Verifies deferred records persist to `/hist_pend.txt` during rotation, dynamic over-capacity trimming, and startup replay.
 * `test_history_rejects_test_trigger_and_long_corrupt_line`: Verifies `'T'` trigger exclusion in `_lineToEntry()` and overlong line discarding in `_populateCache()`.
+* `test_history_rotation_double_fail_export_suppression_and_guards`: Verifies `TXT_LOG_HIST_SKIP_NO_RTC` when `!rtc_valid`, `clear()`/`startExport()` boolean guards when `!_ready`, rotation fallback double-failure logging `TXT_LOG_HIST_FILE_ERR` without false `ROT_OPEN_FAIL`, and deferred `record()` during CSV export emitting info-only suppression summary (`TXT_LOG_EXPORT_SUPPRESSED_INFO`).
 
 ### `test_terminal`
 * `test_terminal_help_command`: Help menu formatting and command presence.
@@ -157,6 +160,9 @@ test/
 * `test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow`: Verifies 30s expiration of pending `clear_history` prompts and Ctrl+C recovery from overflow ignore mode.
 * `test_terminal_import_active_guard_setup_sync_and_set_time_strict`: Verifies active-watering `import_config` rejection, `syncSetupState()` dispatch, strict `set_time` syntax parsing, and `refreshClockEditors()`.
 * `test_terminal_midline_batch_coalesces_tail_redraw`: Verifies contiguous mid-line inserts coalesce into a single `\033[K` tail redraw.
+* `test_logging_standardized_format_and_seconds_precision`: Verifies standardized `[timestamp] [LEVEL] [Component] message` formatting across uptime/RTC clocks, second-precision timestamps, `LOG_LEVEL` filtering, and exact 255-char `...` truncation cap.
+* `test_logging_export_suppression_summary_and_human_modes`: Verifies CSV export log suppression counters, warning/error tracking, human-readable mode names, and the post-export suppression summary log.
+* `test_terminal_sw_clock_status_pipelined_export_and_wipe_failure`: Verifies software-clock `status` (`TXT_TERM_STAT_RTC_SW`, no raw Unix timestamp), blocked `export_history` not printing `TXT_LOG_START_EXPORT`, pipelined `export_history\nstatus\n` input draining without corrupting CSV output, info-only export suppression summary, and `clear_history` failure reporting (`TXT_TERM_WIPE_FAIL`).
 
 ### `test_ui`
 * `test_display_delta_rows_and_nullptr_preservation_across_refresh`: Verifies shadow-buffer delta writes, `nullptr` row preservation across `recover()` and 60s full refreshes, and absence of `0xFF` corruption bytes.
@@ -168,9 +174,10 @@ test/
 * `test_ui_info_and_done_post_enter_rotation_bounce_guard`: Verifies 350ms post-enter rotation bounce guard on `ScreenInfo`/`ScreenDone`.
 * `test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety`: Verifies immediate DST refresh, custom slot auto-respacing on `"sel:4"`, 0-min zone guard on `"general"`, and relay shutdown on `"reset"`.
 * `test_ui_idle_screen_waiting_between_zones_and_backlight_never`: Verifies `TXT_IDLE_WAITING` rendering during inter-zone pauses and display wake-up under `BACKLIGHT_TIMEOUT_NEVER`.
-* `test_display_i2c_fault_abort_cooldown_and_recovery_callback`: Verifies `Display` frame abort on I2C error, 3-error recovery threshold, and 10s recovery cooldown.
+* `test_display_i2c_fault_abort_cooldown_and_recovery_callback`: Verifies `Display` frame abort on I2C error, 3-error recovery threshold, frozen `_consecErrors` during the 10s recovery cooldown, `_commErrWarned` log deduplication, and wake/sleep `_i2cErr` clearance.
 * `test_ui_four_cycle_horarios_and_zero_dur_overlap_guard`: Verifies 4-cycle schedule display formatting (with interval) within 20 LCD columns and `min_spacing = 1` overlap protection.
 * `test_ui_clock_editor_refresh_and_freq_days_without_rtc`: Verifies `refreshClockEditors()` updates active date/time editors and `FREQ_DAYS` keeps `0xFFFFFFFFUL` when `!rtc_valid`.
+* `test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning`: Verifies `bl:` timeout and editor save logs (`CFG_ZONE`, `FREQ_DAYS`, `NUM_CYCLES`, `CUSTOM_CYCLE`), `"general"` no-zones warning, unknown confirm tag error screen guard, and `ScreenTimeEdit` missing-RTC warning.
 
 ### `test_watering`
 * `test_watering_general_builds_queue_and_skips_disabled`: Queue compilation validating that disabled zones and zones with `duration_min == 0` are excluded.
@@ -187,13 +194,15 @@ test/
 * `test_watering_deenergize_relays_preserves_recovery_state`: Verifies `deenergizeRelays()` turns all relays OFF while leaving NVS `RecoveryState` intact.
 * `test_watering_recovery_retry_cap_and_stable_reset`: Verifies `MAX_RECOVERY_RETRIES` (3) boot-loop cap aborts recovery and `RECOVERY_STABLE_MS` (30s) resets `retry_count`.
 * `test_watering_invalid_custom_duration_preserves_active_cycle`: Verifies invalid `startCustom()` arguments (`dur == 0`, `dur > 20`, `nullptr`) do not abort an active watering cycle.
+* `test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime`: Verifies second-precision completion/early-stop logs for sub-minute runs and ensures `stop()` during initial pre-Zone-1 relay dead-time does not log a spurious inter-zone transition.
+* `test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings`: Verifies `startCustom`/`startTest` invalid-argument warnings, out-of-bounds relay dead-time abort avoiding bogus duration/transition logs, and `TXT_LOG_CYCLE_DONE` logging before `_finishCycle()`.
 
 ---
 
 ## 4. Usage & Execution Commands
 
 ```bash
-# Execute entire test suite (all 113 test cases across 9 suites)
+# Execute entire test suite (all 122 test cases across 9 suites)
 pio test -e native
 
 # Execute specific test suite
@@ -283,28 +292,28 @@ Continuous integration is defined in `.github/workflows/ci.yml` and executes on 
 
 ## 7. Test Case Necessity & Redundancy Audit
 
-A comprehensive evaluation across all 113 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
+A comprehensive evaluation across all 122 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
 
 | Suite | Tests | Analysis & Redundancy Assessment | Verdict |
 |---|---|---|---|
-| `test_appstate` | 3 | Checks compile-time struct alignment/padding (`sizeof` for NVS v5 34B/36B structs), uninitialized state defaults, and static mode schedule definitions. Does not overlap with dynamic scheduling. | **100% Essential** |
-| `test_encoder` | 4 | Covers 50ms pushbutton debounce, hold/release transitions, delta reset-on-read, ±127 clamping with remainder, 2000µs ISR contact bounce rate limiting, and early-boot ISR acceptance after `begin()`. | **100% Essential** |
-| `test_rtclock` | 12 | Covers seasonal months, March/October DST boundaries, UTC/local round-trips, October repeated-hour disambiguation, leap-year Sundays, year-end rollover, 30s throttle preservation, mid-run `begin()` RAM preservation/power-loss restore, instant DST toggle refresh, initial OSF preservation, `set()` validation, hotplug validation, and `revision()` tracking. | **100% Essential** |
-| `test_scheduler` | 18 | Covers 1/2/3-slot daily schedules, disabled guard, custom multi-day modular math, blackout expiration (2h cap) & overflow bounds, auto-unsuspend, month/leap-year rollovers, instant mode recomputation, DOW bitmasks, NVS-persisted autumn DST duplicate suppression across reboots, `rtclock.revision()` trigger clearing, adjacent-minute slot preservation on completion, and exact minute boundary guard. | **100% Essential** |
-| `test_storage` | 15 | Covers v5 72-char hex codec, end-to-end round-trip, invalid input & strict import bounds/CRC rejection, active-watering import guard, recovery state binary persistence (`retry_count`), NVS load CRC failure & defensive clamping, corrupted boolean byte rejection, zero-duration `enabled` normalization, dormant vs active custom overlap handling, schema version guard, namespace purge, atomic `hblob` persistence (`fileSize`), and `sched_tr` round-trip. | **100% Essential** |
-| `test_history` | 16 | Covers CSV serialization/deserialization, corruption/negative/overflow bounds, `'T'` trigger exclusion, overlong line discard, RAM FIFO eviction, capacity rotation with dynamic trimming, write-failure atomic preservation, missing column padding, `/hist_pend.txt` persistence & startup replay, streaming serial export, guarded LittleFS format, `fileSize` cache verification, and corrupted NVS cache fallback. | **100% Essential** |
-| `test_terminal` | 19 | Covers CLI commands (`help`, `status`, `set_time`, `stop`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`), strict `set_time` token validation, active-watering import block, `syncSetupState()`/`refreshClockEditors()` hooks, truthful no-RTC `status`, relay de-energizing on `reboot`, confirmation flows (`y`/`n`/30s expiry), ANSI filtering, batched mid-line tail redraw coalescing, 256-byte overflow protection & Ctrl+C reset, and case/whitespace tolerance. | **100% Essential** |
-| `test_ui` | 12 | Covers `Display` delta shadow buffer, `nullptr` row preservation across refreshes, I2C fault abort & 10s recovery callback cooldown, formatting helpers, `MenuBuilder` dynamic `"stop_now"` & live menu updates, i18n/sanitization, Setup Wizard flows, 4-cycle `horarios` 20-col formatting, `min_spacing` overlap guard, clock editor refresh, `FREQ_DAYS` missing-RTC guard, 350ms bounce guard, UI safety guards, and `ScreenIdle` status. | **100% Essential** |
-| `test_watering` | 14 | Covers queue compilation, custom selection & invalid-arg active-cycle safety, relay dead-time, emergency stop, test-run history exclusion, blackout recovery, retry cap (`MAX_RECOVERY_RETRIES`) & 30s stable counter reset, corrupted/suspended recovery rejection, multi-zone sequencing, inter-zone upcoming index sync, partial duration rounding, empty selection guard, and `deenergizeRelays()`. | **100% Essential** |
+| `test_appstate` | 3 | Checks compile-time struct alignment/padding (`sizeof` for NVS v5 34B/36B structs), uninitialized state defaults, static mode schedule definitions, and human-readable serial name helpers (`i2cDeviceName`, `serialTriggerName`). Does not overlap with dynamic scheduling. | **100% Essential** |
+| `test_encoder` | 4 | Covers 50ms pushbutton debounce, hold/release transitions, delta reset-on-read, ±127 clamping with remainder, 2000µs ISR contact bounce rate limiting, early-boot ISR acceptance after `begin()`, and stuck-button boot warning. | **100% Essential** |
+| `test_rtclock` | 13 | Covers seasonal months, March/October DST boundaries, UTC/local round-trips, October repeated-hour disambiguation, leap-year Sundays, year-end rollover, 30s throttle preservation, mid-run `begin()` RAM preservation/power-loss restore, instant DST toggle refresh, initial OSF preservation, `set()` validation & log dedup, hotplug validation/`revision()`/logs, `_batRecoveryWarned` dedup, and CSV export poll deferral. | **100% Essential** |
+| `test_scheduler` | 18 | Covers 1/2/3-slot daily schedules, disabled guard, custom multi-day modular math, blackout expiration (2h `+1s` cap & minute-based ceiling duration logging) & overflow bounds, auto-unsuspend, month/leap-year rollovers, instant mode recomputation & quiet `onModeChanged(false)`, DOW bitmasks, NVS-persisted autumn DST duplicate suppression across reboots, `rtclock.revision()` trigger clearing, adjacent-minute slot preservation on completion, and exact minute boundary guard. | **100% Essential** |
+| `test_storage` | 16 | Covers v5 72-char hex codec, end-to-end round-trip, invalid input & strict import bounds/CRC rejection, active-watering import guard, recovery state binary persistence (`retry_count`), NVS load CRC failure & defensive clamping, corrupted boolean byte rejection, zero-duration `enabled` normalization, dormant vs active custom overlap handling & respacing log, schema version guard, namespace purge & uninitialized `clear()` guard, atomic `hblob` persistence (`fileSize`) & invalid-header log, and `sched_tr` round-trip. | **100% Essential** |
+| `test_history` | 17 | Covers CSV serialization/deserialization, corruption/negative/overflow bounds, `'T'` trigger exclusion, overlong line discard, RAM FIFO eviction, capacity rotation with dynamic trimming, write-failure atomic preservation & fallback double-failure logging, missing column padding, `/hist_pend.txt` persistence & startup replay, streaming serial export & info-only suppression summary, guarded LittleFS format, `fileSize` cache verification, corrupted NVS cache fallback, and `!_ready`/`!rtc_valid` guards. | **100% Essential** |
+| `test_terminal` | 22 | Covers CLI commands (`help`, `status`, `set_time`, `stop`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`), strict `set_time` token validation, active-watering import block, `syncSetupState()`/`refreshClockEditors()` hooks, truthful no-RTC and software-clock `status`, relay de-energizing on `reboot`, confirmation flows (`y`/`n`/30s expiry & `clear_history` failure), ANSI filtering, batched mid-line tail redraw coalescing, 256-byte overflow protection & Ctrl+C reset, case/whitespace tolerance, standardized log formatting/255-char truncation cap, and CSV export log suppression & pipelined input draining. | **100% Essential** |
+| `test_ui` | 13 | Covers `Display` delta shadow buffer, `nullptr` row preservation across refreshes, I2C fault abort, frozen `_consecErrors` during 10s recovery cooldown, `_commErrWarned` dedup, wake/sleep `_i2cErr` clearance, formatting helpers, `MenuBuilder` dynamic `"stop_now"` & live menu updates, i18n/sanitization, Setup Wizard flows, 4-cycle `horarios` 20-col formatting, `min_spacing` overlap guard, clock editor refresh, `FREQ_DAYS` missing-RTC guard, 350ms bounce guard, UI settings/action logs, unknown confirm tag error screen, and `ScreenIdle` status. | **100% Essential** |
+| `test_watering` | 16 | Covers queue compilation, custom selection & invalid-arg active-cycle safety/warnings, relay dead-time & OOB dead-time abort safety, emergency stop, test-run history exclusion, blackout recovery, retry cap (`MAX_RECOVERY_RETRIES`) & 30s stable counter reset, corrupted/suspended recovery rejection, multi-zone sequencing & `TXT_LOG_CYCLE_DONE` log order, inter-zone upcoming index sync, partial duration rounding, sub-minute second-precision & dead-time stop logging, empty selection guard, and `deenergizeRelays()`. | **100% Essential** |
 
-**Conclusion**: All 113 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
+**Conclusion**: All 122 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
 
 ---
 
 ## 8. Performance & Speed Optimization
 
 ### Benchmark Profile
-* **Runtime Execution Time**: ~20–35 ms across all 113 test cases combined.
+* **Runtime Execution Time**: ~20–35 ms across all 122 test cases combined.
 * **Compilation Time**: ~6–10 s when compiling 9 distinct native binaries sequentially.
 
 ### Applied Optimizations
@@ -314,7 +323,7 @@ A comprehensive evaluation across all 113 test cases was conducted to verify tes
 2. **Compiler Inter-Process Pipelining (`platformio.ini`)**:
    - Added `-pipe` flag to `[env:native]`. Avoids writing intermediate temporary assembly files to disk between compiler stages, accelerating compilation on Windows file systems.
 3. **Comprehensive Mock Reset (`resetAllTestMocks`)**:
-   - Centralized `Wire.reset()`, `ESP.reset()`, and `_log_suspended = false` inside `resetAllTestMocks()`. Removes ad-hoc manual resets in individual test suites and ensures cross-test isolation.
+   - Centralized `Wire.reset()`, `ESP.reset()`, `_log_suspended = false`, and `_log_suppressed_* = 0` inside `resetAllTestMocks()`. Removes ad-hoc manual resets in individual test suites and ensures cross-test isolation.
 4. **Buffer Safe Serial Printf (`MockSerial::printf`)**:
    - Added size bounds clamping to prevent heap/stack over-read when formatting strings approaching 512 bytes.
 

@@ -1,7 +1,6 @@
 #include <unity.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
-bool _log_suspended = false;
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
@@ -281,6 +280,90 @@ void test_rtclock_hotplug_validates_reading_and_tracks_revision(void) {
     TEST_ASSERT_EQUAL_UINT32(rev + 1, rtclock.revision());
 }
 
+void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
+    TEST_ASSERT_TRUE(rtclock.begin());
+    Serial.reset();
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 12, 0, 0));
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_SAVE_OK) == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_NOT_FOUND) == std::string::npos);
+
+    // 1. Persistent lostPower across repeated 30 s polls logs warning only once until a clean poll
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock._batRecoveryWarned);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_BAT_FAIL_REC) != std::string::npos);
+#endif
+
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock._batRecoveryWarned);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_BAT_FAIL_REC) == std::string::npos);
+
+    // Clean poll (mockLostPower == false) resets _batRecoveryWarned so a future battery glitch logs again
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_FALSE(rtclock._batRecoveryWarned);
+
+    // 2. While CSV export is active (_log_suspended = true), 30 s hardware poll is deferred so alerts aren't swallowed
+    _log_suspended = true;
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock._rtc.mockLostPower);
+    TEST_ASSERT_FALSE(rtclock._batRecoveryWarned);
+
+    _log_suspended = false;
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock._batRecoveryWarned);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_BAT_FAIL_REC) != std::string::npos);
+#endif
+
+    // 3. Hotplug with software-valid clock and lostPower restores time to RTC, bumps revision, and logs HOT_RESTORED
+    rtclock._found = false;
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = true;
+    uint32_t revBefore = rtclock.revision();
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_HOT_RESTORED) != std::string::npos);
+#endif
+
+    // 4. Hotplug when RAM clock is invalid and lostPower is set logs TXT_LOG_RTC_BAT_LOW
+    rtclock._found = false;
+    gState.rtc_valid = false;
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_BAT_LOW) != std::string::npos);
+#endif
+
+    // 5. Unexpected RTC time jump (> 300s drift) increments revision and logs TXT_LOG_RTC_TIME_JUMP
+    rtclock._rtc.mockLostPower = false;
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    uint32_t revBeforeJump = rtclock.revision();
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 10, 0, 0)); // +1h UTC jump vs 09:00 UTC
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(revBeforeJump + 1, rtclock.revision());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_TIME_JUMP) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
@@ -295,5 +378,6 @@ int main(void) {
     RUN_TEST(test_rtclock_refresh_local_time_on_dst_toggle);
     RUN_TEST(test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set);
     RUN_TEST(test_rtclock_hotplug_validates_reading_and_tracks_revision);
+    RUN_TEST(test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs);
     return UNITY_END();
 }

@@ -6,6 +6,14 @@
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
+#ifndef LVL_NONE
+#define LVL_NONE   -1
+#define LVL_ERROR   0
+#define LVL_WARN    1
+#define LVL_INFO    2
+#define LVL_DEBUG   3
+#endif
+
 #ifndef LOG_LEVEL
 #define LOG_LEVEL LVL_INFO
 #endif

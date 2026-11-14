@@ -1,4 +1,5 @@
 #include "TestCommon.h"
+#include "log.h"
 
 // Define global mock variables
 uint32_t _mock_millis = 1000;
@@ -8,9 +9,10 @@ MockSerial Serial;
 MockLittleFS LittleFS;
 
 #ifndef HAS_TERMINAL_AWARE_LOG
-// Terminal-aware log stub for tests that do not include Terminal.cpp
+// Terminal-aware log stub for tests that do not include Terminal.cpp:
+// forward log lines to Serial so unit tests can assert log output.
 void terminalAwareLog(const char* msg) {
-    (void)msg;
+    Serial.println(msg);
 }
 #endif
 
@@ -24,5 +26,7 @@ void resetAllTestMocks() {
     Wire.reset();
     ESP.reset();
     _log_suspended = false;
+    _log_suppressed_total = 0;
+    _log_suppressed_warn_err = 0;
     initAppState();
 }

@@ -1,7 +1,6 @@
 #include <unity.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
-bool _log_suspended = false;
 #include "../../src/AppState.cpp"
 
 #define private public
@@ -144,6 +143,15 @@ void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
     advanceMockMicros(200);
     Encoder::_isr();
     TEST_ASSERT_EQUAL_INT16(1, encoder._delta);
+
+    // Stuck button at boot (PIN_SW held LOW) logs TXT_LOG_BTN_STUCK_BOOT
+    digitalWrite(PIN_SW, LOW);
+    Serial.reset();
+    encoder.begin();
+    TEST_ASSERT_TRUE(encoder._btn_prev);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_BTN_STUCK_BOOT) != std::string::npos);
+#endif
 }
 
 int main(void) {

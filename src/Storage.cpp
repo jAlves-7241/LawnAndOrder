@@ -10,6 +10,7 @@ static const char* NVS_NS       = "rega";
 static const char* KEY_CFG      = "cfg";
 static const char* KEY_HBLOB    = "hblob";
 static const char* KEY_SCHED_TR = "sched_tr";
+static const char* KEY_RECV     = "recv";
 static const size_t HIST_CACHE_MAX_BYTES = 256;
 
 struct __attribute__((packed)) HistoryNvsHeader {
@@ -34,9 +35,9 @@ void Storage::begin() {
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
     if (!_ready) {
-        LOG_E("NVS", TXT_LOG_NVS_NS_FAIL);
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_NS_FAIL);
     } else {
-        LOG_I("NVS", TXT_LOG_NVS_READY);
+        LOG_D(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_READY);
     }
 }
 
@@ -77,31 +78,40 @@ static bool _blobHasValidBooleans(const AppConfigBlob& blob) {
 
 static bool _validateImportBlob(const AppConfigBlob& blob) {
     if (blob.mode >= (uint8_t)AppMode::_COUNT) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_MODE, blob.mode);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_MODE, (unsigned)blob.mode);
         return false;
     }
     if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER &&
         blob.backlight_timeout_ms < 30000UL) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_BACKLIGHT);
         return false;
     }
     if (blob.suspended_until > 4102444799UL) { // > 2099-12-31 23:59:59 UTC
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_SUSP_END);
         return false;
     }
     if (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > 47482UL) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_REF_DAY);
         return false;
     }
     for (int i = 0; i < NUM_ZONES; i++) {
-        if (blob.zones[i].duration_min > 20) return false;
-        if (blob.zones[i].enabled && blob.zones[i].duration_min == 0) return false;
+        if (blob.zones[i].duration_min > 20 ||
+            (blob.zones[i].enabled && blob.zones[i].duration_min == 0)) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_ZONE_DUR);
+            return false;
+        }
     }
     if (blob.custom_interval_days == 0 || blob.custom_interval_days > 14) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_INTERVAL);
         return false;
     }
     if (blob.custom_slot_count == 0 || blob.custom_slot_count > MAX_SLOTS_PER_MODE) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_SLOTS);
         return false;
     }
     for (int i = 0; i < MAX_SLOTS_PER_MODE; i++) {
         if (blob.custom_slots[i].hour > 23 || blob.custom_slots[i].minute > 59) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_TIME);
             return false;
         }
     }
@@ -122,31 +132,47 @@ bool Storage::load() {
 
     AppConfigBlob blob = {};
     size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
-    if (readBytes != sizeof(blob) || blob.version != NVS_VERSION ||
-        !_blobHasValidBooleans(blob)) {
-        LOG_W("NVS", TXT_LOG_NVS_BLOB_INV, blob.version);
+    if (readBytes == 0) {
+        LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_EMPTY);
+        return false;
+    }
+    if (readBytes != sizeof(blob)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
+        return false;
+    }
+    if (blob.version != NVS_VERSION) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_VER_MISMATCH,
+              (unsigned)blob.version, (unsigned)NVS_VERSION);
+        return false;
+    }
+    if (!_blobHasValidBooleans(blob)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_BOOL_INV);
         return false;
     }
 
     uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
                                   offsetof(AppConfigBlob, crc16));
     if (blob.crc16 != expectedCrc) {
-        LOG_W("NVS", TXT_LOG_NVS_CRC_FAIL, blob.crc16, expectedCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
 
     if (!_blobToState(blob)) {
-        LOG_W("NVS", TXT_LOG_NVS_VAL_FAIL);
         return false;
     }
 
-    LOG_I("NVS", TXT_LOG_NVS_LOADED, (uint8_t)gState.mode, gState.suspended);
+    LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_LOADED,
+          serialModeName(gState.mode),
+          gState.suspended ? TXT_SER_YES : TXT_SER_NO);
     return true;
 }
 
 // ─────────────────────────────────────────────────────────
 bool Storage::save() {
-    if (!_ready) return false;
+    if (!_ready) {
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
+        return false;
+    }
 
     for (int i = 0; i < NUM_ZONES; i++) {
         if (gState.zones[i].duration_min == 0) {
@@ -166,20 +192,27 @@ bool Storage::save() {
 
     size_t written = prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
     if (written != sizeof(blob)) {
-        LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
 
-    LOG_I("NVS", TXT_LOG_NVS_UPDATED);
+    LOG_D(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_UPDATED, serialModeName(gState.mode));
     return true;
 }
 
 
 // ─────────────────────────────────────────────────────────
-void Storage::clear() {
-    if (!_ready) return;
-    prefs.clear();   // erases all keys in the namespace
-    LOG_I("NVS", TXT_LOG_MEM_CLEARED);
+bool Storage::clear() {
+    if (!_ready) {
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_NS_FAIL);
+        return false;
+    }
+    if (!prefs.clear()) {   // erases all keys in the namespace
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
+        return false;
+    }
+    LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_MEM_CLEARED);
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -191,17 +224,24 @@ bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount, uin
     const size_t expectedLen = sizeof(HistoryNvsHeader) + size + sizeof(uint16_t);
     uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
     size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, sizeof(buf));
-    if (readBytes != expectedLen) return false;
+    if (readBytes == 0) return false;
+    if (readBytes != expectedLen) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_HIST_INV);
+        return false;
+    }
 
     HistoryNvsHeader hdr = {};
     memcpy(&hdr, buf, sizeof(hdr));
-    if (hdr.version != NVS_VERSION || hdr.dataSize != size) return false;
+    if (hdr.version != NVS_VERSION || hdr.dataSize != size) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_HIST_INV);
+        return false;
+    }
 
     uint16_t storedCrc = 0;
     memcpy(&storedCrc, buf + sizeof(hdr) + size, sizeof(storedCrc));
     uint16_t calcCrc = _crc16(buf, sizeof(hdr) + size);
     if (storedCrc != calcCrc) {
-        LOG_W("NVS", TXT_LOG_NVS_CRC_FAIL, storedCrc, calcCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_HIST);
         return false;
     }
 
@@ -233,8 +273,8 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount,
         return;
     }
 
-    if (prefs.putBytes(KEY_HBLOB, buf, totalLen) == 0) {
-        LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+    if (prefs.putBytes(KEY_HBLOB, buf, totalLen) != totalLen) {
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_HIST);
     }
 }
 
@@ -264,12 +304,20 @@ bool Storage::loadLastTriggers(uint32_t* out, size_t count) {
     if (!_ready) return false;
 
     SchedTriggersBlob blob = {};
-    if (prefs.getBytes(KEY_SCHED_TR, &blob, sizeof(blob)) != sizeof(blob)) return false;
-    if (blob.version != NVS_VERSION || blob.count != MAX_SLOTS_PER_MODE) return false;
+    size_t readBytes = prefs.getBytes(KEY_SCHED_TR, &blob, sizeof(blob));
+    if (readBytes == 0) return false;
+    if (readBytes != sizeof(blob) || blob.version != NVS_VERSION ||
+        blob.count != MAX_SLOTS_PER_MODE) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_TRIG_CORRUPT);
+        return false;
+    }
 
     uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
                                   offsetof(SchedTriggersBlob, crc16));
-    if (blob.crc16 != expectedCrc) return false;
+    if (blob.crc16 != expectedCrc) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_TRIG);
+        return false;
+    }
 
     for (size_t i = 0; i < count; i++) {
         out[i] = blob.ts[i];
@@ -295,19 +343,29 @@ void Storage::saveLastTriggers(const uint32_t* in, size_t count) {
         return;
     }
 
-    if (prefs.putBytes(KEY_SCHED_TR, &blob, sizeof(blob)) == 0) {
-        LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+    if (prefs.putBytes(KEY_SCHED_TR, &blob, sizeof(blob)) != sizeof(blob)) {
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_TRIG);
     }
 }
 
 // ─────────────────────────────────────────────────────────
 bool Storage::loadRecoveryState(RecoveryState& rs) {
     if (!_ready) return false;
-    size_t readBytes = prefs.getBytes("recv", &rs, sizeof(rs));
-    if (readBytes != sizeof(rs)) return false;
-    if (rs.version != NVS_VERSION) return false;
+    size_t readBytes = prefs.getBytes(KEY_RECV, &rs, sizeof(rs));
+    if (readBytes == 0) return false;
+    if (readBytes != sizeof(rs)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_SIZE);
+        return false;
+    }
+    if (rs.version != NVS_VERSION) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_VER);
+        return false;
+    }
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(&rs);
-    if (raw[offsetof(RecoveryState, active)] > 1) return false;
+    if (raw[offsetof(RecoveryState, active)] > 1) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_BOOL);
+        return false;
+    }
     return true;
 }
 
@@ -319,10 +377,10 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
     copy.version = NVS_VERSION;
     
     RecoveryState current = {};
-    if (prefs.getBytes("recv", &current, sizeof(current)) != sizeof(current) ||
+    if (prefs.getBytes(KEY_RECV, &current, sizeof(current)) != sizeof(current) ||
         memcmp(&copy, &current, sizeof(copy)) != 0) {
-        if (prefs.putBytes("recv", &copy, sizeof(copy)) == 0) {
-            LOG_E("NVS", TXT_LOG_NVS_WRITE_FAIL);
+        if (prefs.putBytes(KEY_RECV, &copy, sizeof(copy)) != sizeof(copy)) {
+            LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_RECV);
         }
     }
 }
@@ -352,13 +410,14 @@ void Storage::exportConfigHex(char* hexOut, size_t maxLen) {
 bool Storage::importConfigHex(const char* hexIn) {
     if (!hexIn) return false;
     if (gState.watering.active) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_ACTIVE);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_ACTIVE);
         return false;
     }
 
     size_t len = strlen(hexIn);
     if (len != sizeof(AppConfigBlob) * 2) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_LEN, (int)len, (int)(sizeof(AppConfigBlob) * 2));
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_LEN,
+              (unsigned)len, (unsigned)(sizeof(AppConfigBlob) * 2));
         return false;
     }
 
@@ -367,23 +426,29 @@ bool Storage::importConfigHex(const char* hexIn) {
     for (size_t i = 0; i < sizeof(AppConfigBlob); i++) {
         const int hi = _hexNibble(hexIn[i * 2]);
         const int lo = _hexNibble(hexIn[i * 2 + 1]);
-        if (hi < 0 || lo < 0) return false;
+        if (hi < 0 || lo < 0) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_BAD_HEX,
+                  (unsigned)((hi < 0) ? (i * 2) : (i * 2 + 1)));
+            return false;
+        }
         ptr[i] = (uint8_t)((hi << 4) | lo);
     }
 
     if (blob.version != NVS_VERSION) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_VER, blob.version, NVS_VERSION);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_VER,
+              (unsigned)blob.version, (unsigned)NVS_VERSION);
         return false;
     }
 
     if (!_blobHasValidBooleans(blob)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_BAD_BOOL);
         return false;
     }
 
     uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
                                   offsetof(AppConfigBlob, crc16));
     if (blob.crc16 != expectedCrc) {
-        LOG_W("NVS", TXT_LOG_NVS_CRC_FAIL, blob.crc16, expectedCrc);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_IMP);
         return false;
     }
 
@@ -405,7 +470,7 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
-    LOG_I("NVS", TXT_LOG_NVS_IMP_OK);
+    LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_OK, serialModeName(gState.mode));
     return true;
 }
 
@@ -440,7 +505,7 @@ void Storage::_stateToBlob(AppConfigBlob& blob) {
 
 bool Storage::_blobToState(const AppConfigBlob& blob) {
     if (blob.mode >= (uint8_t)AppMode::_COUNT) {
-        LOG_W("NVS", TXT_LOG_NVS_IMP_INV_MODE, blob.mode);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_MODE, (unsigned)blob.mode);
         return false;
     }
 
@@ -526,7 +591,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
         }
         if (hasOverlap) {
             if (gState.mode == AppMode::PERSONALIZADO) {
-                LOG_W("NVS", TXT_LOG_NVS_OVERLAP);
+                LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_OVERLAP);
                 gState = previousState;
                 MODE_SCHEDULES[customMode] = previousCustomSchedule;
                 return false;
@@ -551,6 +616,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
                     }
                 }
             }
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CUSTOM_RESPACED);
         }
     }
 

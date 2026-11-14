@@ -1,7 +1,6 @@
 #include <unity.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
-bool _log_suspended = false;
 #include "../../src/AppState.cpp"
 #include "Storage.h"
 
@@ -77,6 +76,17 @@ void test_mode_schedules_table(void) {
     TEST_ASSERT_EQUAL_UINT8(SCHED_CUSTOM_SLOTS, custom.slot_count);
     TEST_ASSERT_EQUAL(DayPattern::EVERY_X_DAYS, custom.day_pattern);
     TEST_ASSERT_EQUAL_UINT8(SCHED_CUSTOM_INTERVAL, custom.interval_days);
+
+    // Human-readable serial name helpers (i2cDeviceName, serialTriggerName, serialModeName)
+    TEST_ASSERT_EQUAL_STRING(TXT_I2C_DEV_LCD, i2cDeviceName(LCD_ADDR));
+    TEST_ASSERT_EQUAL_STRING(TXT_I2C_DEV_LCD, i2cDeviceName(0x3F));
+    TEST_ASSERT_EQUAL_STRING(TXT_I2C_DEV_RTC, i2cDeviceName(0x68));
+    TEST_ASSERT_EQUAL_STRING(TXT_I2C_DEV_EEPROM, i2cDeviceName(0x57));
+    TEST_ASSERT_EQUAL_STRING(TXT_I2C_DEV_UNKNOWN, i2cDeviceName(0x12));
+    TEST_ASSERT_EQUAL_STRING(TXT_SER_TRIG_AUTO, serialTriggerName(WaterTrigger::AUTO));
+    TEST_ASSERT_EQUAL_STRING(TXT_SER_TRIG_MANUAL, serialTriggerName(WaterTrigger::MANUAL));
+    TEST_ASSERT_EQUAL_STRING(TXT_SER_TRIG_CUSTOM, serialTriggerName(WaterTrigger::CUSTOM));
+    TEST_ASSERT_EQUAL_STRING(TXT_SER_TRIG_TEST, serialTriggerName(WaterTrigger::TEST));
 }
 
 int main(void) {

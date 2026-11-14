@@ -26,13 +26,13 @@ public:
     bool    begin(bool formatOnFail = true);
     void    record(const HistoryEntry& entry);
     uint8_t readLast(uint8_t count, HistoryEntry out[]) const;
-    void    clear();
+    bool    clear();
     uint16_t entryCount() const;
 
     void    update();
 
     // Serial export
-    void     startExport();
+    bool     startExport(bool announce = false);
     bool     isExporting() const;
     uint8_t  exportProgress() const;
     uint16_t exportSent() const;
@@ -50,6 +50,7 @@ private:
     uint16_t _rotKeep = 0;
     uint16_t _rotSkipped = 0;
     uint16_t _rotCopied = 0;
+    uint16_t _rotCorruptLines = 0;
 
     char _rotLineBuf[LINE_BUF] = {};
     size_t _rotLinePos = 0;
@@ -75,6 +76,7 @@ private:
     uint16_t    _exportTotal = 0;
     char        _exportLineBuf[LINE_BUF] = {};
     size_t      _exportLinePos = 0;
+    bool        _exportReadErr = false;
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);

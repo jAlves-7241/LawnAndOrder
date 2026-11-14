@@ -7,13 +7,15 @@ RTClock rtclock;
 
 
 
+#if LOG_LEVEL >= LVL_INFO
 static const char* DOW_NAMES[] = {
     TXT_SER_DOW_SUN_SHORT, TXT_SER_DOW_MON_SHORT, TXT_SER_DOW_TUE_SHORT, TXT_SER_DOW_WED_SHORT, TXT_SER_DOW_THU_SHORT, TXT_SER_DOW_FRI_SHORT, TXT_SER_DOW_SAT_SHORT
 };
+#endif
 
 // ─────────────────────────────────────────────────────────
 RTClock::RTClock()
-    : _found(false), _lostPower(false), _lastReadMs(0),
+    : _found(false), _lostPower(false), _batRecoveryWarned(false), _lastReadMs(0),
       _lastRtcRetryMs(0), _consecErrors(0),
       _anchorMs(0), _anchorUnix(0), _lastKnownUnix(0),
       _errorCb(nullptr)
@@ -25,7 +27,7 @@ bool RTClock::begin() {
     _consecErrors = 0;
 
     if (!_rtc.begin()) {
-        LOG_E("RTC", TXT_LOG_RTC_NOT_FOUND);
+        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_NOT_FOUND);
         _found = false;
         if (!wasValid) {
             gState.rtc_valid = false;
@@ -47,19 +49,21 @@ bool RTClock::begin() {
 
     if (_lostPower) {
         if (wasValid && prevTime.year >= 2020 && prevTime.year <= 2099) {
-            LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
+            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
             DateTime restoredUtc = (prevTime.unix >= 1577836800UL)
                 ? DateTime(prevTime.unix)
                 : localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
                                       prevTime.hour, prevTime.min, prevTime.sec));
             _rtc.adjust(restoredUtc);
             _lostPower = false;
+            _batRecoveryWarned = false;
             gState.rtc_valid = true;
         } else {
-            LOG_W("RTC", TXT_LOG_RTC_BAT_LOW);
+            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
             gState.rtc_valid = false;
         }
     } else {
+        _batRecoveryWarned = false;
         gState.rtc_valid = true;
     }
 #endif
@@ -69,8 +73,9 @@ bool RTClock::begin() {
     // Proteger o arranque contra barramento I2C preso ou corrompido
     if (_lostPower && !wasValid) {
         if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
-            LOG_E("RTC", TXT_LOG_RTC_BOOT_CORRUPT,
-                  utcDt.year(), utcDt.month(), utcDt.day());
+            LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                  (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                  (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
             _found = false;
             gState.rtc_valid = false;
             return false;
@@ -91,8 +96,9 @@ bool RTClock::begin() {
     }
 
     if (!_isValidDateTime(utcDt)) {
-        LOG_E("RTC", TXT_LOG_RTC_BOOT_CORRUPT,
-              utcDt.year(), utcDt.month(), utcDt.day());
+        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
         _found = false;
         if (wasValid) {
             gState.now = prevTime;
@@ -112,9 +118,9 @@ bool RTClock::begin() {
     _anchorUnix = gState.now.unix;
     _lastKnownUnix = gState.now.unix;
 
-    LOG_I("RTC", TXT_LOG_RTC_OK,
-          gState.now.year,  gState.now.month,  gState.now.day,
-          gState.now.hour,  gState.now.min,    gState.now.sec,
+    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_OK,
+          (int)gState.now.year,  (int)gState.now.month,  (int)gState.now.day,
+          (int)gState.now.hour,  (int)gState.now.min,    (int)gState.now.sec,
           DOW_NAMES[gState.now.dow % 7]);
     return true;
 }
@@ -133,17 +139,17 @@ void RTClock::refreshLocalTime() {
 // ─────────────────────────────────────────────────────────
 void RTClock::update() {
     uint32_t nowMs = millis();
-    if ((nowMs - _lastReadMs) < 30000UL) {
+    if (_log_suspended || (nowMs - _lastReadMs) < 30000UL) {
         _incrementSoftwareClock();
         return; // 30s (ajustado de 1s para reduzir jitter no bus I2C)
     }
     _lastReadMs = nowMs;
 
     if (!_found) {
-        // Tentar redetetar o RTC a quente (hotplug) a cada ~30 segundos
-        if (nowMs - _lastRtcRetryMs >= 10000UL) {
+        // Retry hotplug detection at most once per 30s update interval
+        if (nowMs - _lastRtcRetryMs >= 30000UL) {
             _lastRtcRetryMs = nowMs;
-            LOG_I("RTC", TXT_LOG_RTC_HOT_DETECT);
+            LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_DETECT);
             if (_rtc.begin()) {
                 _found = true;
                 bool wasValid = gState.rtc_valid;
@@ -153,29 +159,49 @@ void RTClock::update() {
                     _lostPower = _rtc.lostPower();
                 #endif
                 
-                LOG_I("RTC", TXT_LOG_RTC_HOT_FOUND);
+                LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_FOUND);
                 
                 DateTime utcDt = _rtc.now();
                 if (!_lostPower && _isValidDateTime(utcDt)) {
+                    _batRecoveryWarned = false;
                     gState.rtc_valid = true;
                     DateTime localDt = utcToLocal(utcDt);
                     _copyToState(localDt);
                     gState.now.unix = utcDt.unixtime();
-                    LOG_I("RTC", TXT_LOG_RTC_HOT_SYNC,
-                          gState.now.year, gState.now.month, gState.now.day,
-                          gState.now.hour, gState.now.min, gState.now.sec);
+                    _anchorMs = nowMs;
+                    _anchorUnix = gState.now.unix;
+                    _lastKnownUnix = gState.now.unix;
+                    _revision++;
+                    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_SYNC,
+                          (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
+                          (int)gState.now.hour, (int)gState.now.min, (int)gState.now.sec);
 
                 } else if (wasValid) {
-                    // Se o RTC tem hora inválida mas o utilizador já configurou hora no software
+                    // Se o RTC tem hora invalida mas o utilizador ja configurou hora no software
                     if (gState.now.unix >= 1577836800UL) {
                         _rtc.adjust(DateTime(gState.now.unix));
                         _lostPower = false;
+                        _batRecoveryWarned = false;
+                        _revision++;
+                        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
                     } else {
                         set(gState.now.year, gState.now.month, gState.now.day,
                             gState.now.hour, gState.now.min, gState.now.sec);
                     }
                 } else {
                     gState.rtc_valid = false;
+                    if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
+                        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                        _found = false;
+                    } else if (_lostPower) {
+                        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
+                    } else {
+                        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                    }
                 }
             }
         }
@@ -198,11 +224,16 @@ void RTClock::update() {
         return;
     }
 
+    bool recoveredPowerLoss = false;
 #ifndef WOKWI_SIM
     // Re-check oscillator health - detects mid-run battery failure or EMI reset.
     if (_rtc.lostPower()) {
         if (gState.rtc_valid) {
-            LOG_W("RTC", TXT_LOG_RTC_BAT_FAIL_REC);
+            recoveredPowerLoss = true;
+            if (!_batRecoveryWarned) {
+                LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
+                _batRecoveryWarned = true;
+            }
             if (gState.now.unix >= 1577836800UL) {
                 DateTime restoredUtc(gState.now.unix);
                 _rtc.adjust(restoredUtc);
@@ -210,11 +241,12 @@ void RTClock::update() {
             } else {
                 set(gState.now.year, gState.now.month, gState.now.day,
                     gState.now.hour, gState.now.min, gState.now.sec);
+                _batRecoveryWarned = true;
             }
             _lastReadMs = nowMs;   // internal recovery must not defeat the 30 s throttle
         } else {
             if (!_lostPower) {
-                LOG_E("RTC", TXT_LOG_RTC_BAT_FAIL_RAM);
+                LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_RAM);
             }
             _lostPower = true;
             _incrementSoftwareClock();
@@ -226,14 +258,15 @@ void RTClock::update() {
     DateTime utcDt = _rtc.now();
 
 #ifndef WOKWI_SIM
-    // Detetar barramento I2C preso ou corrompido (campos fora dos limites válidos)
+    // Detetar barramento I2C preso ou corrompido (campos fora dos limites validos)
     if (!_isValidDateTime(utcDt)) {
         _consecErrors++;
         if (_consecErrors >= 3) {
-            LOG_E("RTC", TXT_LOG_RTC_I2C_CORRUPT,
-                  utcDt.year(), utcDt.month(), utcDt.day());
+            LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_I2C_CORRUPT,
+                  (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                  (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
             _consecErrors = 0;
-            _found = false; // Força a re-deteção a quente (hotplug) no próximo ciclo
+            _found = false; // Forca a re-detecao a quente (hotplug) no proximo ciclo
             if (_errorCb) {
                 _errorCb();
             }
@@ -241,7 +274,7 @@ void RTClock::update() {
             // Retry faster with backoff (~5s) instead of waiting 30s
             _lastReadMs = nowMs - (30000UL - 5000UL);
         }
-        _incrementSoftwareClock(); // Impede que o relógio congele no display durante falhas I2C
+        _incrementSoftwareClock(); // Impede que o relogio congele no display durante falhas I2C
         return; // Aborta o update para proteger o gState contra dados corrompidos
     } else {
         _consecErrors = 0;
@@ -249,6 +282,20 @@ void RTClock::update() {
 #endif
 
     _lostPower = false;
+    if (!recoveredPowerLoss) {
+        _batRecoveryWarned = false;
+    }
+
+    uint32_t newUnix = utcDt.unixtime();
+    if (gState.rtc_valid && !recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
+        uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
+        uint32_t expectedUnix = _anchorUnix + elapsedSec;
+        int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
+        if (drift > 300 || drift < -300) {
+            _revision++;
+            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_JUMP);
+        }
+    }
     gState.rtc_valid = true;
 
     DateTime localDt = utcToLocal(utcDt);
@@ -256,7 +303,7 @@ void RTClock::update() {
 
     // Override the Unix timestamp with the actual UTC timestamp.
     // This makes time deltas (e.g., suspension) immune to DST transitions.
-    gState.now.unix = utcDt.unixtime();
+    gState.now.unix = newUnix;
     _anchorMs = nowMs;
     _anchorUnix = gState.now.unix;
     _lastKnownUnix = gState.now.unix;
@@ -266,16 +313,26 @@ void RTClock::update() {
 bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                   uint8_t  hour, uint8_t minute, uint8_t second) {
     
-    // Filtro contra underflow/campos inválidos (corrupção por dados manuais ou software)
-    if (year < DATE_YEAR_MIN || year > DATE_YEAR_MAX) return false;
+    // Filtro contra underflow/campos invalidos (corrupcao por dados manuais ou software)
+    if (year < DATE_YEAR_MIN || year > DATE_YEAR_MAX) {
+        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_INVALID_SET,
+              (unsigned)year, (unsigned)month, (unsigned)day,
+              (unsigned)hour, (unsigned)minute, (unsigned)second);
+        return false;
+    }
     DateTime localDt(year, month, day, hour, minute, second);
-    if (!_isValidDateTime(localDt)) return false;
+    if (!_isValidDateTime(localDt)) {
+        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_INVALID_SET,
+              (unsigned)year, (unsigned)month, (unsigned)day,
+              (unsigned)hour, (unsigned)minute, (unsigned)second);
+        return false;
+    }
 
-    // Preservar a suspensão mantendo a diferença de tempo absoluta
+    // Preservar a suspensao mantendo a diferenca de tempo absoluta
     uint32_t oldUnixUTC = gState.now.unix;
     bool wasRtcValid = gState.rtc_valid;
 
-    // A hora recebida do utilizador é HORA LOCAL.
+    // A hora recebida do utilizador e HORA LOCAL.
     DateTime utcDt = localToUtc(localDt);
     DateTime effectiveLocal = utcToLocal(utcDt);
 
@@ -290,21 +347,20 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                 hwOk = true;
             } else {
                 _found = false;
-                LOG_E("RTC", TXT_LOG_RTC_NOT_FOUND);
             }
         #endif
     } else {
-        LOG_I("RTC", TXT_LOG_RTC_SAVE_ATTEMPT);
+        LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_SAVE_ATTEMPT);
         if (_rtc.begin()) {
             _found = true;
             _rtc.adjust(utcDt);
             hwOk = true;
-            LOG_I("RTC", TXT_LOG_RTC_SAVE_OK);
         }
     }
 
     if (hwOk) {
         _lostPower = false;
+        _batRecoveryWarned = false;
         _lastReadMs = millis() - 30000UL;
     } else {
         _lastRtcRetryMs = millis();
@@ -330,6 +386,7 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
                 gState.suspended = false;
                 gState.suspended_until = 0;
+                LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_CLR_TIME_SET);
             } else {
                 gState.suspended_until = (uint32_t)newUntil;
             }
@@ -340,13 +397,22 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
                 gState.suspended = false;
                 gState.suspended_until = 0;
                 storage.save();
-                LOG_I("SYS", TXT_LOG_SUSP_EXP_CLR);
+                LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_EXP_CLR);
             }
         }
     }
 
-    LOG_I("RTC", TXT_LOG_RTC_TIME_SET,
-          year, month, day, hour, minute, second);
+    if (hwOk) {
+        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_SET,
+              (int)effectiveLocal.year(), (int)effectiveLocal.month(),
+              (int)effectiveLocal.day(),  (int)effectiveLocal.hour(),
+              (int)effectiveLocal.minute(), (int)effectiveLocal.second());
+    } else {
+        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_SET_SW,
+              (int)effectiveLocal.year(), (int)effectiveLocal.month(),
+              (int)effectiveLocal.day(),  (int)effectiveLocal.hour(),
+              (int)effectiveLocal.minute(), (int)effectiveLocal.second());
+    }
     _revision++;
     return hwOk;
 }

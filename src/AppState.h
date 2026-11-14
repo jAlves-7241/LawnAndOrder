@@ -133,3 +133,8 @@ struct AppState {
 extern AppState gState;
 
 void initAppState();
+
+// Localized plain-language names for Serial logs & terminal output
+const char* serialModeName(AppMode m);
+const char* serialTriggerName(WaterTrigger t);
+const char* i2cDeviceName(uint8_t addr);
