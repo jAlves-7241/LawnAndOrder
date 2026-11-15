@@ -27,8 +27,21 @@ WateringController::WateringController()
 
 void WateringController::begin() {
     // Pinos ja inicializados no main.cpp (Hardware Safety)
+    _queueLen = 0;
+    _queuePos = 0;
+    _active = false;
+    _isWaiting = false;
+    _isRelayDeadTimeWaiting = false;
     _recoveryRetryPending = false;
     _recoveryRetryCount = 0;
+    _zoneIdx = 0;
+    _zoneStartMs = 0;
+    _zoneDurationMs = 0;
+    _waitStartMs = 0;
+    _relayWaitStartMs = 0;
+    _runTrigger = WaterTrigger::MANUAL;
+    memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
+    _cycleStart = {};
     _syncState();
 
     // Tentar resgatar ciclo interrompido por blackout
@@ -153,7 +166,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     for (int i = 0; i < NUM_ZONES; i++) {
         uint8_t durMin = (gState.zones[i].duration_min <= 20) ? gState.zones[i].duration_min : 20;
         if (gState.zones[i].enabled && durMin > 0) {
-            candidate[candidateLen++] = { (uint8_t)i, (uint32_t)durMin * 60000UL };
+            candidate[candidateLen++] = { (uint8_t)i, (uint32_t)durMin * 60000U };
 #if LOG_LEVEL >= LVL_INFO
             totalMin += durMin;
 #endif
@@ -255,7 +268,7 @@ void WateringController::stop() {
             // Se correu menos de 30s, registar 0 min (evita "1 min" para interrupcoes imediatas)
             uint8_t ran_min = 0;
             if (elapsed >= 30000UL) {
-                uint32_t raw_min = (elapsed + 30000UL) / 60000UL;
+                uint32_t raw_min = (uint32_t)(((uint64_t)elapsed + 30000ULL) / 60000ULL);
                 uint32_t max_min = (_zoneDurationMs >= 60000UL) ? (_zoneDurationMs / 60000UL) : 255UL;
                 if (raw_min > max_min) raw_min = max_min;
                 ran_min = (raw_min > 255UL) ? 255 : (uint8_t)raw_min;
