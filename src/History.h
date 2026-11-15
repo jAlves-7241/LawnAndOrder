@@ -26,7 +26,8 @@ public:
     bool    begin(bool formatOnFail = true);
     void    record(const HistoryEntry& entry);
     uint8_t readLast(uint8_t count, HistoryEntry out[]) const;
-    bool    clear();
+    bool     clear();
+    bool     isReady() const;
     uint16_t entryCount() const;
 
     void    update();

@@ -95,6 +95,16 @@ void test_terminal_set_time_command(void) {
 }
 
 void test_terminal_clear_history_confirmation_flow(void) {
+    // Clearing when already empty reports empty immediately without prompting or failing
+    history.clear();
+    Serial.reset();
+    Serial.feedInput("clear_history\r\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_HIST_EMPTY) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_FAIL) == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_NOT_READY) == std::string::npos);
+
     HistoryEntry e = { 2026, 6, 1, 8, 0, { 10, 10, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(e);
     TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
@@ -419,10 +429,14 @@ void test_terminal_import_active_guard_setup_sync_and_set_time_strict(void) {
     TEST_ASSERT_TRUE(_ui_went_idle);
 
     // clear_history while _ui_in_setup == true must NOT kick UI to goIdle()
+    HistoryEntry setupEntry = { 2026, 6, 15, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(setupEntry);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
     _ui_in_setup = true;
     _ui_went_idle = false;
     Serial.feedInput("clear_history\r\ny\r\n");
     while (Serial.available() > 0) terminal.update();
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
     TEST_ASSERT_FALSE(_ui_went_idle);
 
     // Strict set_time rejects internal spaces and calls refreshClockEditors() on success

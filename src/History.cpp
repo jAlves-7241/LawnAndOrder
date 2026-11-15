@@ -333,7 +333,9 @@ bool History::clear() {
         _log_suppressed_warn_err = 0;
     }
     
-    LittleFS.remove(HIST_PENDING_FILE);
+    if (LittleFS.exists(HIST_PENDING_FILE)) {
+        LittleFS.remove(HIST_PENDING_FILE);
+    }
     if (LittleFS.exists(HISTORY_FILE) && !LittleFS.remove(HISTORY_FILE)) {
         LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
         return false;
@@ -349,6 +351,8 @@ bool History::clear() {
     LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_WIPED);
     return true;
 }
+
+bool History::isReady() const { return _ready; }
 
 uint16_t History::entryCount() const { return _lineCount; }
 

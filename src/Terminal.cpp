@@ -779,6 +779,10 @@ void Terminal::_cmdExportHistory(char* /*args*/) {
 }
 
 void Terminal::_cmdClearHistory(char* /*args*/) {
+    if (history.isReady() && history.entryCount() == 0) {
+        Serial.println(TXT_TERM_HIST_EMPTY);
+        return;
+    }
     Serial.println(TXT_TERM_WIPE_WARN);
     Serial.print(TXT_TERM_WIPE_CONFIRM);
     Serial.print(" ");

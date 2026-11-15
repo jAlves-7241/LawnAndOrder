@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v1.2.0"
-#define FW_BUILD_DATE "13Nov2026"
+#define FW_VERSION "v1.3.0"
+#define FW_BUILD_DATE "15Nov2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
