@@ -135,6 +135,7 @@ void setup() {
     digitalWrite(PIN_RELAY_4, RELAY_OFF); pinMode(PIN_RELAY_4, OUTPUT);
 
     Serial.begin(115200);
+    Serial.println();
     LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_BOOT,
           FW_VERSION, FW_BUILD_DATE, resetReasonStr());
 

@@ -778,6 +778,7 @@ void History::update() {
     if (_exportState == ExportState::FOOTER) {
         _exportFile.close();
         Serial.printf(TXT_TERM_HIST_EXPORT_END, _exportSent);
+        Serial.println();
         _log_suspended = false;
         if (_exportReadErr) {
             _exportReadErr = false;

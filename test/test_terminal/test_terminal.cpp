@@ -65,10 +65,17 @@ void test_terminal_help_command(void) {
     Serial.feedInput("help\r\n");
     terminal.update();
 
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("TERMINAL SERVICE") == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("SERVICO TERMINAL") == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("TERMINAL COMMANDS") != std::string::npos ||
+                     Serial.outputBuffer.find("COMANDOS TERMINAL") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("help") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("status") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("set_time") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("stop") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.size() >= 4 &&
+                     Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 }
 
 void test_terminal_status_command(void) {
@@ -80,6 +87,8 @@ void test_terminal_status_command(void) {
 
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("STATUS") != std::string::npos ||
                      Serial.outputBuffer.find("ESTADO") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.size() >= 4 &&
+                     Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 }
 
 void test_terminal_set_time_command(void) {
@@ -493,6 +502,8 @@ void test_logging_standardized_format_and_seconds_precision(void) {
     _logWrite(false, TXT_LOG_LVL_INFO, TXT_LOG_TAG_SYS, "%s", TXT_LOG_SYS_READY);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedUptime) != std::string::npos);
     TEST_ASSERT_EQUAL_PTR(nullptr, strstr(Serial.outputBuffer.c_str(), ".123"));
+    TEST_ASSERT_TRUE(Serial.outputBuffer.size() >= 4 &&
+                     Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 
     Serial.reset();
     LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);

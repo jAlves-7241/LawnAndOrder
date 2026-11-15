@@ -55,8 +55,9 @@ void terminalAwareLog(const char* msg) {
     if (terminal._bufLen > 0 || terminal._pendingClearHistory) {
         // Apagar a linha parcial do utilizador (CR + clear-to-EOL)
         Serial.print("\r\033[K");
-        // Imprimir o log na sua própria linha
+        // Imprimir o log na sua própria linha com espaço a seguir
         Serial.println(msg);
+        Serial.println();
 
         // Redesenhar o prompt se aplicável
         if (terminal._pendingClearHistory) {
@@ -75,6 +76,7 @@ void terminalAwareLog(const char* msg) {
         }
     } else {
         Serial.println(msg);
+        Serial.println();
     }
 }
 
@@ -411,6 +413,7 @@ bool Terminal::_handleControlChar(char c) {
             _pendingClearHistory = false;
             _pendingClearAtMs = 0;
             Serial.println(TXT_TERM_CANCELLED);
+            Serial.println();
         }
         _last_c = c;
         return true;
@@ -456,6 +459,7 @@ void Terminal::_insertChar(char c) {
         // Buffer overflow
         Serial.print("\r\033[K");
         Serial.println(TXT_TERM_ERR_OVERFLOW);
+        Serial.println();
         _bufLen = 0;
         _cursorPos = 0;
         _pendingClearHistory = false;
@@ -485,6 +489,7 @@ void Terminal::update() {
         _pendingClearHistory = false;
         _pendingClearAtMs = 0;
         Serial.println(TXT_TERM_WIPE_EXPIRED);
+        Serial.println();
     }
 
     // Leitura não bloqueante de caracteres com limite
@@ -543,6 +548,7 @@ void Terminal::_processCommand(char *cmd) {
         } else {
             Serial.println(TXT_TERM_CANCELLED);
         }
+        Serial.println();
         return;
     }
 
@@ -562,11 +568,15 @@ void Terminal::_processCommand(char *cmd) {
     for (uint8_t i = 0; i < CMD_COUNT; i++) {
         if (strcasecmp(trimmed, CMD_TABLE[i].name) == 0) {
             (this->*CMD_TABLE[i].handler)(args);
+            if (!_pendingClearHistory && !history.isExporting()) {
+                Serial.println();
+            }
             return;
         }
     }
 
     Serial.printf(TXT_TERM_UNKNOWN_CMD, trimmed);
+    Serial.println();
 }
 
 // ═════════════════════════════════════════════════════════
@@ -614,6 +624,7 @@ void Terminal::_cmdStatus(char* /*args*/) {
                       gState.now.hour, gState.now.min, gState.now.sec);
         Serial.println(TXT_TERM_STAT_RTC_ERR);
     }
+    Serial.println();
 
     // 2. Estado Geral
     Serial.printf(TXT_TERM_STAT_MODE, serialModeName(gState.mode));
@@ -638,6 +649,7 @@ void Terminal::_cmdStatus(char* /*args*/) {
         Serial.printf(TXT_TERM_STAT_ACTIVE,
                       gState.next_hour, gState.next_min);
     }
+    Serial.println();
 
     // 3. Zonas
     Serial.println(TXT_TERM_STAT_ZONES);
@@ -646,6 +658,7 @@ void Terminal::_cmdStatus(char* /*args*/) {
                       gState.zones[i].enabled ? TXT_ON : TXT_OFF,
                       gState.zones[i].duration_min, gState.zones[i].name);
     }
+    Serial.println();
 
     // 4. Rega em execução
     Serial.print(TXT_TERM_STAT_ACT);
@@ -795,6 +808,7 @@ void Terminal::_cmdReboot(char* /*args*/) {
     wateringCtrl.deenergizeRelays();
     ui.goIdle();
     Serial.println(TXT_TERM_REBOOT);
+    Serial.println();
     Serial.flush();
     delay(100);
     ESP.restart();

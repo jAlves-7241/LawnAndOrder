@@ -472,7 +472,7 @@
 #define TXT_LOG_NO_EXPORT_ROT "Cannot export history while cleanup is running"
 #define TXT_LOG_EXPORT_SUPPRESSED "%u log message(s) hidden during export (%u warning/error)"
 #define TXT_LOG_EXPORT_SUPPRESSED_INFO "%u message(s) hidden during export"
-#define TXT_SYS_STATUS_HDR "================== SYSTEM STATUS =================="
+#define TXT_SYS_STATUS_HDR "==================== SYSTEM STATUS ===================="
 #define TXT_TERM_STAT_WAIT_ZONE "Waiting between zones (next is Zone %d)\r\n"
 #define TXT_TERM_STAT_WATER_PROG "Watering Zone %d - Progress: %d%%\r\n"
 #define TXT_SETUP_DONE_LOG "Initial setup completed"
@@ -498,7 +498,7 @@
 #define TXT_LOG_LCD_REC_FAIL "LCD display still not responding after connection reset"
 #define TXT_LOG_LCD_COMM_ERR "LCD failed to respond 3 times - resetting connection"
 #define TXT_LOG_TERM_READY "Serial console ready (type 'help')"
-#define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - TERMINAL SERVICE                  "
+#define TXT_TERM_WELCOME_HDR "                   LAWN & ORDER - TERMINAL COMMANDS                   "
 // Terminal
 #define TXT_TERM_ERR_OVERFLOW "\r\nError: Command too long (buffer full)."
 #define TXT_TERM_CANCELLED "Operation cancelled."
@@ -833,7 +833,7 @@
 #define TXT_LOG_LCD_REC_FAIL "Ecra LCD continua sem resposta apos reiniciar ligacao"
 #define TXT_LOG_LCD_COMM_ERR "Ecra LCD falhou 3 vezes - a reiniciar ligacao"
 #define TXT_LOG_TERM_READY "Consola serie pronta (digite 'help')"
-#define TXT_TERM_WELCOME_HDR "                    LAWN & ORDER - SERVICO TERMINAL                  "
+#define TXT_TERM_WELCOME_HDR "                   LAWN & ORDER - COMANDOS TERMINAL                   "
 // Terminal
 #define TXT_TERM_ERR_OVERFLOW "\r\nErro: Comando demasiado longo (buffer cheio)."
 #define TXT_TERM_CANCELLED "Operacao cancelada."
