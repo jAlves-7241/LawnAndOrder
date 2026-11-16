@@ -93,7 +93,7 @@ void Scheduler::update() {
         uint32_t localWallUnix = DateTime(t.year, t.month, t.day, t.hour, t.min, 0).unixtime();
         if (_prevLocalWallUnix > 0 && localWallUnix > _prevLocalWallUnix) {
             uint32_t wallJump = localWallUnix - _prevLocalWallUnix;
-            if (wallJump > 120UL && wallJump <= 7200UL) {
+            if (wallJump > 60UL && wallJump <= 7200UL) {
                 _catchUpPending = true;
             }
         }
@@ -165,6 +165,10 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
 
     for (int dayOff = 0; dayOff >= -1; dayOff--) {
         if (dayOff < 0 && currentDay1970 == 0) continue;
+        if (dayOff < 0 && sched.day_pattern == DayPattern::EVERY_X_DAYS &&
+            gState.custom_ref_day == 0xFFFFFFFFUL) {
+            continue;
+        }
         uint32_t candDay = (uint32_t)((int32_t)currentDay1970 + dayOff);
         if (!_dayMatches(sched, candDay, false)) continue;
 
@@ -173,7 +177,10 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
             const ScheduleSlot& sl = sched.slots[i];
             DateTime slotLocal(candDate.year(), candDate.month(), candDate.day(),
                                sl.hour, sl.minute, 0);
-            DateTime slotUtc = RTClock::localToUtc(slotLocal, t.unix);
+            const uint32_t afterUtc = (t.unix > SCHED_CATCHUP_WINDOW_S + 1UL)
+                ? (t.unix - SCHED_CATCHUP_WINDOW_S - 1UL)
+                : 0UL;
+            DateTime slotUtc = RTClock::localToUtc(slotLocal, afterUtc);
             DateTime roundTrip = RTClock::utcToLocal(slotUtc);
             uint32_t effSlotUtc = slotUtc.unixtime();
             const bool dstSkipped = (roundTrip.hour() != sl.hour || roundTrip.minute() != sl.minute);
@@ -214,10 +221,11 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
     if (enabledZones > 1) {
         cycleSec += ((uint32_t)(enabledZones - 1) * ZONE_WAIT_DELAY_MS) / 1000UL;
     }
+    cycleSec += ((uint32_t)enabledZones * RELAY_DEADTIME_MS + 999UL) / 1000UL;
 
     uint32_t nextCycleUnix = getNextCycleUnix(t);
     if (nextCycleUnix != 0xFFFFFFFFUL &&
-        (uint64_t)t.unix + (uint64_t)cycleSec > (uint64_t)nextCycleUnix) {
+        (uint64_t)t.unix + (uint64_t)cycleSec >= (uint64_t)nextCycleUnix) {
         return false;
     }
 
