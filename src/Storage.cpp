@@ -366,6 +366,11 @@ bool Storage::loadRecoveryState(RecoveryState& rs) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_BOOL);
         return false;
     }
+    uint16_t expectedCrc = _crc16(raw, offsetof(RecoveryState, crc16));
+    if (rs.crc16 != expectedCrc) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_RECV);
+        return false;
+    }
     return true;
 }
 
@@ -375,6 +380,8 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
     memset(&copy, 0, sizeof(RecoveryState));
     copy = rs;
     copy.version = NVS_VERSION;
+    copy.crc16 = _crc16(reinterpret_cast<const uint8_t*>(&copy),
+                        offsetof(RecoveryState, crc16));
     
     RecoveryState current = {};
     if (prefs.getBytes(KEY_RECV, &current, sizeof(current)) != sizeof(current) ||

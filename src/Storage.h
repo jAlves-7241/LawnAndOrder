@@ -14,7 +14,7 @@
 //   - gState.backlight_timeout_ms
 //   - gState.suspended_until (monotonic UTC boundary)
 //   - gState.auto_dst, gState.setup_done
-//   - NVS v5 blobs (`cfg`, `hblob`) include CRC-16/CCITT integrity verification
+//   - NVS v5 blobs (`cfg`, `hblob`, `sched_tr`, `recv`) include CRC-16/CCITT integrity verification
 //   - RecoveryState (`rec`) includes `retry_count` for bounded blackout recovery
 //   - Scheduler slot trigger guards (`sched_tr`) persist across reboots
 //
@@ -51,6 +51,7 @@ struct __attribute__((packed)) RecoveryState {
     uint8_t zone_dur_min[NUM_ZONES];
     WaterTrigger trigger;
     uint8_t retry_count;
+    uint16_t crc16;
 };
 
 struct __attribute__((packed)) AppConfigBlob {

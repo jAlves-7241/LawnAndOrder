@@ -154,6 +154,13 @@ void test_storage_recovery_state_roundtrip(void) {
     TEST_ASSERT_EQUAL_UINT32(900000, loaded.queue[1].duration_ms);
     TEST_ASSERT_EQUAL(WaterTrigger::AUTO, loaded.trigger);
     TEST_ASSERT_EQUAL_UINT8(2, loaded.retry_count);
+
+    // Corrupting a byte in NVS KEY_RECV without recomputing CRC must be rejected
+    RecoveryState rawRs = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(rawRs), prefs.getBytes(KEY_RECV, &rawRs, sizeof(rawRs)));
+    rawRs.queuePos = 0;
+    prefs.putBytes(KEY_RECV, &rawRs, sizeof(rawRs));
+    TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
 }
 
 void test_storage_save_and_load_persistence(void) {
