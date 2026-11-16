@@ -42,6 +42,9 @@ jobs:
       - name: Run unit tests
         run: pio test -e native
 
+      - name: Run soak & wraparound tests (only if unit tests pass)
+        run: pio test -e native_soak
+
   build-esp32:
     name: ESP32 Firmware Build
     runs-on: ubuntu-latest

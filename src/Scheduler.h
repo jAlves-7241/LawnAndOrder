@@ -71,7 +71,6 @@ private:
     // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;
     uint8_t _lastSec;
-    uint32_t _lastClockRev;
     uint32_t _lastManualClockRev;
     bool _catchUpPending;
     uint32_t _prevLocalWallUnix;

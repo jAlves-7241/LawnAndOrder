@@ -381,9 +381,9 @@ void test_scheduler_clock_set_clears_last_triggers(void) {
     TEST_ASSERT_TRUE(wateringCtrl._active);
     wateringCtrl.stop();
 
-    // Explicit manual clock rewind (via rtclock.set) increments revision and re-arms slot
+    // Explicit manual clock rewind (via rtclock.set) increments manualRevision and re-arms slot
     rtclock.set(2026, 6, 15, SCHED_MEDIO_SLOT0_H - 1, 59, 55);
-    scheduler.update(); // observes revision change -> clearLastTriggers()
+    scheduler.update(); // observes manualRevision change -> clearLastTriggers()
     rtclock.set(2026, 6, 15, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0);
     scheduler.update();
     TEST_ASSERT_TRUE(wateringCtrl._active);

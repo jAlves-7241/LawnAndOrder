@@ -44,6 +44,7 @@ void UI::begin() {
     if (!gState.setup_done) {
         _startSetup();
     } else {
+        _inSetup = false;
         goIdle();
     }
 }

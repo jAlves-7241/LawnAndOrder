@@ -10,7 +10,7 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0),
+    : _lastMin(0xFF), _lastSec(0xFF),
       _lastManualClockRev(0), _catchUpPending(false), _prevLocalWallUnix(0)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
@@ -20,7 +20,6 @@ Scheduler::Scheduler()
 void Scheduler::begin() {
     _lastSec = 0xFF;
     _lastMin = 0xFF;
-    _lastClockRev = rtclock.revision();
     _lastManualClockRev = rtclock.manualRevision();
     _prevLocalWallUnix = 0;
     _catchUpPending = !gState.suspended && !wateringCtrl.isActive();
@@ -52,12 +51,9 @@ void Scheduler::clearLastTriggers() {
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::update() {
-    if (rtclock.revision() != _lastClockRev) {
-        _lastClockRev = rtclock.revision();
-        clearLastTriggers();
-    }
     if (rtclock.manualRevision() != _lastManualClockRev) {
         _lastManualClockRev = rtclock.manualRevision();
+        clearLastTriggers();
         _catchUpPending = false;
         _prevLocalWallUnix = 0;
     }
