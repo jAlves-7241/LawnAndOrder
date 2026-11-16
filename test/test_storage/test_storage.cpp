@@ -163,6 +163,74 @@ void test_storage_recovery_state_roundtrip(void) {
     TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
 }
 
+void test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip(void) {
+    RecoveryState rs = {};
+    rs.version = NVS_VERSION;
+    rs.active = true;
+    rs.start_unix_time = 1768000000UL;
+    rs.queuePos = 0;
+    rs.queueLen = 1;
+    rs.queue[0] = { 0, 600000UL };
+    rs.trigger = WaterTrigger::AUTO;
+    rs.retry_count = 1;
+    storage.saveRecoveryState(rs);
+
+    RecoveryState sentinel = {};
+    sentinel.queuePos = 3;
+    sentinel.retry_count = 7;
+    sentinel.start_unix_time = 999UL;
+
+    // 1. Legacy pre-CRC 34-byte blob must be rejected without mutating caller's struct
+    uint8_t legacy[34] = {};
+    legacy[0] = NVS_VERSION;
+    legacy[1] = 1;
+    prefs.putBytes(KEY_RECV, legacy, sizeof(legacy));
+    RecoveryState loaded = sentinel;
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
+    TEST_ASSERT_EQUAL_UINT8(3, loaded.queuePos);
+    TEST_ASSERT_EQUAL_UINT8(7, loaded.retry_count);
+    TEST_ASSERT_EQUAL_UINT32(999UL, loaded.start_unix_time);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_NVS_RSN_SIZE) != std::string::npos);
+#endif
+
+    // 2. Wrong NVS_VERSION rejected
+    storage.saveRecoveryState(rs);
+    RecoveryState rawRs = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(rawRs), prefs.getBytes(KEY_RECV, &rawRs, sizeof(rawRs)));
+    rawRs.version = NVS_VERSION - 1;
+    prefs.putBytes(KEY_RECV, &rawRs, sizeof(rawRs));
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_NVS_RSN_VER) != std::string::npos);
+#endif
+
+    // 3. Invalid active bool byte (> 1) rejected
+    storage.saveRecoveryState(rs);
+    uint8_t rawBytes[sizeof(RecoveryState)] = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(rawBytes), prefs.getBytes(KEY_RECV, rawBytes, sizeof(rawBytes)));
+    rawBytes[offsetof(RecoveryState, active)] = 2;
+    prefs.putBytes(KEY_RECV, rawBytes, sizeof(rawBytes));
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_NVS_RSN_BOOL) != std::string::npos);
+#endif
+
+    // 4. Single-bit flip in crc16 itself rejected
+    storage.saveRecoveryState(rs);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(rawRs), prefs.getBytes(KEY_RECV, &rawRs, sizeof(rawRs)));
+    rawRs.crc16 ^= 0x0001U;
+    prefs.putBytes(KEY_RECV, &rawRs, sizeof(rawRs));
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_PART_RECV) != std::string::npos);
+#endif
+}
+
 void test_storage_save_and_load_persistence(void) {
     gState.mode = AppMode::FRACO;
     gState.zones[0].duration_min = 14;
@@ -425,6 +493,7 @@ int main(void) {
     RUN_TEST(test_storage_export_and_import_roundtrip);
     RUN_TEST(test_storage_import_rejects_invalid_inputs);
     RUN_TEST(test_storage_recovery_state_roundtrip);
+    RUN_TEST(test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip);
     RUN_TEST(test_storage_save_and_load_persistence);
     RUN_TEST(test_storage_rejects_corrupted_boolean_bytes);
     RUN_TEST(test_storage_duration_clamping_on_import);
