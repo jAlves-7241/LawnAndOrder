@@ -31,6 +31,7 @@ test/
 ├── test_history/           # CSV serialization, rotation, cache FIFO, deferred queuing, export
 ├── test_rtclock/           # European DST transitions, leap years, and UTC-to-local conversion
 ├── test_scheduler/         # Slot computation, patterns (DAILY, DOW_MASK, EVERY_X_DAYS), DST guards
+├── test_soak/              # 32-bit millis() wraparound, 520-day soak, double-watering matrix, fault injection
 ├── test_storage/           # Hex config codec, validation, NVS persistence, cache round-trip
 ├── test_terminal/          # Serial CLI tokenizer, ANSI filter, buffer protection, commands
 ├── test_ui/                # Display shadow buffer, MenuBuilder, Setup Wizard, UI screens & actions
@@ -209,12 +210,18 @@ test/
 * `test_watering_max_zone_cap_and_periodic_pin_refresh`: Verifies 1s periodic GPIO relay re-assertion during idle and active watering, plus hard zone runtime caps (`20 min` / `ZONE_TEST_DURATION_S`) against corrupted `_zoneDurationMs`.
 * `test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log`: Verifies 1s periodic `RELAY_OFF` re-assertion during the 5s `_isWaiting` inter-zone pause and clamped zone-duration logging at dead-time completion.
 
+### `test_soak`
+* `test_wraparound_49_day_millis_all_subsystems`: Sets `millis()`/`micros()` near `0xFFFFFFFF` (`49.7` days) and verifies overflow-safe subtraction across `Encoder` ISR rate-limiting/button debounce, `RTClock` software clock & 30s hardware poll throttle, `Display` 1s `sync()` / 10s–300s backoff / 6h periodic `recover()`, `UI` idle timeout / backlight / display-off across a full 32-bit sleep wrap, `Terminal` 30s `clear_history` expiry, and `WateringController` relay dead-time, EMI pin refresh, inter-zone wait, zone duration, and history logging.
+* `test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations`: Simulates 520 continuous days (~10x 32-bit `millis()` wraparounds) transitioning through `INTENSO`, `MEDIO`, 4-day suspension, `FRACO`, and 4-slot `PERSONALIZADO` (including `01:30` across EU fall-back DST), verifying leap day `2028-02-29`, March/October DST transitions without duplicates or skipped cycles, zero suspended auto-cycles, relay exclusivity/20-min hard safety cap at every tick, and LittleFS rotation (`>1500` entries) surviving reboot reload.
+* `test_soak_double_watering_and_edge_case_matrix`: Exhaustive regression matrix verifying: (A) October DST fall-back repeated `01:30` + `01:45` reboot blocked by persisted `sched_tr`; (B) blackout spanning both `01:30` instances catches up once and blocks second reboot; (C) brownout loop hitting `MAX_RECOVERY_RETRIES` stays aborted without scheduler catch-up restart; (D) multi-zone checkpoint recovery + outage during inter-zone wait preserves exact zone durations; (E) `MANUAL` interrupted across an `AUTO` slot aborts stale manual recovery and runs `AUTO` once; (F) suspension expiring mid-minute (`08:00:30`) triggers `08:00` once while `08:15` expiry does not catch up; (G) `EVERY_X_DAYS` (interval 3) midnight-wrap catch-up maintains exact 3-day cadence; and (H) cold boot with dead RTC battery inhibits `AUTO` while `export_history` defers concurrent `history.record()` and flushes upon completion.
+* `test_soak_120_days_chaotic_blackouts_and_faults`: 120-day deterministic PRNG fault-injection soak injecting random short blackouts across idle/active states, transient DS3231 disconnects with hotplug reconnect, I2C read corruption bursts, transient LCD I2C errors under `BACKLIGHT_TIMEOUT_NEVER`, and concurrent terminal/encoder activity while asserting zero double `AUTO` triggers within `<2h`, valid RTC/history state, and relay safety invariants at every step.
+
 ---
 
 ## 4. Usage & Execution Commands
 
 ```bash
-# Execute entire test suite (all 140 test cases across 9 suites)
+# Execute entire test suite (all 144 test cases across 10 suites)
 pio test -e native
 
 # Execute specific test suite
@@ -227,6 +234,7 @@ pio test -e native -f test_history
 pio test -e native -f test_rtclock
 pio test -e native -f test_appstate
 pio test -e native -f test_ui
+pio test -e native -f test_soak
 
 # Verbose output (detailed assertion logs)
 pio test -e native -vv
@@ -304,7 +312,7 @@ Continuous integration is defined in `.github/workflows/ci.yml` and executes on 
 
 ## 7. Test Case Necessity & Redundancy Audit
 
-A comprehensive evaluation across all 140 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
+A comprehensive evaluation across all 144 test cases was conducted to verify test uniqueness, boundary coverage, and eliminate dead assertions:
 
 | Suite | Tests | Analysis & Redundancy Assessment | Verdict |
 |---|---|---|---|
@@ -317,16 +325,17 @@ A comprehensive evaluation across all 140 test cases was conducted to verify tes
 | `test_terminal` | 24 | Covers CLI commands (`help`, `status`, `set_time`, `stop`, `reboot`, `i2c_scan`, `export_config`, `import_config`, `export_history`, `clear_history [force]`), strict `set_time` token validation, active-watering import block, `syncSetupState()`/`refreshClockEditors()` hooks, truthful no-RTC, software-clock, and RTC battery-warning `status`, relay de-energizing on `reboot`, confirmation flows (`y`/`n`/30s expiry with `_pendingClearForce` reset, invalid arg rejection, `--force` alias, empty-FS `clear_history force` & failure repair), ANSI filtering, batched mid-line tail redraw coalescing, 256-byte overflow protection & Ctrl+C reset, case/whitespace tolerance, standardized log formatting/255-char truncation cap, and CSV export log suppression & pipelined input draining. | **100% Essential** |
 | `test_ui` | 17 | Covers `Display` delta shadow buffer, `nullptr` row preservation across refreshes, wake without stale shadow flush, quiet/immediate `recover()`, 6h periodic re-init & active-watering/setup/fault guards, 1s `sync()` Always-On LCD fault detection, I2C fault abort, exponential recovery backoff (`10s -> 60s -> 300s` incl. 4th attempt & shared `recoverI2C()` throttle coordination), `_commErrWarned` dedup, wake/sleep `_i2cErr` clearance, immediate NVS save on non-setup edits with Setup Wizard NVS atomicity, formatting helpers, `MenuBuilder` dynamic `"stop_now"` & live menu updates, i18n/sanitization, Setup Wizard flows, 4-cycle `horarios` 20-col formatting, `min_spacing` overlap guard, clock editor refresh, `FREQ_DAYS` missing-RTC guard, 350ms bounce guard, UI settings/action logs, unknown confirm tag error screen, and `ScreenIdle` status including last watering, history error, cold-boot/mid-run missing RTC, and battery warning priority. | **100% Essential** |
 | `test_watering` | 18 | Covers queue compilation, custom selection & invalid-arg active-cycle safety/warnings, relay dead-time & OOB dead-time abort safety, emergency stop, test-run history exclusion, blackout recovery, retry cap (`MAX_RECOVERY_RETRIES`), periodic 2-min NVS recovery checkpoints, hard zone runtime cap & clamped activation logging, periodic GPIO refresh across idle/active/5s inter-zone pauses, zone-completion retry reset, corrupted/suspended recovery rejection, multi-zone sequencing & `TXT_LOG_CYCLE_DONE` log order, inter-zone upcoming index sync, partial duration rounding, sub-minute second-precision & dead-time stop logging, empty selection guard, and `deenergizeRelays()`. | **100% Essential** |
+| `test_soak` | 4 | Full-system integration & longevity suite testing 32-bit `millis()`/`micros()` rollover across all subsystems, a 520-day continuous multi-mode/DST/leap-year/history-rotation soak, an 8-scenario double-watering & edge-case matrix, and a 120-day chaotic blackout & I2C fault-injection soak. | **100% Essential** |
 
-**Conclusion**: All 140 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
+**Conclusion**: All 144 test cases are strictly necessary. None are redundant duplicates. Every test exercises a distinct contract, boundary condition, failure mode, or hardware safety rule.
 
 ---
 
 ## 8. Performance & Speed Optimization
 
 ### Benchmark Profile
-* **Runtime Execution Time**: ~20–35 ms across all 140 test cases combined.
-* **Compilation Time**: ~6–10 s when compiling 9 distinct native binaries sequentially.
+* **Runtime Execution Time**: ~20–35 ms across the 140 unit test cases, plus ~20 s for `test_soak` (520-day + 120-day second-by-second simulations).
+* **Compilation Time**: ~6–10 s for the 9 fast unit suites (~22–28 s total including `test_soak`).
 
 ### Applied Optimizations
 1. **Bulk Buffer Mock File Population (`test_history`)**:
