@@ -41,12 +41,27 @@ UI ui(display, encoder);
 // Simulation helpers
 // ─────────────────────────────────────────────────────────
 
-static void resetSystem(bool wipeStorage = true) {
-    resetAllTestMocks();
-    if (!wipeStorage) {
-        // Keep NVS/LittleFS contents if simulating a reboot; resetAllTestMocks wiped them,
-        // so callers testing reboot should use simulateReboot() instead.
+static uint32_t _soakLastRecoverMs = 0;
+static bool _soakHasRecovered = false;
+
+static void soakRecoverI2C() {
+    uint32_t now = millis();
+    if (_soakHasRecovered && (now - _soakLastRecoverMs) < 10000UL) {
+        display.onRecoveryThrottled();
+        return;
     }
+    _soakHasRecovered = true;
+    _soakLastRecoverMs = now;
+    Wire.end();
+    Wire.begin(PIN_SDA, PIN_SCL);
+    rtclock.begin();
+    display.recover();
+}
+
+static void resetSystem() {
+    resetAllTestMocks();
+    _soakLastRecoverMs = 0;
+    _soakHasRecovered = false;
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
@@ -70,7 +85,9 @@ static void resetSystem(bool wipeStorage = true) {
     storage.load();
     history.begin();
     display.begin();
+    display.setErrorCallback(soakRecoverI2C);
     encoder.begin();
+    rtclock.setErrorCallback(soakRecoverI2C);
     rtclock.begin();
     wateringCtrl.begin();
     scheduler.begin();
@@ -83,6 +100,8 @@ static void resetSystem(bool wipeStorage = true) {
 static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool rtcLostPower = false) {
     _mock_millis = 0;
     _mock_micros = 0;
+    _soakLastRecoverMs = 0;
+    _soakHasRecovered = false;
     memset(_mock_gpio, HIGH, sizeof(_mock_gpio));
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
@@ -122,7 +141,9 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     storage.load();
     history.begin();
     display.begin();
+    display.setErrorCallback(soakRecoverI2C);
     encoder.begin();
+    rtclock.setErrorCallback(soakRecoverI2C);
     rtclock.begin();
 
     if (gState.suspended_until > 0) {
@@ -173,7 +194,8 @@ static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t s
         TEST_ASSERT_EQUAL_UINT8(0, onCount);
         activeZoneTicksSec = 0;
         lastActiveZone = 0xFF;
-    } else if (onCount == 1) {
+    } else {
+        TEST_ASSERT_EQUAL_UINT8(1, onCount);
         if (onZone != lastActiveZone) {
             activeZoneTicksSec = stepSec;
             lastActiveZone = onZone;
@@ -182,14 +204,11 @@ static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t s
         }
         // Hard safety cap: never exceed 20 minutes (+ step tolerance)
         TEST_ASSERT_LESS_OR_EQUAL_UINT32(20UL * 60UL + stepSec, activeZoneTicksSec);
-    } else {
-        activeZoneTicksSec = 0;
-        lastActiveZone = 0xFF;
     }
 }
 
 void setUp(void) {
-    resetSystem(true);
+    resetSystem();
 }
 
 void tearDown(void) {
@@ -208,12 +227,39 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
     gState.zones[3].enabled = false;
     storage.save();
 
-    // Start 256 ms before 32-bit millis() wraparound
+    // Start 2048 us before 32-bit micros() wraparound and 256 ms before millis() wraparound
     setMockMillis(0xFFFFFF00UL);
-    setMockMicros(0xFFFFFF00UL);
+    setMockMicros(0xFFFFF800UL);
 
-    // 1. Encoder debounce & rotation across wrap
+    // 1. Encoder ISR rate-limiting across/after micros() wrap & button debounce across millis() wrap
     encoder.begin();
+    digitalWrite(PIN_DT, LOW);
+    Encoder::_isr(); // at 0xFFFFF800 -> accepted (_delta = 1)
+    TEST_ASSERT_EQUAL_INT16(1, encoder._delta);
+    advanceMockMicros(1000UL); // 0xFFFFFBE8 -> < 2000 us -> rate-limited
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT16(1, encoder._delta);
+    advanceMockMicros(2000UL); // wraps past 0xFFFFFFFF -> ~0x000003B8 -> accepted (_delta = 2)
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT16(2, encoder._delta);
+    advanceMockMicros(500UL); // post-wrap bounce (< 2000 us) -> rate-limited
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT16(2, encoder._delta);
+    advanceMockMicros(2000UL); // post-wrap >= 2000 us -> accepted (_delta = 3)
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT8(3, encoder.getRotation());
+
+    // Verify ISR never locks out if a pulse lands right before 32-bit micros() wrap and next after
+    setMockMicros(0xFFFFFF80UL);
+    Encoder::_isr();
+    advanceMockMicros(300UL); // wraps across 0xFFFFFFFF -> 0x000000AC
+    Encoder::_isr();
+    advanceMockMicros(500UL); // subsequent bounce rate-limited normally
+    int16_t deltaAfterWrap = encoder._delta;
+    Encoder::_isr();
+    TEST_ASSERT_EQUAL_INT16(deltaAfterWrap, encoder._delta);
+    (void)encoder.getRotation();
+
     digitalWrite(PIN_SW, LOW);
     TEST_ASSERT_FALSE(encoder.getClick());
     advanceMockMillis(20); // 0xFFFFFF14
@@ -224,8 +270,6 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
     digitalWrite(PIN_SW, HIGH);
     advanceMockMillis(60);
     TEST_ASSERT_FALSE(encoder.getClick());
-    encoder._delta = 3;
-    TEST_ASSERT_EQUAL_INT8(3, encoder.getRotation());
 
     // 2. RTClock SW clock & 30s hardware poll & set() near wrap
     setMockMillis(0xFFFFF000UL);
@@ -253,7 +297,7 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
     rtclock.update();
     TEST_ASSERT_EQUAL_UINT32(10, gState.now.hour);
 
-    // 3. Display sync(), 60s full refresh, and 10s I2C fault cooldown across wrap
+    // 3. Display sync(), 60s full refresh, 10s->60s->300s backoff, and 6h periodic recover across wrap
     setMockMillis(0xFFFFE000UL);
     display.begin();
     display.setRows("A0", "A1", "A2", "A3");
@@ -264,24 +308,45 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
     TEST_ASSERT_EQUAL_STRING("A0                  ", display._lcd.getRow(0));
 
     setMockMillis(0xFFFFF000UL);
+    display.begin();
+    advanceMockMillis(6UL * 3600UL * 1000UL - 1000UL); // 6h minus 1s across wrap
+    TEST_ASSERT_FALSE(display.needsPeriodicRecover());
+    advanceMockMillis(1000UL);
+    TEST_ASSERT_TRUE(display.needsPeriodicRecover());
+    display.recover(true);
+    TEST_ASSERT_FALSE(display.needsPeriodicRecover());
+
+    setMockMillis(0xFFFFF000UL);
     uint8_t cbCalls = 0;
     static uint8_t* cbPtr = nullptr;
     cbPtr = &cbCalls;
     display.setErrorCallback([]() { (*cbPtr)++; });
     display._lcd.mockI2cError = 1;
-    for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
+    for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3"); // attempt 1 -> 10s cooldown
     TEST_ASSERT_EQUAL_UINT8(1, cbCalls);
     advanceMockMillis(5000); // inside 10s cooldown across wrap (~0x00000388)
     for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
     TEST_ASSERT_EQUAL_UINT8(1, cbCalls);
-    advanceMockMillis(6000); // past 10s cooldown
+    advanceMockMillis(6000); // past 10s cooldown -> attempt 2 -> 60s cooldown
     for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
     TEST_ASSERT_EQUAL_UINT8(2, cbCalls);
+    advanceMockMillis(59000); // inside 60s cooldown
+    for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
+    TEST_ASSERT_EQUAL_UINT8(2, cbCalls);
+    advanceMockMillis(2000); // past 60s cooldown -> attempt 3 -> 300s cooldown
+    for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
+    TEST_ASSERT_EQUAL_UINT8(3, cbCalls);
+    advanceMockMillis(299000); // inside 300s cooldown
+    for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
+    TEST_ASSERT_EQUAL_UINT8(3, cbCalls);
+    advanceMockMillis(2000); // past 300s cooldown -> attempt 4
+    for (int i = 0; i < 3; i++) display.setRows("E0", "E1", "E2", "E3");
+    TEST_ASSERT_EQUAL_UINT8(4, cbCalls);
     display._lcd.mockI2cError = 0;
-    display.setErrorCallback(nullptr);
+    display.setErrorCallback(soakRecoverI2C);
     display.recover(true);
 
-    // 4. UI idle timeout (30s), backlightOff (120s), displayOff (140s), and 49.7d sleep stability
+    // 4. UI idle timeout (30s), backlightOff (120s), displayOff (140s), 49.7d sleep stability, and wake
     setMockMillis(0xFFFFF000UL);
     ui.begin();
     ui.goMenu(MenuID::MAIN);
@@ -302,11 +367,17 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
     ui.update();
     TEST_ASSERT_FALSE(display.isDisplayOn());
 
-    // Advance past a full 32-bit wrap while asleep -> must stay OFF cleanly
+    // Advance past a full 32-bit wrap while asleep -> must stay OFF cleanly, then wake on rotation
     advanceMockMillis(0xFFFF0000UL);
     ui.update();
     TEST_ASSERT_FALSE(display.isBacklightOn());
     TEST_ASSERT_FALSE(display.isDisplayOn());
+    digitalWrite(PIN_DT, LOW);
+    advanceMockMicros(3000UL);
+    Encoder::_isr();
+    ui.update();
+    TEST_ASSERT_TRUE(display.isBacklightOn());
+    TEST_ASSERT_TRUE(display.isDisplayOn());
 
     // 5. Terminal pending clear_history timeout across wrap
     HistoryEntry seedHist = { 2026, 6, 15, 8, 0, { 1, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
@@ -324,40 +395,73 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
     terminal.update();
     TEST_ASSERT_FALSE(terminal._pendingClearHistory);
 
-    // 6. WateringController full 2-zone run across wrap (dead-time, EMI pin flip, wait, history)
+    // 6. WateringController wraparound across every timer without mutating private timestamps:
+    //    6a. Idle 1s EMI pin refresh across wrap
+    wateringCtrl.stop();
+    setMockMillis(0xFFFFFF00UL);
+    wateringCtrl.begin();
+    digitalWrite(PIN_RELAY_1, RELAY_ON);
+    advanceMockMillis(1000UL); // crosses 0xFFFFFFFF -> 0x000002E8
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+
+    //    6b. Relay dead-time across wrap (0xFFFFFFF0 -> 0x00000008)
     history.clear();
     setMockMillis(0xFFFFFFF0UL); // 16 ms before wrap!
     wateringCtrl.startGeneral(WaterTrigger::MANUAL);
     TEST_ASSERT_TRUE(wateringCtrl._isRelayDeadTimeWaiting);
-
     advanceMockMillis(RELAY_DEADTIME_MS + 4); // crosses 0xFFFFFFFF -> 0x00000008
     wateringCtrl.update();
     TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+    wateringCtrl.stop();
 
-    // Inject EMI glitch on inactive pin right after wrap -> 1s refresh repairs it
+    //    6c. Active 1s EMI pin refresh and Zone 0 duration across wrap
+    history.clear();
+    setMockMillis(0xFFFFFC00UL); // 1024 ms before wrap
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 4); // 0xFFFFFC18 (1000 ms before wrap)
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
     digitalWrite(PIN_RELAY_2, RELAY_ON);
-    advanceMockMillis(1000);
+    advanceMockMillis(1000UL); // lands at 0x00000000 (crosses wrap during 1s EMI refresh)
     wateringCtrl.update();
     TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_2));
-
-    // Finish Zone 0 (remaining ~59s) across wrap
     advanceMockMillis(59000UL);
     wateringCtrl.update();
     TEST_ASSERT_TRUE(gState.watering.is_waiting);
     TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    wateringCtrl.stop();
 
-    // Cross wrap during 5s inter-zone wait
-    setMockMillis(0xFFFFF800UL);
-    wateringCtrl._waitStartMs = 0xFFFFF800UL;
-    advanceMockMillis(ZONE_WAIT_DELAY_MS + 10); // wrapped
+    //    6d. Full natural 2-zone run where Zone 0 completes pre-wrap so 5s inter-zone wait
+    //        (including 1s wait-state EMI refresh) and Zone 1 start cross 0xFFFFFFFF naturally
+    history.clear();
+    setMockMillis(0xFFFF1400UL); // 60416 ms before wrap
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 4); // 0xFFFF1418 (60392 ms before wrap)
     wateringCtrl.update();
+    for (int s = 0; s < 59; s++) {
+        advanceMockMillis(1000UL);
+        wateringCtrl.update();
+    }
+    advanceMockMillis(1000UL); // 0xFFFFFE80 (384 ms before wrap) -> enters inter-zone wait pre-wrap
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+
+    // Inject EMI glitch during inter-zone wait and cross 0xFFFFFFFF -> 1s refresh repairs it
+    digitalWrite(PIN_RELAY_1, RELAY_ON);
+    advanceMockMillis(1000UL); // crosses 0xFFFFFFFF -> 0x00000268
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+
+    // Finish remaining 5s inter-zone wait & Zone 1 dead-time, then complete Zone 1
+    advanceMockMillis(ZONE_WAIT_DELAY_MS - 1000UL + 10UL);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl._isRelayDeadTimeWaiting);
     advanceMockMillis(RELAY_DEADTIME_MS + 5);
     wateringCtrl.update();
     TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_2));
 
-    // Complete Zone 1 across wrap
-    setMockMillis(0xFFFFE000UL);
-    wateringCtrl._zoneStartMs = 0xFFFFE000UL;
     advanceMockMillis(60000UL);
     wateringCtrl.update();
     TEST_ASSERT_FALSE(wateringCtrl.isActive());
@@ -454,7 +558,7 @@ void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
         rtclock._rtc.adjust(DateTime(simUtc));
         stepLoopOnce(stepMs);
 
-        // Mode schedule transitions across the 450-day horizon:
+        // Mode schedule transitions across the 520-day horizon:
         uint32_t dayNum = (simUtc - startUtc.unixtime()) / 86400UL;
         if (dayNum == 250 && gState.mode == AppMode::INTENSO) {
             // Switch to MEDIO (2x/day)
@@ -579,7 +683,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // A. October DST fall-back repeated 01:30 + reboot at 01:45 UTC (STD) must NOT double-water
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.slot_count = 1;
@@ -607,7 +711,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // B. Outage spanning 1st 01:30 (DST) and 2nd 01:30 (STD) -> reboot at 01:45 UTC catches up ONCE
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.slot_count = 1;
@@ -631,7 +735,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // C. Brownout retry loop hits MAX_RECOVERY_RETRIES (3) -> aborts AND catch-up must NOT restart it
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO; // 08:00, 20:00
         storage.save();
@@ -657,7 +761,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // D. Multi-zone blackout recovery: mid-Z1 checkpoint + outage during inter-zone wait -> exact Z1/Z2/Z3 mins
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO;
         storage.save();
@@ -713,7 +817,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // E. MANUAL collision at 08:00 + blackout on MANUAL before 08:00 -> aborts stale MANUAL, catches AUTO once
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO;
         storage.save();
@@ -739,7 +843,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
     //    1) expires mid-minute (08:00:30) -> triggers 08:00 once
     //    2) expires AFTER slot (08:15:00) -> does NOT catch up stale slot from suspension period
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO;
         uint32_t slotUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
@@ -767,7 +871,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         TEST_ASSERT_FALSE(wateringCtrl.isActive());
 
         // Case F2: suspension spans 08:00 and expires at 08:15 -> NO catch-up
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO;
         gState.suspended = true;
@@ -786,7 +890,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // G. EVERY_X_DAYS (interval=3) midnight wrap catch-up maintains exact 3-day cadence
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
         cs.slot_count = 1;
@@ -828,7 +932,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // H. Dead RTC battery on cold boot inhibits AUTO watering, and export_history defers recording cleanly
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO;
         storage.save();
@@ -867,7 +971,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 
     // I. Transient DS3231 disconnect + hotplug reconnect must NOT clear sched_tr or double-water
     {
-        resetSystem(true);
+        resetSystem();
         setupCommonZones();
         gState.mode = AppMode::MEDIO; // 08:00, 20:00
         storage.save();
@@ -880,20 +984,29 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         TEST_ASSERT_TRUE(wateringCtrl.isActive());
         wateringCtrl.stop();
 
-        // Transient RTC disconnect + I2C hotplug reconnect (bumps rtclock.revision(), NOT manualRevision())
-        rtclock._found = false;
+        // Transient RTC disconnect (3 failed polls -> _found=false) + I2C hotplug reconnect
+        // (bumps rtclock.revision(), NOT manualRevision())
         rtclock._rtc.mockPresent = false;
+        utc += 29;
+        rtclock._rtc.adjust(DateTime(utc));
+        stepLoopOnce(29000UL); // poll 1 fail (_consecErrors=1)
         for (int i = 0; i < 2; i++) {
-            utc += 30;
+            utc += 5;
             rtclock._rtc.adjust(DateTime(utc));
-            stepLoopOnce(30000UL);
+            stepLoopOnce(5000UL); // poll 2, poll 3 fail -> _found=false via RTClock::update()
         }
+        TEST_ASSERT_FALSE(rtclock.isPresent());
+        utc += 30;
+        rtclock._rtc.adjust(DateTime(utc));
+        stepLoopOnce(30000UL);
+
         uint32_t revBefore = rtclock.revision();
         uint32_t manBefore = rtclock.manualRevision();
         rtclock._rtc.mockPresent = true;
         utc += 30;
         rtclock._rtc.adjust(DateTime(utc));
         stepLoopOnce(30000UL);
+        TEST_ASSERT_TRUE(rtclock.isPresent());
         TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
         TEST_ASSERT_EQUAL_UINT32(manBefore, rtclock.manualRevision());
 
@@ -921,7 +1034,7 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     gState.mode = AppMode::INTENSO; // 07:00, 13:00, 19:00
     storage.save();
 
-    // Span Feb 1 2026 -> Jun 1 2026 (covers March DST spring-forward + ~2.4x millis wraparounds)
+    // Span Feb 1 2026 -> Jun 1 2026 (covers March DST spring-forward across ~120 days of faults/reboots)
     uint32_t simUtc = RTClock::localToUtc(DateTime(2026, 2, 1, 0, 0, 0)).unixtime();
     const uint32_t endUtc = simUtc + 120UL * 86400UL;
     simulateReboot(simUtc);
@@ -936,62 +1049,19 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     uint8_t  lastActiveZone = 0xFF;
     uint32_t prevAutoStartUtc = 0;
     bool     wasActive = false;
+    uint32_t subSecMsAcc = 0;
 
-    while (simUtc < endUtc) {
-        uint32_t r = nextRand();
-
-        // ~0.12% chance per step (scaled for 30s idle steps -> ~400+ faults across 120 days)
-        if ((r % 833U) == 0U) {
-            uint32_t kind = (r >> 12) % 5U;
-            if (kind == 0) {
-                // Short blackout (15s - 25min) across arbitrary states (idle, active, or slot)
-                uint32_t outageSec = 15UL + ((r >> 16) % 1500UL);
-                simUtc += outageSec;
-                simulateReboot(simUtc, true, false);
-                wasActive = wateringCtrl.isActive();
-                activeZoneTicksSec = 0;
-                lastActiveZone = 0xFF;
-                continue;
-            } else if (kind == 1) {
-                // Transient RTC disconnect for 3 minutes, then hotplug reconnect
-                rtclock._rtc.mockPresent = false;
-                for (int i = 0; i < 6; i++) {
-                    simUtc += 30;
-                    rtclock._rtc.adjust(DateTime(simUtc));
-                    stepLoopOnce(30000UL);
-                    assertRelaySafetyInvariants(activeZoneTicksSec, 30UL, lastActiveZone);
-                }
-                rtclock._rtc.mockPresent = true;
-            } else if (kind == 2) {
-                // Transient I2C read corruption burst, then clear
-                rtclock._rtc.mockI2cReadFail = true;
-                for (int i = 0; i < 4; i++) {
-                    simUtc += 10;
-                    rtclock._rtc.adjust(DateTime(simUtc));
-                    stepLoopOnce(10000UL);
-                }
-                rtclock._rtc.mockI2cReadFail = false;
-            } else if (kind == 3) {
-                // LCD transient I2C fault under Always-On mode
-                display._lcd.mockI2cError = 1;
-                for (int i = 0; i < 4; i++) {
-                    simUtc += 1;
-                    rtclock._rtc.adjust(DateTime(simUtc));
-                    stepLoopOnce(1000UL);
-                }
-                display._lcd.mockI2cError = 0;
-                display.recover(true);
-            } else {
-                // User serial status check & menu wake
-                Serial.feedInput("status\n");
-                encoder._delta = 1;
+    auto advanceAndCheck = [&](uint32_t stepMs) {
+        if (stepMs >= 1000UL) {
+            simUtc += stepMs / 1000UL;
+            subSecMsAcc = 0;
+        } else {
+            subSecMsAcc += stepMs;
+            if (subSecMsAcc >= 1000UL) {
+                simUtc += subSecMsAcc / 1000UL;
+                subSecMsAcc %= 1000UL;
             }
         }
-
-        uint32_t stepMs = wateringCtrl._isRelayDeadTimeWaiting
-            ? 20UL
-            : (wateringCtrl.isActive() ? 1000UL : 30000UL);
-        if (stepMs >= 1000UL) simUtc += stepMs / 1000UL;
         rtclock._rtc.adjust(DateTime(simUtc));
         stepLoopOnce(stepMs);
 
@@ -1009,19 +1079,80 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
 
         assertRelaySafetyInvariants(activeZoneTicksSec, (stepMs >= 1000UL) ? (stepMs / 1000UL) : 1UL, lastActiveZone);
         if (Serial.outputBuffer.size() > 16384) Serial.outputBuffer.clear();
+    };
+
+    while (simUtc < endUtc) {
+        uint32_t r = nextRand();
+
+        // ~0.12% chance per step (scaled for 30s idle steps -> ~400+ faults across 120 days)
+        if ((r % 833U) == 0U) {
+            uint32_t kind = (r >> 12) % 5U;
+            if (kind == 0) {
+                // Short blackout (15s - 25min) across arbitrary states (idle, active, or slot)
+                uint32_t outageSec = 15UL + ((r >> 16) % 1500UL);
+                simUtc += outageSec;
+                subSecMsAcc = 0;
+                simulateReboot(simUtc, true, false);
+                wasActive = wateringCtrl.isActive();
+                activeZoneTicksSec = 0;
+                lastActiveZone = 0xFF;
+                continue;
+            } else if (kind == 1) {
+                // Transient RTC disconnect for 3 minutes, then hotplug reconnect
+                rtclock._rtc.mockPresent = false;
+                uint32_t faultEndUtc = simUtc + 180UL;
+                while (simUtc < faultEndUtc) {
+                    uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting
+                        ? 20UL
+                        : (wateringCtrl.isActive() ? 1000UL : 30000UL);
+                    advanceAndCheck(sMs);
+                }
+                rtclock._rtc.mockPresent = true;
+            } else if (kind == 2) {
+                // Transient I2C read corruption burst, then clear
+                rtclock._rtc.mockI2cReadFail = true;
+                uint32_t faultEndUtc = simUtc + 40UL;
+                while (simUtc < faultEndUtc) {
+                    uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting
+                        ? 20UL
+                        : (wateringCtrl.isActive() ? 1000UL : 10000UL);
+                    advanceAndCheck(sMs);
+                }
+                rtclock._rtc.mockI2cReadFail = false;
+            } else if (kind == 3) {
+                // LCD transient I2C fault under Always-On mode, followed by natural sync() recovery
+                display._lcd.mockI2cError = 1;
+                display._invalidateShadow(); // ensure fault is observed even mid-minute
+                for (int i = 0; i < 4; i++) {
+                    advanceAndCheck(1000UL);
+                }
+                display._lcd.mockI2cError = 0;
+                for (int i = 0; i < 2; i++) {
+                    advanceAndCheck(1000UL);
+                }
+                TEST_ASSERT_FALSE(display.hasBusFault());
+            } else {
+                // User serial status check & menu wake
+                Serial.feedInput("status\n");
+                encoder._delta = 1;
+            }
+        }
+
+        uint32_t stepMs = wateringCtrl._isRelayDeadTimeWaiting
+            ? 20UL
+            : (wateringCtrl.isActive() ? 1000UL : 30000UL);
+        advanceAndCheck(stepMs);
     }
 
     // Cleanly finish any in-flight watering at end of soak
     uint32_t drain = 1200;
     while (wateringCtrl.isActive() && drain-- > 0) {
         uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting ? 20UL : 1000UL;
-        if (sMs >= 1000UL) simUtc++;
-        rtclock._rtc.adjust(DateTime(simUtc));
-        stepLoopOnce(sMs);
-        assertRelaySafetyInvariants(activeZoneTicksSec, 1UL, lastActiveZone);
+        advanceAndCheck(sMs);
     }
 
     TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_FALSE(display.hasBusFault());
     TEST_ASSERT_TRUE(gState.rtc_valid);
     TEST_ASSERT_TRUE(history.isReady());
     TEST_ASSERT_GREATER_THAN_UINT16(300, history.entryCount());
