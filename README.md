@@ -49,7 +49,7 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 |---|---|
 | I2C SDA / SCL (LCD + RTC) | GPIO 21 / GPIO 22 |
 | Encoder CLK / DT / SW | GPIO 32 / GPIO 33 / GPIO 25 |
-| Relé Zona 1 / 2 / 3 / 4 | GPIO 26 / 27 / 14 / 13 |
+| Relé Zona 1 / 2 / 3 / 4 | GPIO 26 / 27 / 18 / 13 |
 
 > O ficheiro `diagram.json` contém o esquema de ligações pronto a usar no simulador Wokwi.
 

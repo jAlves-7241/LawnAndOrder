@@ -659,6 +659,58 @@ void test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings(void) {
 #endif
 }
 
+void test_watering_max_zone_cap_and_periodic_pin_refresh(void) {
+    // 1. Periodic idle pin refresh restores corrupted inactive relay GPIO
+    wateringCtrl.begin();
+    digitalWrite(PIN_RELAY_2, RELAY_ON);
+    advanceMockMillis(1000);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_2));
+
+    // 2. Active zone periodic pin refresh restores corrupted active/inactive GPIOs
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, 1781510400UL };
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+
+    digitalWrite(PIN_RELAY_1, RELAY_OFF);
+    digitalWrite(PIN_RELAY_3, RELAY_ON);
+    advanceMockMillis(1000);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_3));
+
+    // 3. Corrupted _zoneDurationMs (> 20 min) is forcefully capped at 20 min
+    wateringCtrl._zoneDurationMs = 30UL * 60000UL;
+    Serial.reset();
+    advanceMockMillis(20UL * 60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+#if LOG_LEVEL >= LVL_ERROR
+    char expectedCap[96];
+    snprintf(expectedCap, sizeof(expectedCap), TXT_LOG_ZONE_MAX_CAP, 1U, 1200UL);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedCap) != std::string::npos);
+#endif
+    HistoryEntry latest[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, latest));
+    TEST_ASSERT_EQUAL_UINT8(20, latest[0].zone_dur[0]);
+
+    // 4. Corrupted _zoneDurationMs during TEST run is capped at ZONE_TEST_DURATION_S
+    wateringCtrl.startTest(0);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    wateringCtrl._zoneDurationMs = 60000UL;
+    advanceMockMillis((uint32_t)ZONE_TEST_DURATION_S * 1000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -677,5 +729,6 @@ int main(void) {
     RUN_TEST(test_watering_invalid_custom_duration_preserves_active_cycle);
     RUN_TEST(test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime);
     RUN_TEST(test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings);
+    RUN_TEST(test_watering_max_zone_cap_and_periodic_pin_refresh);
     return UNITY_END();
 }

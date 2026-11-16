@@ -44,6 +44,7 @@ private:
     uint32_t _zoneDurationMs;
     uint32_t _waitStartMs;
     uint32_t _relayWaitStartMs;
+    uint32_t _lastPinRefreshMs;
 
     // ── History tracking ──────────────────────────────────
     WaterTrigger _runTrigger;              // trigger type of current cycle

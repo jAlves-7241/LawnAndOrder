@@ -19,6 +19,7 @@ WateringController::WateringController()
       _active(false), _isWaiting(false), _isRelayDeadTimeWaiting(false),
       _recoveryRetryPending(false), _recoveryRetryCount(0), _zoneIdx(0),
       _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0), _relayWaitStartMs(0),
+      _lastPinRefreshMs(0),
       _runTrigger(WaterTrigger::MANUAL),
       _checkpointedMin(0)
 {
@@ -41,6 +42,7 @@ void WateringController::begin() {
     _zoneDurationMs = 0;
     _waitStartMs = 0;
     _relayWaitStartMs = 0;
+    _lastPinRefreshMs = millis();
     _runTrigger = WaterTrigger::MANUAL;
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _cycleStart = {};
@@ -324,10 +326,18 @@ void WateringController::deenergizeRelays() {
 // update()
 // ─────────────────────────────────────────────────────────
 void WateringController::update() {
-    if (!_active) return;
+    uint32_t nowMs = millis();
+    if (!_active) {
+        // Re-assert idle relay outputs every 1 s against EMI transients
+        if (nowMs - _lastPinRefreshMs >= 1000UL) {
+            _lastPinRefreshMs = nowMs;
+            _deactivateAll();
+        }
+        return;
+    }
 
     if (_isWaiting) {
-        if (millis() - _waitStartMs >= ZONE_WAIT_DELAY_MS) {
+        if (nowMs - _waitStartMs >= ZONE_WAIT_DELAY_MS) {
             _isWaiting = false;
             _startNextZone();
         }
@@ -335,11 +345,12 @@ void WateringController::update() {
     }
 
     if (_isRelayDeadTimeWaiting) {
-        if (millis() - _relayWaitStartMs >= RELAY_DEADTIME_MS) {
+        if (nowMs - _relayWaitStartMs >= RELAY_DEADTIME_MS) {
             if (_zoneIdx < NUM_ZONES) {
                 _isRelayDeadTimeWaiting = false;
                 digitalWrite(_relayPins[_zoneIdx], RELAY_ON);
                 _zoneStartMs = millis();
+                _lastPinRefreshMs = _zoneStartMs;
                 gState.watering.progress_pct = 0;
                 _syncState();
                 if (_zoneDurationMs % 60000UL == 0) {
@@ -360,10 +371,23 @@ void WateringController::update() {
         return;
     }
 
-    uint32_t elapsed = millis() - _zoneStartMs;
+    if (nowMs - _lastPinRefreshMs >= 1000UL) {
+        _lastPinRefreshMs = nowMs;
+        for (uint8_t i = 0; i < NUM_ZONES; i++) {
+            digitalWrite(_relayPins[i], (i == _zoneIdx) ? RELAY_ON : RELAY_OFF);
+        }
+    }
 
-    if (elapsed < _zoneDurationMs && _runTrigger != WaterTrigger::TEST) {
-        uint32_t totalZoneMin = _zoneDurationMs / 60000UL;
+    const uint32_t maxZoneMs = (_runTrigger == WaterTrigger::TEST)
+        ? ((uint32_t)ZONE_TEST_DURATION_S * 1000UL)
+        : (20UL * 60000UL);
+    const uint32_t effectiveDurationMs =
+        (_zoneDurationMs <= maxZoneMs) ? _zoneDurationMs : maxZoneMs;
+
+    uint32_t elapsed = nowMs - _zoneStartMs;
+
+    if (elapsed < effectiveDurationMs && _runTrigger != WaterTrigger::TEST) {
+        uint32_t totalZoneMin = effectiveDurationMs / 60000UL;
         uint32_t elapsedMin = elapsed / 60000UL;
         if (totalZoneMin > elapsedMin &&
             (elapsedMin - _checkpointedMin) >= RECOVERY_CHECKPOINT_MIN) {
@@ -375,13 +399,18 @@ void WateringController::update() {
         }
     }
 
-    if (_zoneDurationMs > 0) {
-        uint8_t pct = (uint8_t)min(100ULL, (elapsed * 100ULL) / _zoneDurationMs);
+    if (effectiveDurationMs > 0) {
+        uint8_t pct = (uint8_t)min(100ULL, (elapsed * 100ULL) / effectiveDurationMs);
         gState.watering.progress_pct = pct;
     }
 
-    if (elapsed >= _zoneDurationMs) {
-        uint32_t raw_min = _zoneDurationMs / 60000UL;
+    const bool capExceeded = (_zoneDurationMs > maxZoneMs) && (elapsed >= maxZoneMs);
+    if (elapsed >= _zoneDurationMs || elapsed >= maxZoneMs) {
+        if (capExceeded) {
+            LOG_E(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_MAX_CAP,
+                  (unsigned)_zoneIdx + 1U, (unsigned long)(maxZoneMs / 1000UL));
+        }
+        uint32_t raw_min = effectiveDurationMs / 60000UL;
         if (raw_min < 1) raw_min = 1;
         uint8_t ran_min = (raw_min > 255) ? 255 : (uint8_t)raw_min;
         if (_runTrigger != WaterTrigger::TEST) {
@@ -393,7 +422,7 @@ void WateringController::update() {
         _checkpointedMin = 0;
 
         _deactivateAll();
-        if (_zoneDurationMs % 60000UL == 0) {
+        if (effectiveDurationMs % 60000UL == 0) {
             uint8_t loggedMin = (_runTrigger != WaterTrigger::TEST && _zoneIdx < NUM_ZONES)
                 ? _zoneDurMin[_zoneIdx] : ran_min;
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED,
@@ -404,7 +433,7 @@ void WateringController::update() {
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED_SEC,
                   (int)_zoneIdx + 1,
                   (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-",
-                  (unsigned long)(_zoneDurationMs / 1000UL));
+                  (unsigned long)(effectiveDurationMs / 1000UL));
         }
         _queuePos++;
 
