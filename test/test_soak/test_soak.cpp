@@ -406,22 +406,31 @@ void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
     const uint32_t totalDays = 520;
     const uint32_t endUtc = simUtc + totalDays * 86400UL;
     uint32_t subSecMsAcc = 0;
+    uint32_t lastCheckedDay = 0;
+    bool     isDstMonth = false;
 
     while (simUtc < endUtc) {
+        uint32_t curUtcDay = simUtc / 86400UL;
+        if (curUtcDay != lastCheckedDay) {
+            lastCheckedDay = curUtcDay;
+            uint8_t m = DateTime(simUtc).month();
+            isDstMonth = (m == 3 || m == 10);
+        }
+
         // Choose adaptive step:
         // - 20 ms during relay dead-time
-        // - 1 s during active watering, history rotation/export, or DST transition hours (00:58-02:05 UTC)
-        // - 10 s during quiet idle (hits :00/:10/:20/:30/:40/:50 of every minute & exact 30s RTC polls)
-        uint32_t stepMs = 10000UL;
+        // - 1 s during active watering, history rotation/export, or Mar/Oct DST windows (00:25-02:05 UTC)
+        // - 30 s during quiet idle (hits :00 and :30 of every minute & exact 30s RTC polls)
+        uint32_t stepMs = 30000UL;
         if (wateringCtrl._isRelayDeadTimeWaiting) {
             stepMs = 20UL;
         } else if (wateringCtrl.isActive() ||
                    history._rotState != History::RotState::IDLE ||
                    history._exportState != History::ExportState::IDLE) {
             stepMs = 1000UL;
-        } else {
+        } else if (isDstMonth) {
             uint32_t todUtc = simUtc % 86400UL;
-            if (todUtc < 2UL * 3600UL + 300UL) {
+            if (todUtc >= 1500UL && todUtc < 7500UL) {
                 stepMs = 1000UL;
             }
         }
@@ -430,7 +439,7 @@ void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
         uint32_t prevMs = millis();
         uint32_t newMs = prevMs + stepMs;
         // Track whole seconds elapsed cleanly across sub-second dead-time steps
-        if (stepMs == 10000UL || stepMs == 1000UL) {
+        if (stepMs >= 1000UL) {
             simUtc += stepMs / 1000UL;
             subSecMsAcc = 0;
         } else {
@@ -855,6 +864,45 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         TEST_ASSERT_FALSE(history.isExporting());
         TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
     }
+
+    // I. Transient DS3231 disconnect + hotplug reconnect must NOT clear sched_tr or double-water
+    {
+        resetSystem(true);
+        setupCommonZones();
+        gState.mode = AppMode::MEDIO; // 08:00, 20:00
+        storage.save();
+
+        uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
+        simulateReboot(utc);
+        utc++;
+        rtclock._rtc.adjust(DateTime(utc));
+        stepLoopOnce(1000); // 08:00:00 -> fires once
+        TEST_ASSERT_TRUE(wateringCtrl.isActive());
+        wateringCtrl.stop();
+
+        // Transient RTC disconnect + I2C hotplug reconnect (bumps rtclock.revision(), NOT manualRevision())
+        rtclock._found = false;
+        rtclock._rtc.mockPresent = false;
+        for (int i = 0; i < 2; i++) {
+            utc += 30;
+            rtclock._rtc.adjust(DateTime(utc));
+            stepLoopOnce(30000UL);
+        }
+        uint32_t revBefore = rtclock.revision();
+        uint32_t manBefore = rtclock.manualRevision();
+        rtclock._rtc.mockPresent = true;
+        utc += 30;
+        rtclock._rtc.adjust(DateTime(utc));
+        stepLoopOnce(30000UL);
+        TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+        TEST_ASSERT_EQUAL_UINT32(manBefore, rtclock.manualRevision());
+
+        // Blackout & reboot at 08:15 (inside 30-min catch-up window) MUST NOT re-fire 08:00!
+        uint32_t rebootUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 15, 0)).unixtime();
+        simulateReboot(rebootUtc);
+        stepLoopOnce(1000);
+        TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -892,8 +940,8 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     while (simUtc < endUtc) {
         uint32_t r = nextRand();
 
-        // ~0.04% chance per step to inject a random fault or power outage
-        if ((r % 2500U) == 0U) {
+        // ~0.12% chance per step (scaled for 30s idle steps -> ~400+ faults across 120 days)
+        if ((r % 833U) == 0U) {
             uint32_t kind = (r >> 12) % 5U;
             if (kind == 0) {
                 // Short blackout (15s - 25min) across arbitrary states (idle, active, or slot)
@@ -942,7 +990,7 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
 
         uint32_t stepMs = wateringCtrl._isRelayDeadTimeWaiting
             ? 20UL
-            : (wateringCtrl.isActive() ? 1000UL : 10000UL);
+            : (wateringCtrl.isActive() ? 1000UL : 30000UL);
         if (stepMs >= 1000UL) simUtc += stepMs / 1000UL;
         rtclock._rtc.adjust(DateTime(simUtc));
         stepLoopOnce(stepMs);

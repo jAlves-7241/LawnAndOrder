@@ -124,11 +124,15 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute full suite (144 tests across 10 suites)
+# Execute fast unit suites (140 tests across 9 suites)
 pio test -e native
+
+# Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2)
+pio test -e native && pio test -e native_soak
 
 # Filter by module (e.g. scheduler, watering, terminal, ui, soak)
 pio test -e native -f test_scheduler
+pio test -e native_soak
 ```
 
 For mock layer implementation, technical specifications, and extension guidelines, see **[test/README.md](test/README.md)**.
