@@ -6,20 +6,13 @@
 // ─────────────────────────────────────────────────────────
 // RTClock
 //
-// Wraps either RTC_DS3231 (real hardware) or RTC_DS1307
-// (Wokwi simulation - no DS3231 part available).
-// Select at compile time via -DWOKWI_SIM in platformio.ini.
+// Wraps RTC_DS3231 (compatible with Wokwi DS1307 simulation as well
+// since registers 0x00-0x06 match and 0x0F returns 0x00 on DS1307).
 //
 // Usage:
 //   setup() → rtclock.begin()
 //   loop()  → rtclock.update()
 // ─────────────────────────────────────────────────────────
-
-#ifdef WOKWI_SIM
-  using RTC_Chip = RTC_DS1307;
-#else
-  using RTC_Chip = RTC_DS3231;
-#endif
 
 class RTClock {
 public:
@@ -63,11 +56,12 @@ public:
     // True if RTC power loss (OSF) was detected; clears on set() or clean recovery/boot.
     bool isBatteryLow() const { return _batteryLow; }
     uint32_t revision() const { return _revision; }
+    uint32_t manualRevision() const { return _manualRevision; }
 
     void setErrorCallback(ErrorCallback cb) { _errorCb = cb; }
 
 private:
-    RTC_Chip _rtc;
+    RTC_DS3231 _rtc;
     bool     _found;
     bool     _lostPower;
     bool     _batteryLow = false;
@@ -79,6 +73,7 @@ private:
     uint32_t _anchorUnix;
     uint32_t _lastKnownUnix;
     uint32_t _revision = 0;
+    uint32_t _manualRevision = 0;
     ErrorCallback _errorCb;
 
     void _incrementSoftwareClock();
