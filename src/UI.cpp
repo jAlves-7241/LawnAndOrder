@@ -89,12 +89,7 @@ void UI::update() {
     bool hadInput = (rot != 0 || click);
 
     if (hadInput && (!_d.isBacklightOn() || !_d.isDisplayOn())) {
-        const bool wasDisplayOff = !_d.isDisplayOn();
-        _d.displayOn();
-        _d.backlightOn();
-        if (wasDisplayOff) {
-            _d.recover(true);
-        }
+        _d.wake(_currentScreen != nullptr);
         _lastActivity = millis();
         if (_currentScreen) _currentScreen->render(*this);
         return;
@@ -330,7 +325,9 @@ void UI::dispatchAction(const char* action) {
             }
         }
         flagConfigChanged();
-        scheduler.onModeChanged();
+        if (!_inSetup) {
+            scheduler.onModeChanged();
+        }
         
         if (_inSetup) {
             if (gState.mode == AppMode::PERSONALIZADO) {

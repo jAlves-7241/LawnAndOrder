@@ -112,7 +112,7 @@ void ScreenIdle::fullRender(UI& ui) {
         const char* warnLine = "";
         if (batLow) {
             warnLine = ui.getDisplay().cx(b1, TXT_IDLE_RTC_BAT);
-        } else if (gState.rtc_valid && !rtcPresent) {
+        } else if (!rtcPresent) {
             warnLine = ui.getDisplay().cx(b1, TXT_IDLE_RTC_MISSING);
         }
 
