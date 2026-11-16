@@ -63,6 +63,7 @@ public:
 private:
     // Returns true if the schedule is active on the given calendar day (since 1970).
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
+    bool _tryCatchUp(const SystemTime& t);
 
     // True while we're inside the trigger minute to prevent double-fire.
 
@@ -71,6 +72,9 @@ private:
     uint8_t _lastMin;
     uint8_t _lastSec;
     uint32_t _lastClockRev;
+    uint32_t _lastManualClockRev;
+    bool _catchUpPending;
+    uint32_t _prevLocalWallUnix;
 
     // UTC unix timestamp of the last successful auto-trigger for each slot (persisted to NVS).
     // Prevents re-triggering the same slot when local time repeats (DST fall-back).

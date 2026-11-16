@@ -701,6 +701,7 @@
 #define TXT_LOG_SCHED_SUSP_EXP "Pause ended - automatic watering resumed"
 #define TXT_LOG_SCHED_DUP_BLOCK "Skipped already-completed %02d:%02d run"
 #define TXT_LOG_SCHED_AUTO_START "Starting scheduled watering for %02d:%02d"
+#define TXT_LOG_SCHED_CATCHUP "Starting missed %02d:%02d watering (catch-up)"
 #define TXT_LOG_SCHED_COLLISION_SKIP "Skipped %02d:%02d schedule - watering already running"
 #define TXT_LOG_SCHED_MODE_CHG "Schedule updated (%s) - next run at %02d:%02d"
 #define TXT_LOG_SCHED_MODE_CHG_OFF "Schedule updated (%s) - automatic watering off"
@@ -1083,6 +1084,7 @@
 #define TXT_LOG_SCHED_DUP_BLOCK                                                \
   "Rega das %02d:%02d ja concluida - ignorada"
 #define TXT_LOG_SCHED_AUTO_START "A iniciar rega agendada para %02d:%02d"
+#define TXT_LOG_SCHED_CATCHUP "A iniciar rega em atraso das %02d:%02d (recuperacao)"
 #define TXT_LOG_SCHED_COLLISION_SKIP                                           \
   "Horario %02d:%02d ignorado - ja existe uma rega ativa"
 #define TXT_LOG_SCHED_MODE_CHG                                                 \

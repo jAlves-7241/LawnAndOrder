@@ -10,7 +10,8 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0)
+    : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0),
+      _lastManualClockRev(0), _catchUpPending(false), _prevLocalWallUnix(0)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
 }
@@ -20,6 +21,9 @@ void Scheduler::begin() {
     _lastSec = 0xFF;
     _lastMin = 0xFF;
     _lastClockRev = rtclock.revision();
+    _lastManualClockRev = rtclock.manualRevision();
+    _prevLocalWallUnix = 0;
+    _catchUpPending = !gState.suspended && !wateringCtrl.isActive();
     storage.loadLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
@@ -52,6 +56,11 @@ void Scheduler::update() {
         _lastClockRev = rtclock.revision();
         clearLastTriggers();
     }
+    if (rtclock.manualRevision() != _lastManualClockRev) {
+        _lastManualClockRev = rtclock.manualRevision();
+        _catchUpPending = false;
+        _prevLocalWallUnix = 0;
+    }
 
     if (!gState.rtc_valid)  return;
 
@@ -63,6 +72,8 @@ void Scheduler::update() {
 
     // Auto-wake from suspension
     if (gState.suspended) {
+        _catchUpPending = false;
+        _prevLocalWallUnix = 0;
         if (t.unix >= gState.suspended_until) {
             gState.suspended = false;
             gState.suspended_until = 0;
@@ -79,6 +90,15 @@ void Scheduler::update() {
     // On minute rollover, reset trigger guard and recompute next_*
     if (t.min != _lastMin) {
         _lastMin   = t.min;
+        uint32_t localWallUnix = DateTime(t.year, t.month, t.day, t.hour, t.min, 0).unixtime();
+        if (_prevLocalWallUnix > 0 && localWallUnix > _prevLocalWallUnix) {
+            uint32_t wallJump = localWallUnix - _prevLocalWallUnix;
+            if (wallJump > 120UL && wallJump <= 7200UL) {
+                _catchUpPending = true;
+            }
+        }
+        _prevLocalWallUnix = localWallUnix;
+
         // Recompute so next_* is always fresh (catches mode changes too)
         uint32_t old_ref = gState.custom_ref_day;
         computeNext(gState.mode, t,
@@ -94,6 +114,7 @@ void Scheduler::update() {
                 for (uint8_t i = 0; i < sched.slot_count; i++) {
                     if (t.hour == sched.slots[i].hour &&
                         t.min  == sched.slots[i].minute) {
+                        _catchUpPending = false;
                         if (gState.watering.active) {
                             LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
                                   (int)sched.slots[i].hour, (int)sched.slots[i].minute);
@@ -113,12 +134,98 @@ void Scheduler::update() {
                         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_AUTO_START,
                               (int)t.hour, (int)t.min);
                         wateringCtrl.startGeneral(WaterTrigger::AUTO);
-                        break;
+                        return;
                     }
                 }
             }
         }
+
+        if (_catchUpPending) {
+            _catchUpPending = false;
+            if (!gState.watering.active && sched.slot_count > 0) {
+                _tryCatchUp(t);
+            }
+        }
     }
+}
+
+bool Scheduler::_tryCatchUp(const SystemTime& t) {
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return false;
+    const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
+    if (sched.slot_count == 0) return false;
+
+    DateTime localDate(t.year, t.month, t.day, 0, 0, 0);
+    uint32_t currentDay1970 = localDate.unixtime() / 86400UL;
+
+    bool found = false;
+    uint8_t bestIdx = 0;
+    uint8_t bestHour = 0;
+    uint8_t bestMin = 0;
+    uint32_t bestAge = 0xFFFFFFFFUL;
+
+    for (int dayOff = 0; dayOff >= -1; dayOff--) {
+        if (dayOff < 0 && currentDay1970 == 0) continue;
+        uint32_t candDay = (uint32_t)((int32_t)currentDay1970 + dayOff);
+        if (!_dayMatches(sched, candDay, false)) continue;
+
+        DateTime candDate(candDay * 86400UL);
+        for (uint8_t i = 0; i < sched.slot_count; i++) {
+            const ScheduleSlot& sl = sched.slots[i];
+            DateTime slotLocal(candDate.year(), candDate.month(), candDate.day(),
+                               sl.hour, sl.minute, 0);
+            DateTime slotUtc = RTClock::localToUtc(slotLocal, t.unix);
+            DateTime roundTrip = RTClock::utcToLocal(slotUtc);
+            uint32_t effSlotUtc = slotUtc.unixtime();
+            const bool dstSkipped = (roundTrip.hour() != sl.hour || roundTrip.minute() != sl.minute);
+            if (dstSkipped) {
+                const uint32_t minSec = (uint32_t)sl.minute * 60UL;
+                if (effSlotUtc >= minSec) effSlotUtc -= minSec;
+            }
+            if (t.unix < effSlotUtc) continue;
+            if (!dstSkipped && t.unix == effSlotUtc) continue;
+
+            uint32_t age = t.unix - effSlotUtc;
+            if (age <= SCHED_CATCHUP_WINDOW_S && (!found || age < bestAge)) {
+                found = true;
+                bestIdx = i;
+                bestHour = sl.hour;
+                bestMin = sl.minute;
+                bestAge = age;
+            }
+        }
+    }
+
+    if (!found) return false;
+
+    if (_lastTriggerUnix[bestIdx] > 0 && t.unix >= _lastTriggerUnix[bestIdx] &&
+        (t.unix - _lastTriggerUnix[bestIdx]) < 7200UL) {
+        return false;
+    }
+
+    uint32_t cycleSec = 0;
+    uint8_t enabledZones = 0;
+    for (int z = 0; z < NUM_ZONES; z++) {
+        if (gState.zones[z].enabled && gState.zones[z].duration_min > 0) {
+            cycleSec += (uint32_t)gState.zones[z].duration_min * 60UL;
+            enabledZones++;
+        }
+    }
+    if (enabledZones == 0) return false;
+    if (enabledZones > 1) {
+        cycleSec += ((uint32_t)(enabledZones - 1) * ZONE_WAIT_DELAY_MS) / 1000UL;
+    }
+
+    uint32_t nextCycleUnix = getNextCycleUnix(t);
+    if (nextCycleUnix != 0xFFFFFFFFUL &&
+        (uint64_t)t.unix + (uint64_t)cycleSec > (uint64_t)nextCycleUnix) {
+        return false;
+    }
+
+    _lastTriggerUnix[bestIdx] = t.unix;
+    storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
+    LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CATCHUP, (int)bestHour, (int)bestMin);
+    wateringCtrl.startGeneral(WaterTrigger::AUTO);
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -126,6 +233,8 @@ void Scheduler::onModeChanged(bool announceMode) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
     clearLastTriggers();
     _lastSec = 0xFF;
+    _catchUpPending = false;
+    _prevLocalWallUnix = 0;
     if (gState.rtc_valid) {
         _lastMin = gState.now.min; // Align with current minute to prevent mid-minute double trigger
     } else {
