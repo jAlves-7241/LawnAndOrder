@@ -29,6 +29,7 @@ void Display::begin() {
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
     _invalidateShadow();
     _lastFullRefresh = millis();
+    _lastAttemptMs = _lastFullRefresh;
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = _busFault ? 1 : 0;
     _commErrWarned = false;
@@ -59,6 +60,19 @@ void Display::recover() {
     _invalidateShadow();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = 0;
+    if (!_busFault && _displayOn) {
+        for (uint8_t r = 0; r < LCD_ROWS; r++) {
+            if (!_flushRow(r)) {
+                _invalidateShadow();
+                _busFault = true;
+                break;
+            }
+        }
+        if (!_busFault) {
+            _lastFullRefresh = millis();
+        }
+    }
+    _lastAttemptMs = millis();
     if (_busFault) {
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
     } else {
@@ -110,9 +124,27 @@ void Display::_invalidateShadow() {
     for (int r = 0; r < LCD_ROWS; r++) _dirty[r] = true;
 }
 
+bool Display::_flushRow(uint8_t row) {
+    if (row >= LCD_ROWS) return true;
+    _lcd.setCursor(0, row);
+    _lcd.print(_shadow[row]);
+    if (_lcd.lastError() != 0) {
+        return false;
+    }
+    _dirty[row] = false;
+    return true;
+}
+
+void Display::sync() {
+    if (!_displayOn) return;
+    if ((millis() - _lastAttemptMs) < 1000UL) return;
+    setRows(nullptr, nullptr, nullptr, nullptr);
+}
+
 void Display::setRows(const char* r0, const char* r1,
                       const char* r2, const char* r3) {
     if (!_displayOn) return;
+    _lastAttemptMs = millis();
     _lcd.clearError();
     bool frameError = false;
     bool wroteAny = false;
@@ -127,13 +159,10 @@ void Display::setRows(const char* r0, const char* r1,
             }
         } else if (_dirty[r]) {
             wroteAny = true;
-            _lcd.setCursor(0, r);
-            _lcd.print(_shadow[r]);
-            if (_lcd.lastError() != 0) {
+            if (!_flushRow((uint8_t)r)) {
                 frameError = true;
                 break;
             }
-            _dirty[r] = false;
             fullRowWritten[r] = true;
         }
     }
@@ -145,13 +174,10 @@ void Display::setRows(const char* r0, const char* r1,
             for (int r = 0; r < LCD_ROWS; r++) {
                 if (fullRowWritten[r]) continue;
                 wroteAny = true;
-                _lcd.setCursor(0, r);
-                _lcd.print(_shadow[r]);
-                if (_lcd.lastError() != 0) {
+                if (!_flushRow((uint8_t)r)) {
                     frameError = true;
                     break;
                 }
-                _dirty[r] = false;
             }
             if (!frameError) {
                 _lastFullRefresh = now;
@@ -202,12 +228,9 @@ bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull) {
 
     if (_dirty[row]) {
         memcpy(_shadow[row], padded, LCD_COLS + 1);
-        _lcd.setCursor(0, row);
-        _lcd.print(_shadow[row]);
-        if (_lcd.lastError() != 0) {
+        if (!_flushRow(row)) {
             return false;
         }
-        _dirty[row] = false;
         if (wroteFull) *wroteFull = true;
         return true;
     }

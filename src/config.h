@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Firmware ──────────────────────────────────────────────
-#define FW_VERSION "v1.3.0"
-#define FW_BUILD_DATE "15Nov2026"
+#define FW_VERSION "v1.4.0"
+#define FW_BUILD_DATE "16Nov2026"
 
 // ── Logs (ver log.h para macros e documentação) ──────────
 // LVL_NONE=-1  LVL_ERROR=0  LVL_WARN=1  LVL_INFO=2  LVL_DEBUG=3
@@ -108,9 +108,9 @@
 #define SAFETY_GAP_SEC 7200UL  // Tempo de segurança (em segundos) para evitar regas duplas. Valor seguro: 7200 (2h)
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
 #define DATE_YEAR_MAX 2099     // Ano máximo para o editor de data
-#define MAX_RECOVERY_RETRIES 3 // Máximo de retentativas de recuperação após reboot
-#define RECOVERY_STABLE_MS 30000UL // Tempo estável para zerar contador de retentativas
-#define RECOVERY_MAX_AGE_S 7200UL  // Idade máxima (2 h) para retomar ciclo interrompido
+#define MAX_RECOVERY_RETRIES 3    // Máximo de retentativas por zona após reboot
+#define RECOVERY_CHECKPOINT_MIN 2 // Intervalo (min) para guardar progresso da zona em NVS
+#define RECOVERY_MAX_AGE_S 7200UL // Idade máxima (2 h) para retomar ciclo interrompido
 #define DATE_YEAR_SPAN                                                         \
   (DATE_YEAR_MAX - DATE_YEAR_MIN +                                             \
    1) // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)

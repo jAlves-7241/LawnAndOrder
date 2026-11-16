@@ -133,6 +133,7 @@ class RTC_DS3231 {
 public:
     bool mockPresent = true;
     bool mockLostPower = false;
+    bool mockI2cReadFail = false;
 
     bool begin() { return mockPresent; }
     bool lostPower() { return mockLostPower; }
@@ -144,6 +145,7 @@ public:
     void resetMock() {
         mockPresent = true;
         mockLostPower = false;
+        mockI2cReadFail = false;
         _current = DateTime(2026, 1, 1, 0, 0, 0);
     }
 private:

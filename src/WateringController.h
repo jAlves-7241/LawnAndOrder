@@ -49,6 +49,7 @@ private:
     WaterTrigger _runTrigger;              // trigger type of current cycle
     SystemTime   _cycleStart;             // gState.now snapshot at cycle start
     uint8_t      _zoneDurMin[NUM_ZONES];  // actual minutes per zone (0 = not run)
+    uint8_t      _checkpointedMin;        // minutes persisted mid-zone on current segment
 
     bool _buildQueue(const bool zones[NUM_ZONES], uint32_t dur_ms,
                      WaterTrigger trigger);

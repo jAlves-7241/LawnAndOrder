@@ -597,6 +597,88 @@ void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
 #endif
 }
 
+void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(void) {
+    // 1. Display::recover() while _displayOn == true immediately restores _shadow onto LCD
+    testDisp.setRows("Line0", "Line1", "Line2", "Line3");
+    testDisp._lcd.clear();
+    TEST_ASSERT_EQUAL_STRING("                    ", testDisp._lcd.getRow(0));
+    testDisp.recover();
+    TEST_ASSERT_EQUAL_STRING("Line0               ", testDisp._lcd.getRow(0));
+    TEST_ASSERT_EQUAL_STRING("Line1               ", testDisp._lcd.getRow(1));
+    TEST_ASSERT_EQUAL_STRING("Line2               ", testDisp._lcd.getRow(2));
+    TEST_ASSERT_EQUAL_STRING("Line3               ", testDisp._lcd.getRow(3));
+
+    // 2. In BACKLIGHT_TIMEOUT_NEVER mode on ScreenIdle, an LCD-only I2C failure detected at a
+    //    minute tick (or 60s refresh) reaches _consecErrors >= 3 within ~2s via UI::update()
+    _i2cRecoverCallbackCalls = 0;
+    testDisp.setErrorCallback(_mockI2cRecoverCb);
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    gState.now = { 2026, 6, 15, 10, 0, 0, 1, 1781517600UL };
+    testUi.begin();
+    testUi.goIdle();
+
+    // Inject LCD-only I2C failure and trigger 1 minute rollover (error #1)
+    testDisp._lcd.mockI2cError = 1;
+    gState.now.min = 1;
+    advanceMockMillis(1000);
+    testUi.update();
+    TEST_ASSERT_TRUE(testDisp.hasBusFault());
+    TEST_ASSERT_EQUAL_UINT8(1, testDisp._consecErrors);
+    TEST_ASSERT_EQUAL_UINT8(0, _i2cRecoverCallbackCalls);
+
+    // Without another minute change, 1s UI sync retries dirty rows -> hits 3 errors in 2s!
+    advanceMockMillis(1000);
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT8(2, testDisp._consecErrors);
+    TEST_ASSERT_EQUAL_UINT8(0, _i2cRecoverCallbackCalls);
+
+    advanceMockMillis(1000);
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+
+    testDisp._lcd.mockI2cError = 0;
+    testDisp.setErrorCallback(nullptr);
+}
+
+void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(void) {
+    gState.setup_done = true;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    testUi.begin();
+    testUi.goIdle();
+
+    // Row 1 is blank while battery is healthy
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) == nullptr);
+
+    // Mid-run battery loss (mockLostPower=true) surfaces warning immediately on LCD Row 1 while keeping clock
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    rtclock.update();
+    testUi.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "10:00") != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) != nullptr);
+
+    // Explicitly setting the clock clears the battery warning from ScreenIdle
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 5, 0));
+    testUi.update();
+    TEST_ASSERT_FALSE(rtclock.isBatteryLow());
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) == nullptr);
+
+    // Cold boot with dead battery (!rtc_valid) shows battery warning alongside time-set prompt
+    rtclock = RTClock();
+    gState.rtc_valid = false;
+    rtclock._rtc.mockLostPower = true;
+    TEST_ASSERT_TRUE(rtclock.begin());
+    testUi.goIdle();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "--:--") != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_IDLE_SET_TIME) != nullptr);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -612,5 +694,7 @@ int main(void) {
     RUN_TEST(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
     RUN_TEST(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
     RUN_TEST(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
+    RUN_TEST(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
+    RUN_TEST(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
     return UNITY_END();
 }

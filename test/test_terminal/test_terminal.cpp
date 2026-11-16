@@ -665,6 +665,40 @@ void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     history._ready = true;
 }
 
+void test_terminal_status_reports_and_clears_rtc_battery_warning(void) {
+    rtclock = RTClock();
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 12, 0, 0);
+
+    // 1. Healthy battery omits RTC battery warning line
+    Serial.reset();
+    Serial.feedInput("status\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_OK) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_BAT) == std::string::npos);
+
+    // 2. Mid-run battery failure restored from RAM still shows battery warning in status
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+    Serial.reset();
+    Serial.feedInput("status\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_OK) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_BAT) != std::string::npos);
+
+    // 3. set_time clears the warning in status
+    Serial.reset();
+    Serial.feedInput("set_time 2026-06-15 12:05:00\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(rtclock.isBatteryLow());
+    Serial.reset();
+    Serial.feedInput("status\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_BAT) == std::string::npos);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -689,5 +723,6 @@ int main(void) {
     RUN_TEST(test_logging_standardized_format_and_seconds_precision);
     RUN_TEST(test_logging_export_suppression_summary_and_human_modes);
     RUN_TEST(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
+    RUN_TEST(test_terminal_status_reports_and_clears_rtc_battery_warning);
     return UNITY_END();
 }

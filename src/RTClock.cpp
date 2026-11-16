@@ -2,6 +2,7 @@
 #include "Storage.h"
 #include "log.h"
 #include "i18n.h"
+#include <Wire.h>
 
 RTClock rtclock;
 
@@ -15,7 +16,7 @@ static const char* DOW_NAMES[] = {
 
 // ─────────────────────────────────────────────────────────
 RTClock::RTClock()
-    : _found(false), _lostPower(false), _batRecoveryWarned(false), _lastReadMs(0),
+    : _found(false), _lostPower(false), _batteryLow(false), _batRecoveryWarned(false), _lastReadMs(0),
       _lastRtcRetryMs(0), _consecErrors(0),
       _anchorMs(0), _anchorUnix(0), _lastKnownUnix(0),
       _errorCb(nullptr)
@@ -37,53 +38,108 @@ bool RTClock::begin() {
 
     _found = true;
 
+    bool readOk = false;
+    bool hwLostPower = false;
+    DateTime initialUtc = _readRtc(readOk, hwLostPower);
+    if (!readOk) {
+        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+              0, 0, 0, 0, 0, 0);
+        _found = false;
+        if (wasValid) {
+            gState.now = prevTime;
+            gState.rtc_valid = true;
+        } else {
+            gState.rtc_valid = false;
+        }
+        return false;
+    }
+
+    auto commitUtc = [&](const DateTime& dt) -> bool {
+        if (!_isValidDateTime(dt)) {
+            LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                  (int)dt.year(), (int)dt.month(), (int)dt.day(),
+                  (int)dt.hour(), (int)dt.minute(), (int)dt.second());
+            _found = false;
+            if (wasValid) {
+                gState.now = prevTime;
+                gState.rtc_valid = true;
+            } else {
+                gState.rtc_valid = false;
+            }
+            return false;
+        }
+
+        DateTime localDt = utcToLocal(dt);
+        _copyToState(localDt);
+        gState.now.unix = dt.unixtime();
+        _lastReadMs = millis();
+        _anchorMs = _lastReadMs;
+        _anchorUnix = gState.now.unix;
+        _lastKnownUnix = gState.now.unix;
+
+        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_OK,
+              (int)gState.now.year,  (int)gState.now.month,  (int)gState.now.day,
+              (int)gState.now.hour,  (int)gState.now.min,    (int)gState.now.sec,
+              DOW_NAMES[gState.now.dow % 7]);
+        return true;
+    };
+
 #ifdef WOKWI_SIM
-    // DS1307 has no lostPower() - assume time is valid in simulation.
-    // The Wokwi chip starts at a fixed epoch; any non-zero time is fine.
+    (void)hwLostPower;
     _lostPower = false;
+    if (!wasValid) _batteryLow = false;
     gState.rtc_valid = true;
 #else
-    // DS3231: lostPower() is true when the oscillator stopped
-    // (battery dead / first power-on).
-    _lostPower = _rtc.lostPower();
+    _lostPower = hwLostPower;
 
     if (_lostPower) {
-        if (wasValid && prevTime.year >= 2020 && prevTime.year <= 2099) {
+        _batteryLow = true;
+        if (wasValid && prevTime.year >= DATE_YEAR_MIN && prevTime.year <= DATE_YEAR_MAX) {
             LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
+            _batRecoveryWarned = true;
             DateTime restoredUtc = (prevTime.unix >= 1577836800UL)
                 ? DateTime(prevTime.unix)
                 : localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
                                       prevTime.hour, prevTime.min, prevTime.sec));
-            _rtc.adjust(restoredUtc);
+            bool adjOk = false;
+            DateTime verifiedUtc = _adjustAndVerify(restoredUtc, adjOk);
+            if (!adjOk) {
+                LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                      (int)verifiedUtc.year(), (int)verifiedUtc.month(), (int)verifiedUtc.day(),
+                      (int)verifiedUtc.hour(), (int)verifiedUtc.minute(), (int)verifiedUtc.second());
+                _found = false;
+                gState.now = prevTime;
+                gState.rtc_valid = true;
+                return false;
+            }
             _lostPower = false;
-            _batRecoveryWarned = false;
             gState.rtc_valid = true;
+            return commitUtc(verifiedUtc);
         } else {
             LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
             gState.rtc_valid = false;
         }
     } else {
         _batRecoveryWarned = false;
+        if (!wasValid) _batteryLow = false;
         gState.rtc_valid = true;
     }
 #endif
-
-    DateTime utcDt = _rtc.now();
     
     // Proteger o arranque contra barramento I2C preso ou corrompido
     if (_lostPower && !wasValid) {
-        if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
+        if (initialUtc.month() < 1 || initialUtc.month() > 12 || initialUtc.day() < 1 || initialUtc.day() > 31) {
             LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
-                  (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
-                  (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                  (int)initialUtc.year(), (int)initialUtc.month(), (int)initialUtc.day(),
+                  (int)initialUtc.hour(), (int)initialUtc.minute(), (int)initialUtc.second());
             _found = false;
             gState.rtc_valid = false;
             return false;
         }
         // Chip presente com OSF ativo e relogio ainda nao configurado: preservar OSF ate o utilizador acertar a hora
-        if (_isValidDateTime(utcDt)) {
-            _copyToState(utcToLocal(utcDt));
-            gState.now.unix = utcDt.unixtime();
+        if (_isValidDateTime(initialUtc)) {
+            _copyToState(utcToLocal(initialUtc));
+            gState.now.unix = initialUtc.unixtime();
         } else if (gState.now.year < DATE_YEAR_MIN) {
             _copyToState(DateTime(2026, 1, 1, 0, 0, 0));
             gState.now.unix = 1767225600UL;
@@ -95,34 +151,7 @@ bool RTClock::begin() {
         return true;
     }
 
-    if (!_isValidDateTime(utcDt)) {
-        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
-              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
-              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
-        _found = false;
-        if (wasValid) {
-            gState.now = prevTime;
-            gState.rtc_valid = true;
-        } else {
-            gState.rtc_valid = false;
-        }
-        return false;
-    }
-
-    DateTime localDt = utcToLocal(utcDt);
-
-    _copyToState(localDt);
-    gState.now.unix = utcDt.unixtime();
-    _lastReadMs = millis();
-    _anchorMs = _lastReadMs;
-    _anchorUnix = gState.now.unix;
-    _lastKnownUnix = gState.now.unix;
-
-    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_OK,
-          (int)gState.now.year,  (int)gState.now.month,  (int)gState.now.day,
-          (int)gState.now.hour,  (int)gState.now.min,    (int)gState.now.sec,
-          DOW_NAMES[gState.now.dow % 7]);
-    return true;
+    return commitUtc(initialUtc);
 }
 
 bool RTClock::probe() {
@@ -151,56 +180,77 @@ void RTClock::update() {
             _lastRtcRetryMs = nowMs;
             LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_DETECT);
             if (_rtc.begin()) {
-                _found = true;
                 bool wasValid = gState.rtc_valid;
-                #ifdef WOKWI_SIM
-                    _lostPower = false;
-                #else
-                    _lostPower = _rtc.lostPower();
-                #endif
-                
-                LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_FOUND);
-                
-                DateTime utcDt = _rtc.now();
-                if (!_lostPower && _isValidDateTime(utcDt)) {
-                    _batRecoveryWarned = false;
-                    gState.rtc_valid = true;
-                    DateTime localDt = utcToLocal(utcDt);
-                    _copyToState(localDt);
-                    gState.now.unix = utcDt.unixtime();
-                    _anchorMs = nowMs;
-                    _anchorUnix = gState.now.unix;
-                    _lastKnownUnix = gState.now.unix;
-                    _revision++;
-                    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_SYNC,
-                          (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
-                          (int)gState.now.hour, (int)gState.now.min, (int)gState.now.sec);
-
-                } else if (wasValid) {
-                    // Se o RTC tem hora invalida mas o utilizador ja configurou hora no software
-                    if (gState.now.unix >= 1577836800UL) {
-                        _rtc.adjust(DateTime(gState.now.unix));
-                        _lostPower = false;
-                        _batRecoveryWarned = false;
-                        _revision++;
-                        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
-                    } else {
-                        set(gState.now.year, gState.now.month, gState.now.day,
-                            gState.now.hour, gState.now.min, gState.now.sec);
-                    }
+                bool readOk = false;
+                bool hwLostPower = false;
+                DateTime utcDt = _readRtc(readOk, hwLostPower);
+                if (!readOk) {
+                    LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                          0, 0, 0, 0, 0, 0);
+                    _found = false;
                 } else {
-                    gState.rtc_valid = false;
-                    if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
+                    _found = true;
+                    #ifdef WOKWI_SIM
+                        (void)hwLostPower;
+                        _lostPower = false;
+                    #else
+                        _lostPower = hwLostPower;
+                    #endif
+
+                    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_FOUND);
+
+                    if (!_lostPower && _isValidDateTime(utcDt)) {
+                        _batRecoveryWarned = false;
+                        if (!wasValid) _batteryLow = false;
+                        gState.rtc_valid = true;
+                        DateTime localDt = utcToLocal(utcDt);
+                        _copyToState(localDt);
+                        gState.now.unix = utcDt.unixtime();
+                        _anchorMs = nowMs;
+                        _anchorUnix = gState.now.unix;
+                        _lastKnownUnix = gState.now.unix;
+                        _revision++;
+                        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_SYNC,
+                              (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
+                              (int)gState.now.hour, (int)gState.now.min, (int)gState.now.sec);
+
+                    } else if (_lostPower && wasValid) {
+                        // Restore RAM time only when hardware oscillator genuinely stopped
+                        _batteryLow = true;
+                        if (!_batRecoveryWarned) {
+                            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
+                            _batRecoveryWarned = true;
+                        }
+                        DateTime restoredUtc = (gState.now.unix >= 1577836800UL)
+                            ? DateTime(gState.now.unix)
+                            : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
+                                                  gState.now.hour, gState.now.min, gState.now.sec));
+                        bool adjOk = false;
+                        _adjustAndVerify(restoredUtc, adjOk);
+                        if (adjOk) {
+                            _lostPower = false;
+                            _revision++;
+                            LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
+                        } else {
+                            _found = false;
+                        }
+                    } else if (!_lostPower) {
+                        // Invalid calendar values without OSF indicate a corrupt read
                         LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
                               (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
                               (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
                         _found = false;
-                    } else if (_lostPower) {
-                        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
                     } else {
-                        LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
-                              (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
-                              (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                        _batteryLow = true;
+                        gState.rtc_valid = false;
+                        if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
+                            LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                                  (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                                  (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                            _found = false;
+                        } else {
+                            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
+                        }
                     }
                 }
             }
@@ -224,47 +274,12 @@ void RTClock::update() {
         return;
     }
 
-    bool recoveredPowerLoss = false;
-#ifndef WOKWI_SIM
-    // Re-check oscillator health - detects mid-run battery failure or EMI reset.
-    if (_rtc.lostPower()) {
-        if (gState.rtc_valid) {
-            recoveredPowerLoss = true;
-            if (!_batRecoveryWarned) {
-                LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
-                _batRecoveryWarned = true;
-            }
-            if (gState.now.unix >= 1577836800UL) {
-                DateTime restoredUtc(gState.now.unix);
-                _rtc.adjust(restoredUtc);
-                _lostPower = false;
-            } else {
-                set(gState.now.year, gState.now.month, gState.now.day,
-                    gState.now.hour, gState.now.min, gState.now.sec);
-                _batRecoveryWarned = true;
-            }
-            _lastReadMs = nowMs;   // internal recovery must not defeat the 30 s throttle
-        } else {
-            if (!_lostPower) {
-                LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_RAM);
-            }
-            _lostPower = true;
-            _incrementSoftwareClock();
-            return;
-        }
-    }
-#endif
-
-    DateTime utcDt = _rtc.now();
-
-#ifndef WOKWI_SIM
-    // Detetar barramento I2C preso ou corrompido (campos fora dos limites validos)
-    if (!_isValidDateTime(utcDt)) {
+    auto handleReadError = [&](const DateTime& badDt) {
         _consecErrors++;
         if (_consecErrors >= 3) {
             LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_I2C_CORRUPT,
-                  (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
-                  (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                  (int)badDt.year(), (int)badDt.month(), (int)badDt.day(),
+                  (int)badDt.hour(), (int)badDt.minute(), (int)badDt.second());
             _consecErrors = 0;
             _found = false; // Forca a re-detecao a quente (hotplug) no proximo ciclo
             if (_errorCb) {
@@ -275,38 +290,97 @@ void RTClock::update() {
             _lastReadMs = nowMs - (30000UL - 5000UL);
         }
         _incrementSoftwareClock(); // Impede que o relogio congele no display durante falhas I2C
-        return; // Aborta o update para proteger o gState contra dados corrompidos
-    } else {
-        _consecErrors = 0;
+    };
+
+    bool readOk = false;
+    bool hwLostPower = false;
+    DateTime rawUtc = _readRtc(readOk, hwLostPower);
+    if (!readOk) {
+        handleReadError(DateTime(2000, 1, 1, 0, 0, 0));
+        return;
     }
+
+    auto applyUtc = [&](const DateTime& utcDt, bool recoveredPowerLoss) {
+#ifndef WOKWI_SIM
+        // Detetar campos fora dos limites validos
+        if (!_isValidDateTime(utcDt)) {
+            handleReadError(utcDt);
+            return; // Aborta o update para proteger o gState contra dados corrompidos
+        } else {
+            _consecErrors = 0;
+        }
 #endif
 
-    _lostPower = false;
-    if (!recoveredPowerLoss) {
-        _batRecoveryWarned = false;
-    }
+        const bool wasRtcValid = gState.rtc_valid;
+        _lostPower = false;
+        if (!recoveredPowerLoss) {
+            _batRecoveryWarned = false;
+            if (!wasRtcValid) {
+                _batteryLow = false;
+            }
+        }
 
-    uint32_t newUnix = utcDt.unixtime();
-    if (gState.rtc_valid && !recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
-        uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
-        uint32_t expectedUnix = _anchorUnix + elapsedSec;
-        int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
-        if (drift > 300 || drift < -300) {
-            _revision++;
-            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_JUMP);
+        uint32_t newUnix = utcDt.unixtime();
+        if (wasRtcValid && !recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
+            uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
+            uint32_t expectedUnix = _anchorUnix + elapsedSec;
+            int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
+            if (drift > 300 || drift < -300) {
+                _revision++;
+                LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_JUMP);
+            }
+        }
+        gState.rtc_valid = true;
+
+        DateTime localDt = utcToLocal(utcDt);
+        _copyToState(localDt);
+
+        // Override the Unix timestamp with the actual UTC timestamp.
+        // This makes time deltas (e.g., suspension) immune to DST transitions.
+        gState.now.unix = newUnix;
+        _anchorMs = nowMs;
+        _anchorUnix = gState.now.unix;
+        _lastKnownUnix = gState.now.unix;
+    };
+
+#ifndef WOKWI_SIM
+    // Re-check oscillator health only after a verified I2C read succeeds.
+    if (hwLostPower) {
+        _batteryLow = true;
+        if (gState.rtc_valid) {
+            if (!_batRecoveryWarned) {
+                LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
+                _batRecoveryWarned = true;
+            }
+            DateTime restoredUtc = (gState.now.unix >= 1577836800UL)
+                ? DateTime(gState.now.unix)
+                : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
+                                      gState.now.hour, gState.now.min, gState.now.sec));
+            _lastReadMs = nowMs;   // internal recovery must not defeat the 30 s throttle
+            bool adjOk = false;
+            DateTime verifiedUtc = _adjustAndVerify(restoredUtc, adjOk);
+            if (!adjOk) {
+                handleReadError(verifiedUtc);
+                return;
+            }
+            _lostPower = false;
+            applyUtc(verifiedUtc, true);
+            return;
+        } else {
+            if (!_lostPower) {
+                LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_RAM);
+            }
+            _lostPower = true;
+            _consecErrors = 0;
+            _incrementSoftwareClock();
+            return;
         }
     }
-    gState.rtc_valid = true;
+#else
+    (void)hwLostPower;
+#endif
 
-    DateTime localDt = utcToLocal(utcDt);
-    _copyToState(localDt);
-
-    // Override the Unix timestamp with the actual UTC timestamp.
-    // This makes time deltas (e.g., suspension) immune to DST transitions.
-    gState.now.unix = newUnix;
-    _anchorMs = nowMs;
-    _anchorUnix = gState.now.unix;
-    _lastKnownUnix = gState.now.unix;
+    applyUtc(rawUtc, false);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -339,27 +413,25 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     bool hwOk = false;
     if (_found) {
         #ifdef WOKWI_SIM
-            _rtc.adjust(utcDt);
-            hwOk = true;
+            _adjustAndVerify(utcDt, hwOk);
+            if (!hwOk) _found = false;
         #else
             if (_rtc.begin()) {
-                _rtc.adjust(utcDt);
-                hwOk = true;
-            } else {
-                _found = false;
+                _adjustAndVerify(utcDt, hwOk);
             }
+            if (!hwOk) _found = false;
         #endif
     } else {
         LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_SAVE_ATTEMPT);
         if (_rtc.begin()) {
-            _found = true;
-            _rtc.adjust(utcDt);
-            hwOk = true;
+            _adjustAndVerify(utcDt, hwOk);
+            if (hwOk) _found = true;
         }
     }
 
     if (hwOk) {
         _lostPower = false;
+        _batteryLow = false;
         _batRecoveryWarned = false;
         _lastReadMs = millis() - 30000UL;
     } else {
@@ -455,6 +527,111 @@ void RTClock::_incrementSoftwareClock() {
     _copyToState(localDt);
     gState.now.unix = currentUnix;
     _lastKnownUnix  = currentUnix;
+}
+
+DateTime RTClock::_readRtc(bool& ok, bool& lostPower) {
+    ok = false;
+#if defined(UNIT_TEST)
+    if (!_rtc.mockPresent) return DateTime(2000, 1, 1, 0, 0, 0);
+    #ifdef WOKWI_SIM
+        lostPower = false;
+    #else
+        if (_rtc.mockI2cReadFail) return DateTime(2000, 1, 1, 0, 0, 0);
+        lostPower = _rtc.mockLostPower;
+    #endif
+    ok = true;
+    return _rtc.now();
+#elif defined(WOKWI_SIM)
+    static const uint8_t RTC_ADDR = 0x68;
+    Wire.beginTransmission(RTC_ADDR);
+    Wire.write((uint8_t)0x00);
+    if (Wire.endTransmission() != 0) return DateTime(2000, 1, 1, 0, 0, 0);
+    if (Wire.requestFrom(RTC_ADDR, (size_t)7) != 7) return DateTime(2000, 1, 1, 0, 0, 0);
+    uint8_t buf[7];
+    for (int i = 0; i < 7; i++) {
+        int b = Wire.read();
+        if (b < 0) return DateTime(2000, 1, 1, 0, 0, 0);
+        buf[i] = (uint8_t)b;
+    }
+    auto validBcd = [](uint8_t v) -> bool {
+        return (v & 0x0FU) <= 9U && (v >> 4) <= 9U;
+    };
+    auto bcd2bin = [](uint8_t v) -> uint8_t {
+        return (uint8_t)(v - 6U * (v >> 4));
+    };
+    if (!validBcd(buf[0] & 0x7FU) || !validBcd(buf[1]) ||
+        !validBcd(buf[2]) || !validBcd(buf[4]) ||
+        !validBcd(buf[5] & 0x7FU) || !validBcd(buf[6])) {
+        return DateTime(2000, 1, 1, 0, 0, 0);
+    }
+    lostPower = false;
+    ok = true;
+    return DateTime((uint16_t)bcd2bin(buf[6]) + 2000U,
+                    bcd2bin(buf[5] & 0x7FU),
+                    bcd2bin(buf[4]),
+                    bcd2bin(buf[2]),
+                    bcd2bin(buf[1]),
+                    bcd2bin(buf[0] & 0x7FU));
+#else
+    static const uint8_t DS3231_ADDR = 0x68;
+    static const uint8_t DS3231_STATUSREG = 0x0F;
+
+    Wire.beginTransmission(DS3231_ADDR);
+    Wire.write(DS3231_STATUSREG);
+    if (Wire.endTransmission() != 0) return DateTime(2000, 1, 1, 0, 0, 0);
+    if (Wire.requestFrom(DS3231_ADDR, (size_t)1) != 1) return DateTime(2000, 1, 1, 0, 0, 0);
+    int stat = Wire.read();
+    if (stat < 0) return DateTime(2000, 1, 1, 0, 0, 0);
+    lostPower = ((uint8_t)stat & 0x80U) != 0;
+
+    Wire.beginTransmission(DS3231_ADDR);
+    Wire.write((uint8_t)0x00);
+    if (Wire.endTransmission() != 0) return DateTime(2000, 1, 1, 0, 0, 0);
+    if (Wire.requestFrom(DS3231_ADDR, (size_t)7) != 7) return DateTime(2000, 1, 1, 0, 0, 0);
+    uint8_t buf[7];
+    for (int i = 0; i < 7; i++) {
+        int b = Wire.read();
+        if (b < 0) return DateTime(2000, 1, 1, 0, 0, 0);
+        buf[i] = (uint8_t)b;
+    }
+
+    auto validBcd = [](uint8_t v) -> bool {
+        return (v & 0x0FU) <= 9U && (v >> 4) <= 9U;
+    };
+    auto bcd2bin = [](uint8_t v) -> uint8_t {
+        return (uint8_t)(v - 6U * (v >> 4));
+    };
+
+    const bool bcdOk = validBcd(buf[0] & 0x7FU) && validBcd(buf[1]) &&
+                       validBcd(buf[2]) && validBcd(buf[4]) &&
+                       validBcd(buf[5] & 0x7FU) && validBcd(buf[6]);
+    if (!bcdOk) {
+        if (!lostPower) return DateTime(2000, 1, 1, 0, 0, 0);
+        ok = true;
+        return DateTime(2000, 1, 1, 0, 0, 0);
+    }
+
+    ok = true;
+    return DateTime((uint16_t)bcd2bin(buf[6]) + 2000U,
+                    bcd2bin(buf[5] & 0x7FU),
+                    bcd2bin(buf[4]),
+                    bcd2bin(buf[2]),
+                    bcd2bin(buf[1]),
+                    bcd2bin(buf[0] & 0x7FU));
+#endif
+}
+
+DateTime RTClock::_adjustAndVerify(const DateTime& utcDt, bool& ok) {
+    _rtc.adjust(utcDt);
+    bool readOk = false;
+    bool checkLost = false;
+    DateTime checkDt = _readRtc(readOk, checkLost);
+    if (!readOk || checkLost || !_isValidDateTime(checkDt)) {
+        ok = false;
+        return checkDt;
+    }
+    ok = true;
+    return checkDt;
 }
 
 // ─────────────────────────────────────────────────────────

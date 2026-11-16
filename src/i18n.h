@@ -66,7 +66,8 @@
 #define TXT_IDLE_ERR_ZONE "Error: Zone %d"
 #define TXT_IDLE_WATERING "Watering now..."
 #define TXT_IDLE_WAITING "Switching zone..."
-#define TXT_IDLE_SET_TIME "! Set time !"
+#define TXT_IDLE_SET_TIME "Set date and time!"
+#define TXT_IDLE_RTC_BAT "Check RTC battery!"
 #define TXT_IDLE_SUSPENDED "Watering Suspended"
 #define TXT_IDLE_DISABLED "Watering Disabled"
 #define TXT_TODAY "Today"
@@ -266,7 +267,8 @@
 #define TXT_IDLE_ERR_ZONE "Erro: Zona %d"
 #define TXT_IDLE_WATERING "A regar agora..."
 #define TXT_IDLE_WAITING "A mudar de zona..."
-#define TXT_IDLE_SET_TIME "! Acertar hora !"
+#define TXT_IDLE_SET_TIME "Acertar data/hora!"
+#define TXT_IDLE_RTC_BAT "Pilha RTC falhou!"
 #define TXT_IDLE_SUSPENDED "Rega Suspensa"
 #define TXT_IDLE_DISABLED "Rega Desativada"
 #define TXT_TODAY "Hoje"
@@ -532,6 +534,7 @@
 #define TXT_TERM_STAT_RTC_OK "  Hardware Clock: Connected & Valid"
 #define TXT_TERM_STAT_RTC_SW "  Hardware Clock: Disconnected (using controller memory)"
 #define TXT_TERM_STAT_RTC_ERR "  Hardware Clock: Disconnected or needs setting"
+#define TXT_TERM_STAT_RTC_BAT "  RTC Battery:    WARNING - Power loss detected (check/replace battery)"
 #define TXT_TERM_STAT_MODE "  Active Mode: %s\r\n"
 #define TXT_TERM_STAT_SUSP "  Watering State: SUSPENDED (%luh %lum remaining)\r\n"
 #define TXT_TERM_STAT_SUSP_NO_RTC "  Watering State: SUSPENDED (waiting for valid clock time)"
@@ -676,7 +679,7 @@
 #define TXT_LOG_RTC_HOT_FOUND "Hardware clock connected"
 #define TXT_LOG_RTC_HOT_SYNC "Clock synced from connected clock: %04d-%02d-%02d %02d:%02d:%02d"
 #define TXT_LOG_RTC_HOT_RESTORED "Restored controller time to reconnected hardware clock"
-#define TXT_LOG_RTC_BAT_FAIL_REC "Clock lost power - restored time from memory"
+#define TXT_LOG_RTC_BAT_FAIL_REC "Clock lost power (check battery) - restored time from memory"
 #define TXT_LOG_RTC_BAT_FAIL_RAM "Clock battery failed and time is lost - please set date and time"
 #define TXT_LOG_RTC_I2C_CORRUPT "Clock gave invalid time 3 times (%04d-%02d-%02d %02d:%02d:%02d) - resetting connection"
 #define TXT_LOG_RTC_TIME_JUMP "Hardware clock time jumped unexpectedly - updated schedule"
@@ -741,7 +744,7 @@
 #define TXT_LOG_NVS_RECV_CORRUPT "Saved resume data was damaged (%s) - discarded"
 #define TXT_LOG_NVS_IMP_ACTIVE "Import rejected while watering is running"
 #define TXT_LOG_REC_MAX_RETRY "Resume cancelled after %u failed starts (safety limit)"
-#define TXT_LOG_REC_STABLE "System ran steady for 30 s - reset failure counter"
+#define TXT_LOG_REC_STABLE "Zone finished cleanly - reset failure counter"
 #define TXT_LOG_HIST_FS_PRESERVED "Could not open history, kept backup data safe"
 #define TXT_LOG_HIST_PEND_REPLAY "Restored %d pending history record(s) from before power loss"
 #define TXT_LOG_TERM_REBOOT "Reboot requested via terminal - restarting"
@@ -870,6 +873,7 @@
 #define TXT_TERM_STAT_RTC_OK "  Relogio de Hardware: Ligado e Valido"
 #define TXT_TERM_STAT_RTC_SW "  Relogio de Hardware: Desligado (a usar memoria do controlador)"
 #define TXT_TERM_STAT_RTC_ERR "  Relogio de Hardware: Desligado ou por acertar"
+#define TXT_TERM_STAT_RTC_BAT "  Pilha do RTC:        AVISO - Falha detetada (verifique ou substitua a pilha)"
 #define TXT_TERM_STAT_MODE "  Modo Ativo:  %s\r\n"
 #define TXT_TERM_STAT_SUSP "  Estado Rega: SUSPENSA (Restam %luh %lum)\r\n"
 #define TXT_TERM_STAT_SUSP_NO_RTC "  Estado Rega: SUSPENSA (a aguardar hora valida do relogio)"
@@ -1047,7 +1051,7 @@
 #define TXT_LOG_RTC_HOT_RESTORED                                               \
   "Hora do controlador reposta no relogio de hardware ligado"
 #define TXT_LOG_RTC_BAT_FAIL_REC                                               \
-  "Relogio perdeu energia - hora reposta da memoria"
+  "Relogio perdeu energia (verifique a pilha) - hora reposta da memoria"
 #define TXT_LOG_RTC_BAT_FAIL_RAM                                               \
   "Pilha do relogio falhou e a hora foi perdida - acerte a data e hora"
 #define TXT_LOG_RTC_I2C_CORRUPT                                                \
@@ -1151,7 +1155,7 @@
 #define TXT_LOG_REC_MAX_RETRY                                                  \
   "Retoma cancelada apos %u arranques falhados (limite de seguranca)"
 #define TXT_LOG_REC_STABLE                                                     \
-  "Sistema estavel durante 30 s - contador de falhas limpo"
+  "Zona concluida sem falhas - contador de falhas limpo"
 #define TXT_LOG_HIST_FS_PRESERVED                                              \
   "Falha ao abrir historico - dados protegidos"
 #define TXT_LOG_HIST_PEND_REPLAY                                               \

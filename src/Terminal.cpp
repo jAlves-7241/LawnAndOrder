@@ -624,6 +624,9 @@ void Terminal::_cmdStatus(char* /*args*/) {
                       gState.now.hour, gState.now.min, gState.now.sec);
         Serial.println(TXT_TERM_STAT_RTC_ERR);
     }
+    if (rtclock.isBatteryLow()) {
+        Serial.println(TXT_TERM_STAT_RTC_BAT);
+    }
     Serial.println();
 
     // 2. Estado Geral

@@ -364,6 +364,125 @@ void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
 #endif
 }
 
+static uint8_t _mockRtcErrCbCalls = 0;
+static void _mockRtcErrCb() {
+    _mockRtcErrCbCalls++;
+}
+
+void test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard(void) {
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    uint32_t revBefore = rtclock.revision();
+
+    // 1. Even if mockLostPower is spuriously set, an I2C read error must NEVER call _rtc.adjust(),
+    //    and 3 consecutive read failures must trigger _errorCb and reset _found = false.
+    _mockRtcErrCbCalls = 0;
+    rtclock.setErrorCallback(_mockRtcErrCb);
+    rtclock._rtc.mockLostPower = true;
+    rtclock._rtc.mockI2cReadFail = true;
+    DateTime hwBefore = rtclock._rtc.now();
+
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock._rtc.mockLostPower); // adjust() was NOT called!
+    TEST_ASSERT_EQUAL_UINT32(hwBefore.unixtime(), rtclock._rtc.now().unixtime());
+    TEST_ASSERT_EQUAL_UINT8(1, rtclock._consecErrors);
+    TEST_ASSERT_EQUAL_UINT8(0, _mockRtcErrCbCalls);
+
+    advanceMockMillis(6000);
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT8(2, rtclock._consecErrors);
+
+    advanceMockMillis(6000);
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT8(0, rtclock._consecErrors);
+    TEST_ASSERT_FALSE(rtclock.isPresent());
+    TEST_ASSERT_EQUAL_UINT8(1, _mockRtcErrCbCalls);
+    TEST_ASSERT_TRUE(gState.rtc_valid); // RAM software clock preserved mid-run
+
+    // 2. Hotplug when wasValid == true, !_lostPower, and corrupt DateTime (year 2000):
+    //    must NOT write RAM time to RTC, must NOT bump revision, and must leave _found = false.
+    rtclock._rtc.mockI2cReadFail = false;
+    rtclock._rtc.mockLostPower = false;
+    rtclock._rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_FALSE(rtclock.isPresent());
+    TEST_ASSERT_EQUAL_UINT32(revBefore, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT16(2000, rtclock._rtc.now().year()); // untouched
+
+    // 3. Hotplug with I2C read fail right after ACK also keeps _found = false
+    rtclock._rtc.mockI2cReadFail = true;
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_FALSE(rtclock.isPresent());
+    TEST_ASSERT_EQUAL_UINT32(revBefore, rtclock.revision());
+
+    rtclock.setErrorCallback(nullptr);
+}
+
+void test_rtclock_battery_low_latch_periodic_recheck_and_clear(void) {
+    // 1. Cold boot with OSF active sets isBatteryLow() immediately; 30 s check keeps it while OSF stays set
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = true;
+    gState.rtc_valid = false;
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+
+    // 2. If OSF clears on a periodic 30 s recheck while !rtc_valid (contact/fluke resolved), auto-recovers
+    rtclock._rtc.mockLostPower = false;
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 9, 0, 0));
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_FALSE(rtclock.isBatteryLow());
+
+    // 3. Mid-run battery loss when RAM time is valid restores RTC but keeps isBatteryLow() latched across clean polls
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_FALSE(rtclock._rtc.mockLostPower);
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_BAT_FAIL_REC) != std::string::npos);
+#endif
+
+    // Clean 30 s poll and mid-run recoverI2C (begin() with wasValid=true) must NOT wipe active battery warning
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+
+    // 4. Failed set() keeps isBatteryLow() latched; successful set() clears it
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+
+    rtclock._rtc.mockPresent = true;
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 5, 0));
+    TEST_ASSERT_FALSE(rtclock.isBatteryLow());
+
+    // 5. Hotplug recovery with OSF active latches isBatteryLow() and logs battery warning
+    rtclock._found = false;
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(31000);
+    Serial.reset();
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock.isBatteryLow());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_BAT_FAIL_REC) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
@@ -379,5 +498,7 @@ int main(void) {
     RUN_TEST(test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set);
     RUN_TEST(test_rtclock_hotplug_validates_reading_and_tracks_revision);
     RUN_TEST(test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs);
+    RUN_TEST(test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard);
+    RUN_TEST(test_rtclock_battery_low_latch_periodic_recheck_and_clear);
     return UNITY_END();
 }

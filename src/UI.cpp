@@ -125,6 +125,7 @@ void UI::update() {
     if (_currentScreen) {
         _currentScreen->update(*this);
     }
+    _d.sync();
 }
 
 // ─────────────────────────────────────────────────────────

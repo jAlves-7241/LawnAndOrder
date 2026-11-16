@@ -392,16 +392,21 @@ void test_watering_recovery_retry_cap_and_stable_reset(void) {
     rs.queuePos = 0;
     rs.queueLen = 1;
     rs.queue[0] = { 0, 600000UL }; // 10 min
-    rs.zone_dur_min[0] = 10;
+    rs.zone_dur_min[0] = 0;
     rs.trigger = WaterTrigger::MANUAL;
     rs.retry_count = 0;
     storage.saveRecoveryState(rs);
 
-    // 3 consecutive boots without surviving RECOVERY_STABLE_MS increment retry_count 1..3
+    // 3 consecutive boots suffering periodic brownouts (even >30s into zone run)
+    // still increment retry_count 1..3 instead of looping for 2 hours
     for (uint8_t attempt = 1; attempt <= MAX_RECOVERY_RETRIES; attempt++) {
         wateringCtrl = WateringController();
         wateringCtrl.begin();
         TEST_ASSERT_TRUE(wateringCtrl.isActive());
+        advanceMockMillis(RELAY_DEADTIME_MS + 10);
+        wateringCtrl.update();
+        advanceMockMillis(45000UL);
+        wateringCtrl.update();
         RecoveryState cur = {};
         TEST_ASSERT_TRUE(storage.loadRecoveryState(cur));
         TEST_ASSERT_EQUAL_UINT8(attempt, cur.retry_count);
@@ -415,20 +420,69 @@ void test_watering_recovery_retry_cap_and_stable_reset(void) {
     TEST_ASSERT_TRUE(storage.loadRecoveryState(cleared));
     TEST_ASSERT_FALSE(cleared.active);
 
-    // Successful run surviving RECOVERY_STABLE_MS resets retry_count in NVS
-    rs.retry_count = 1;
-    storage.saveRecoveryState(rs);
+    // Mid-zone progress checkpoints persist remaining duration & accumulated history,
+    // and completing the zone resets retry_count before starting the next zone
+    history.clear();
+    RecoveryState mrs = {};
+    mrs.version = NVS_VERSION;
+    mrs.active = true;
+    mrs.start_unix_time = startUnix;
+    mrs.queuePos = 0;
+    mrs.queueLen = 2;
+    mrs.queue[0] = { 0, 10UL * 60000UL }; // 10 min
+    mrs.queue[1] = { 1, 4UL * 60000UL };  // 4 min
+    mrs.trigger = WaterTrigger::MANUAL;
+    mrs.retry_count = 1;
+    storage.saveRecoveryState(mrs);
+
     wateringCtrl = WateringController();
     wateringCtrl.begin();
     TEST_ASSERT_TRUE(wateringCtrl.isActive());
-    advanceMockMillis(60);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
     wateringCtrl.update();
-    advanceMockMillis(RECOVERY_STABLE_MS + 100);
+
+    // Run 4 minutes (crosses 2 checkpoints of RECOVERY_CHECKPOINT_MIN = 2 min)
+    advanceMockMillis(2UL * 60000UL);
     wateringCtrl.update();
-    RecoveryState stable = {};
-    TEST_ASSERT_TRUE(storage.loadRecoveryState(stable));
-    TEST_ASSERT_TRUE(stable.active);
-    TEST_ASSERT_EQUAL_UINT8(0, stable.retry_count);
+    advanceMockMillis(2UL * 60000UL);
+    wateringCtrl.update();
+    RecoveryState mid = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(mid));
+    TEST_ASSERT_EQUAL_UINT32(6UL * 60000UL, mid.queue[0].duration_ms);
+    TEST_ASSERT_EQUAL_UINT8(4, mid.zone_dur_min[0]);
+    TEST_ASSERT_EQUAL_UINT8(2, mid.retry_count);
+
+    // Simulate brownout & reboot: Zone 0 resumes only the remaining 6 min
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT32(6UL * 60000UL, wateringCtrl._zoneDurationMs);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+
+    // Finish Zone 0 (6 min) -> advances to Zone 1 and resets retry_count to 0
+    advanceMockMillis(6UL * 60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl._isWaiting);
+    RecoveryState z1 = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(z1));
+    TEST_ASSERT_EQUAL_UINT8(1, z1.queuePos);
+    TEST_ASSERT_EQUAL_UINT8(0, z1.retry_count);
+    TEST_ASSERT_EQUAL_UINT8(10, z1.zone_dur_min[0]);
+
+    // Finish Zone 1 (4 min) -> history records cumulative 10 min + 4 min
+    advanceMockMillis(ZONE_WAIT_DELAY_MS + 10);
+    wateringCtrl.update();
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    advanceMockMillis(4UL * 60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    HistoryEntry entries[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, entries));
+    TEST_ASSERT_EQUAL_UINT8(10, entries[0].zone_dur[0]);
+    TEST_ASSERT_EQUAL_UINT8(4, entries[0].zone_dur[1]);
 }
 
 void test_watering_invalid_custom_duration_preserves_active_cycle(void) {

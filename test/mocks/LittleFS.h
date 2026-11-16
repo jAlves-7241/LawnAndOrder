@@ -10,10 +10,12 @@ public:
 
     bool mountFail = false;
     bool writeFail = false;
+    bool readFail = false;
 
     void reset() {
         mountFail = false;
         writeFail = false;
+        readFail = false;
         files.clear();
     }
 
@@ -22,6 +24,7 @@ public:
             if (formatOnFail) {
                 mountFail = false;
                 writeFail = false;
+                readFail = false;
                 return true;
             }
             return false;
@@ -46,7 +49,7 @@ public:
             // Read mode
             auto it = files.find(p);
             if (it == files.end()) return File();
-            return File(p, m, &it->second);
+            return File(p, m, &it->second, nullptr, &readFail);
         }
     }
 

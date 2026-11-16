@@ -19,7 +19,8 @@ WateringController::WateringController()
       _active(false), _isWaiting(false), _isRelayDeadTimeWaiting(false),
       _recoveryRetryPending(false), _recoveryRetryCount(0), _zoneIdx(0),
       _zoneStartMs(0), _zoneDurationMs(0), _waitStartMs(0), _relayWaitStartMs(0),
-      _runTrigger(WaterTrigger::MANUAL)
+      _runTrigger(WaterTrigger::MANUAL),
+      _checkpointedMin(0)
 {
     memset(_zoneDurMin, 0, sizeof(_zoneDurMin));
     _cycleStart = {};
@@ -34,6 +35,7 @@ void WateringController::begin() {
     _isRelayDeadTimeWaiting = false;
     _recoveryRetryPending = false;
     _recoveryRetryCount = 0;
+    _checkpointedMin = 0;
     _zoneIdx = 0;
     _zoneStartMs = 0;
     _zoneDurationMs = 0;
@@ -192,6 +194,7 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     _isRelayDeadTimeWaiting = false;
     _recoveryRetryPending = false;
     _recoveryRetryCount = 0;
+    _checkpointedMin = 0;
     
     // Gravacao inicial do recovery state (unica vez por ciclo)
     _saveRecoveryState(true);
@@ -274,7 +277,8 @@ void WateringController::stop() {
                 ran_min = (raw_min > 255UL) ? 255 : (uint8_t)raw_min;
             }
             if (_runTrigger != WaterTrigger::TEST) {
-                _zoneDurMin[_zoneIdx] = ran_min;
+                uint16_t total_min = (uint16_t)_zoneDurMin[_zoneIdx] + (uint16_t)ran_min;
+                _zoneDurMin[_zoneIdx] = (total_min > 20U) ? 20U : (uint8_t)total_min;
             }
             if (elapsed < 60000UL) {
                 LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED_INT_SEC,
@@ -298,6 +302,7 @@ void WateringController::stop() {
         _isRelayDeadTimeWaiting = false;
         _recoveryRetryPending = false;
         _recoveryRetryCount = 0;
+        _checkpointedMin = 0;
         _queueLen = 0;
         _queuePos = 0;
         _syncState();
@@ -357,13 +362,17 @@ void WateringController::update() {
 
     uint32_t elapsed = millis() - _zoneStartMs;
 
-    if (_recoveryRetryPending && elapsed >= RECOVERY_STABLE_MS) {
-        _recoveryRetryPending = false;
-        _recoveryRetryCount = 0;
-        if (elapsed < _zoneDurationMs || (_queuePos + 1) < _queueLen) {
+    if (elapsed < _zoneDurationMs && _runTrigger != WaterTrigger::TEST) {
+        uint32_t totalZoneMin = _zoneDurationMs / 60000UL;
+        uint32_t elapsedMin = elapsed / 60000UL;
+        if (totalZoneMin > elapsedMin &&
+            (elapsedMin - _checkpointedMin) >= RECOVERY_CHECKPOINT_MIN) {
+            _checkpointedMin = (uint8_t)elapsedMin;
+            if (_queuePos < _queueLen) {
+                _queue[_queuePos].duration_ms = (totalZoneMin - elapsedMin) * 60000UL;
+            }
             _saveRecoveryState(true);
         }
-        LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_REC_STABLE);
     }
 
     if (_zoneDurationMs > 0) {
@@ -377,16 +386,20 @@ void WateringController::update() {
         uint8_t ran_min = (raw_min > 255) ? 255 : (uint8_t)raw_min;
         if (_runTrigger != WaterTrigger::TEST) {
             if (_zoneIdx < NUM_ZONES) {
-                _zoneDurMin[_zoneIdx] = ran_min;
+                uint16_t total_min = (uint16_t)_zoneDurMin[_zoneIdx] + (uint16_t)ran_min;
+                _zoneDurMin[_zoneIdx] = (total_min > 20U) ? 20U : (uint8_t)total_min;
             }
         }
+        _checkpointedMin = 0;
 
         _deactivateAll();
         if (_zoneDurationMs % 60000UL == 0) {
+            uint8_t loggedMin = (_runTrigger != WaterTrigger::TEST && _zoneIdx < NUM_ZONES)
+                ? _zoneDurMin[_zoneIdx] : ran_min;
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED,
                   (int)_zoneIdx + 1,
                   (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-",
-                  (unsigned)ran_min);
+                  (unsigned)loggedMin);
         } else {
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DEACTIVATED_SEC,
                   (int)_zoneIdx + 1,
@@ -398,6 +411,11 @@ void WateringController::update() {
         if (_queuePos < _queueLen) {
             LOG_D(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_DONE_WAIT,
                   (int)_zoneIdx + 1, (unsigned long)(ZONE_WAIT_DELAY_MS / 1000UL));
+            if (_recoveryRetryPending || _recoveryRetryCount > 0) {
+                _recoveryRetryPending = false;
+                _recoveryRetryCount = 0;
+                LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_REC_STABLE);
+            }
             _isWaiting = true;
             _waitStartMs = millis();
             _zoneIdx = _queue[_queuePos].zone_idx;
@@ -406,6 +424,8 @@ void WateringController::update() {
             
             _saveRecoveryState(true);
         } else {
+            _recoveryRetryPending = false;
+            _recoveryRetryCount = 0;
             _active = false;
             _queueLen = 0;
             _syncState();
@@ -449,6 +469,7 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
     _isRelayDeadTimeWaiting = false;
     _recoveryRetryPending = false;
     _recoveryRetryCount = 0;
+    _checkpointedMin = 0;
 
     // Gravacao inicial do recovery state (unica vez por ciclo)
     _saveRecoveryState(true);
@@ -456,8 +477,9 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
 }
 
 void WateringController::_startNextZone() {
-    _zoneIdx        = _queue[_queuePos].zone_idx;
-    _zoneDurationMs = _queue[_queuePos].duration_ms;
+    _zoneIdx         = _queue[_queuePos].zone_idx;
+    _zoneDurationMs  = _queue[_queuePos].duration_ms;
+    _checkpointedMin = 0;
     _activateRelay();
     gState.watering.progress_pct = 0;
     _syncState();
@@ -505,6 +527,10 @@ void WateringController::_saveRecoveryState(bool active) {
             rs.queue[i].duration_ms = _queue[i].duration_ms;
         }
         memcpy(rs.zone_dur_min, _zoneDurMin, sizeof(_zoneDurMin));
+        if (_zoneIdx < NUM_ZONES && _checkpointedMin > 0) {
+            uint16_t accum = (uint16_t)rs.zone_dur_min[_zoneIdx] + (uint16_t)_checkpointedMin;
+            rs.zone_dur_min[_zoneIdx] = (accum > 20U) ? 20U : (uint8_t)accum;
+        }
     }
     storage.saveRecoveryState(rs);
 }

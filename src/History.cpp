@@ -656,27 +656,33 @@ void History::update() {
                 }
             }
         } else {
-            // EOF
-            if (_rotLineOverflow) {
+            if (bytesRead < 0 || _rotSrc.available() > 0) {
+                _rotWriteErr = true;
                 _rotLinePos = 0;
                 _rotLineOverflow = false;
-                if (_rotCorruptLines < 0xFFFFU) _rotCorruptLines++;
-            } else if (_rotLinePos > 0) {
-                char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
-                if (strlen(p) > 0) {
-                    HistoryEntry temp = {};
-                    if (_lineToEntry(p, temp)) {
-                        if (_rotSkipped < _rotDiscard) {
-                            _rotSkipped++;
-                        } else {
-                            if (_rotDst.println(p) == 0) {
-                                _rotWriteErr = true;
+            } else {
+                // EOF
+                if (_rotLineOverflow) {
+                    _rotLinePos = 0;
+                    _rotLineOverflow = false;
+                    if (_rotCorruptLines < 0xFFFFU) _rotCorruptLines++;
+                } else if (_rotLinePos > 0) {
+                    char* p = _trimLineBuffer(_rotLineBuf, _rotLinePos);
+                    if (strlen(p) > 0) {
+                        HistoryEntry temp = {};
+                        if (_lineToEntry(p, temp)) {
+                            if (_rotSkipped < _rotDiscard) {
+                                _rotSkipped++;
                             } else {
-                                _rotCopied++;
+                                if (_rotDst.println(p) == 0) {
+                                    _rotWriteErr = true;
+                                } else {
+                                    _rotCopied++;
+                                }
                             }
+                        } else {
+                            if (_rotCorruptLines < 0xFFFFU) _rotCorruptLines++;
                         }
-                    } else {
-                        if (_rotCorruptLines < 0xFFFFU) _rotCorruptLines++;
                     }
                 }
             }

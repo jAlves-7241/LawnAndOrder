@@ -476,6 +476,43 @@ void test_history_rotation_double_fail_export_suppression_and_guards(void) {
 #endif
 }
 
+void test_history_rotation_read_failure_preserves_original_file(void) {
+    history.clear();
+
+    std::string fullFile;
+    fullFile.reserve(HISTORY_MAX_ENTRIES * 32);
+    for (int i = 0; i < HISTORY_MAX_ENTRIES; i++) {
+        fullFile.append("2026-06-01T08:00,A,10,10,0,0\r\n");
+    }
+    const size_t origSize = fullFile.size();
+    LittleFS.files[HISTORY_FILE] = std::move(fullFile);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    HistoryEntry e = { 2026, 6, 2, 8, 0, { 15, 15, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e);
+    TEST_ASSERT_EQUAL(History::RotState::COPYING, history._rotState);
+
+    // Read a few chunks, then trigger mid-file LittleFS read error (bytesRead == 0 while available > 0)
+    history.update();
+    LittleFS.readFail = true;
+    int safetyLimit = 500;
+    while (history._rotState != History::RotState::IDLE && safetyLimit-- > 0) {
+        history.update();
+        LittleFS.readFail = false;
+    }
+
+    TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
+    TEST_ASSERT_TRUE(LittleFS.exists(HISTORY_FILE));
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_tmp.csv"));
+    TEST_ASSERT_EQUAL_UINT16(HISTORY_MAX_ENTRIES + 1, history.entryCount());
+    TEST_ASSERT_GREATER_THAN_UINT32(origSize, LittleFS.files[HISTORY_FILE].size());
+
+    HistoryEntry latest[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, latest));
+    TEST_ASSERT_EQUAL_UINT8(2, latest[0].day);
+    TEST_ASSERT_EQUAL(WaterTrigger::MANUAL, latest[0].trigger);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -495,5 +532,6 @@ int main(void) {
     RUN_TEST(test_history_pending_record_persisted_and_replayed_across_rotation);
     RUN_TEST(test_history_rejects_test_trigger_and_long_corrupt_line);
     RUN_TEST(test_history_rotation_double_fail_export_suppression_and_guards);
+    RUN_TEST(test_history_rotation_read_failure_preserves_original_file);
     return UNITY_END();
 }

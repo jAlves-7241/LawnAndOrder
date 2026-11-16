@@ -60,6 +60,8 @@ public:
 
     // True if the hardware module is physically detected.
     bool isPresent() const { return _found; }
+    // True if RTC power loss (OSF) was detected; clears on set() or clean recovery/boot.
+    bool isBatteryLow() const { return _batteryLow; }
     uint32_t revision() const { return _revision; }
 
     void setErrorCallback(ErrorCallback cb) { _errorCb = cb; }
@@ -68,6 +70,7 @@ private:
     RTC_Chip _rtc;
     bool     _found;
     bool     _lostPower;
+    bool     _batteryLow = false;
     bool     _batRecoveryWarned = false;
     uint32_t _lastReadMs;
     uint32_t _lastRtcRetryMs;
@@ -79,6 +82,8 @@ private:
     ErrorCallback _errorCb;
 
     void _incrementSoftwareClock();
+    DateTime _readRtc(bool& ok, bool& lostPower);
+    DateTime _adjustAndVerify(const DateTime& utcDt, bool& ok);
 
     static void _copyToState(const DateTime& dt);
     static bool _isEU_DST(const DateTime& dt);

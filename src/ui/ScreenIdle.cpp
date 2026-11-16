@@ -4,6 +4,7 @@
 #include "../AppState.h"
 #include <stdio.h>
 #include "../Scheduler.h"
+#include "../RTClock.h"
 #include <RTClib.h>
 
 void ScreenIdle::onEnter(UI& ui) {
@@ -17,6 +18,7 @@ void ScreenIdle::onEnter(UI& ui) {
     _lastNextM = 0xFF;
     _lastZoneIdx = 0xFF;
     _lastRtcValid = !gState.rtc_valid;
+    _lastBatteryLow = !rtclock.isBatteryLow();
     render(ui);
 }
 
@@ -46,6 +48,7 @@ void ScreenIdle::update(UI& ui) {
     }
 
     if (_lastRtcValid != gState.rtc_valid) needsRender = true;
+    if (_lastBatteryLow != rtclock.isBatteryLow()) needsRender = true;
     if (_lastSuspended != gState.suspended) needsRender = true;
     if (_lastMode != gState.mode) needsRender = true;
     if (_lastNextH != gState.next_hour || _lastNextM != gState.next_min) needsRender = true;
@@ -70,8 +73,10 @@ void ScreenIdle::fullRender(UI& ui) {
     _lastNextM = gState.next_min;
     _lastZoneIdx = gState.watering.zone_idx;
     _lastRtcValid = gState.rtc_valid;
+    const bool batLow = rtclock.isBatteryLow();
+    _lastBatteryLow = batLow;
 
-    char b0[LCD_COLS+1], b3[LCD_COLS+1];
+    char b0[LCD_COLS+1], b1[LCD_COLS+1], b3[LCD_COLS+1];
 
     if (gState.rtc_valid) {
         char tstr[8];
@@ -93,12 +98,13 @@ void ScreenIdle::fullRender(UI& ui) {
         const char* statusLine = gState.watering.is_waiting ? TXT_IDLE_WAITING : TXT_IDLE_WATERING;
         ui.getDisplay().setRows(b0, statusLine, zrow, pb);
     } else {
+        const char* batLine = batLow ? ui.getDisplay().cx(b1, TXT_IDLE_RTC_BAT) : "";
         if (!gState.rtc_valid) {
-            ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, TXT_IDLE_SET_TIME));
+            ui.getDisplay().setRows(b0, batLine, "", ui.getDisplay().cx(b3, TXT_IDLE_SET_TIME));
         } else if (gState.suspended) {
-            ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, TXT_IDLE_SUSPENDED), "");
+            ui.getDisplay().setRows(b0, batLine, ui.getDisplay().cx(b3, TXT_IDLE_SUSPENDED), "");
         } else if (gState.mode == AppMode::DESATIVADO) {
-            ui.getDisplay().setRows(b0, "", ui.getDisplay().cx(b3, TXT_IDLE_DISABLED), "");
+            ui.getDisplay().setRows(b0, batLine, ui.getDisplay().cx(b3, TXT_IDLE_DISABLED), "");
         } else {
             char nxstr[LCD_COLS+1];
             uint32_t nextDay1970 = 0;
@@ -120,7 +126,7 @@ void ScreenIdle::fullRender(UI& ui) {
             } else {
                 snprintf(nxstr, sizeof(nxstr), TXT_NEXT_NONE);
             }
-            ui.getDisplay().setRows(b0, "", "", ui.getDisplay().cx(b3, nxstr));
+            ui.getDisplay().setRows(b0, batLine, "", ui.getDisplay().cx(b3, nxstr));
         }
     }
 }

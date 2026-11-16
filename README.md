@@ -15,7 +15,7 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 - **Suspensão temporária**: pausa a rega automática por um número de dias definido pelo utilizador.
 - **Assistente de configuração inicial (Setup Wizard)**: guia o utilizador no primeiro arranque (data/hora, modo, zonas).
 - **Histórico de regas**: gravado em CSV no LittleFS, com cache em RAM/NVS para acesso instantâneo no LCD e exportação completa via Serial.
-- **Recuperação de falha de energia**: após reiniciar, um ciclo interrompido é validado contra o RTC, limites de duração e próximo horário. Para reduzir escritas na flash, o estado persistido não acompanha o tempo decorrido na zona atual: essa zona pode voltar a regar durante toda a duração configurada. Ver os limites de segurança abaixo.
+- **Recuperação de falha de energia**: após reiniciar, um ciclo interrompido é validado contra o RTC, limites de duração, idade máxima, contador de retentativas por zona e próximo horário; o progresso da zona ativa é guardado em NVS a cada `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar repetições em caso de blackout. Ver os limites de segurança abaixo.
 - **Hora automática com DST (horário de verão)**: suporte às regras europeias de transição de horário.
 - **Terminal de comandos Serial**: consulta de estado, acerto de hora, exportação/importação de configurações e histórico, reset remoto.
 - **Tolerância a falhas do RTC**: a interface continua a funcionar com relógio por software, mas a hora é marcada como inválida e a rega automática fica inibida até existir uma hora válida. O RTC é consultado periodicamente (intervalo nominal de 30 s); falhas persistentes despoletam tentativas de deteção e, após leituras corrompidas consecutivas, recuperação do barramento I2C.
@@ -23,7 +23,7 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 
 ## Decisões de projeto e limites operacionais
 
-- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila e a posição da zona, mas não acompanha continuamente o tempo decorrido. Isto reduz escritas na flash. Se faltar energia durante uma zona, ao reiniciar essa zona pode ser executada novamente pela duração completa configurada. A posição da fila é gravada ao concluir cada zona; uma falha antes de essa gravação terminar também pode repetir a zona acabada de concluir. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Este compromisso é intencional; para instalações em que a repetição máxima não seja aceitável, usar um corte de água independente ou rever a política para exigir confirmação manual após um blackout.
+- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila, a posição da zona, os minutos acumulados e o tempo restante da zona ativa em incrementos de `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar escritas na flash. Se faltar energia durante uma zona, ao reiniciar são executados apenas os minutos inteiros em falta (repetindo no máximo até ao intervalo do último checkpoint, <2 min). O contador `retry_count` só é limpo quando a zona conclui, limitando qualquer zona em falha periódica a `MAX_RECOVERY_RETRIES` (3) tentativas. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Para instalações em que qualquer repetição adicional não seja aceitável, usar um corte de água independente ou exigir confirmação manual após um blackout.
 - **Hora de verão**: a proteção contra a hora repetida no fim do DST persiste os marcadores de último disparo em NVS (`sched_tr`, com CRC-16) para evitar ativações duplicadas mesmo após reinício dentro da janela de recuo (2 h), sendo limpa ao alterar o modo ou acertar a hora manualmente.
 - **RTC indisponível**: no assistente inicial, é possível confirmar que se pretende continuar sem RTC. A interface e a rega manual continuam disponíveis. Sem uma hora válida, rega agendada, suspensões temporizadas e validação da retoma após blackout ficam inibidas. `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot; para operação automática persistente, defina/recupere o RTC.
 - **Histórico**: o arranque tenta montar LittleFS sem formatação (`begin(false)`, com retentativa) e consulta a cache NVS (`hblob`, com CRC-16 e verificação de tamanho). Se houver histórico conhecido em NVS, a formatação automática destrutiva é inibida para preservar os dados; registos adiados durante rotação são persistidos em `/hist_pend.txt` e reprocessados no arranque. As configurações NVS são armazenadas separadamente; exporte o histórico para cópia duradoura.
@@ -124,7 +124,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute full suite (122 tests across 9 suites)
+# Execute full suite (128 tests across 9 suites)
 pio test -e native
 
 # Filter by module (e.g. scheduler, watering, terminal, ui)
@@ -176,7 +176,8 @@ A maioria dos parâmetros do sistema está centralizada em **`src/config.h`** e 
 | `RELAY_DEADTIME_MS` | Dead-time de segurança aplicado antes de ativar um relé | `20` ms |
 | `WDT_TIMEOUT_S` | Timeout do watchdog de hardware | `8` s |
 | `SUSPEND_DEFAULT_DAYS` | Valor inicial sugerido ao suspender a rega | `3` dias |
-| `MAX_RECOVERY_RETRIES` / `RECOVERY_MAX_AGE_S` | Limite de tentativas falhadas consecutivas de retoma (`3`, repostas após 30 s estáveis) e idade máxima absoluta de recuperação (`7200` s / 2 h) | `3` / `7200` |
+| `MAX_RECOVERY_RETRIES` / `RECOVERY_MAX_AGE_S` | Limite de tentativas falhadas de retoma por zona (`3`, repostas apenas ao concluir a zona) e idade máxima absoluta de recuperação (`7200` s / 2 h) | `3` / `7200` |
+| `RECOVERY_CHECKPOINT_MIN` | Intervalo (min) para guardar progresso da zona ativa em NVS durante a rega | `2` min |
 | `SAFETY_GAP_SEC` | Intervalo mínimo de segurança (s) entre o fim estimado de um ciclo recuperado e o próximo ciclo agendado, para evitar sobreposição | `7200` (2 h) |
 | `DATE_YEAR_MIN` / `DATE_YEAR_MAX` | Intervalo de anos aceite no editor de data e no `set_time` | `2020` – `2099` |
 | `HISTORY_MAX_ENTRIES` | Número máximo de linhas guardadas no ficheiro de histórico antes de rotação | `1500` |

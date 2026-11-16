@@ -25,6 +25,9 @@ public:
     void setRows(const char* r0, const char* r1,
                  const char* r2, const char* r3);
 
+    // Flush dirty/faulted rows or periodic refresh when display is active.
+    void sync();
+
     // Backlight control.
     void backlightOn();
     void backlightOff();
@@ -60,7 +63,9 @@ private:
     char _shadow[LCD_ROWS][LCD_COLS + 1];
     bool _dirty[LCD_ROWS];
     uint32_t _lastFullRefresh;
+    uint32_t _lastAttemptMs = 0;
 
+    bool _flushRow(uint8_t row);
     bool _writeRow(uint8_t row, const char* text, bool* wroteFull = nullptr);
     void _invalidateShadow();  // force full redraw on next setRows()
 };

@@ -19,10 +19,13 @@ public:
     size_t readPos = 0;
     bool isOpen = false;
     bool* writeFailPtr = nullptr;
+    bool* readFailPtr = nullptr;
 
-    File() : contentPtr(nullptr), readPos(0), isOpen(false), writeFailPtr(nullptr) {}
-    File(const std::string& p, const std::string& m, std::string* ptr, bool* wfPtr = nullptr)
-        : path(p), mode(m), contentPtr(ptr), readPos(0), isOpen(true), writeFailPtr(wfPtr) {}
+    File() : contentPtr(nullptr), readPos(0), isOpen(false), writeFailPtr(nullptr), readFailPtr(nullptr) {}
+    File(const std::string& p, const std::string& m, std::string* ptr,
+         bool* wfPtr = nullptr, bool* rfPtr = nullptr)
+        : path(p), mode(m), contentPtr(ptr), readPos(0), isOpen(true),
+          writeFailPtr(wfPtr), readFailPtr(rfPtr) {}
 
     operator bool() const { return isOpen && contentPtr != nullptr; }
 
@@ -69,6 +72,7 @@ public:
 
     int read(uint8_t* buf, size_t size) {
         if (!isOpen || !contentPtr || !buf || size == 0) return 0;
+        if (readFailPtr && *readFailPtr) return 0;
         size_t avail = contentPtr->size() - readPos;
         size_t toRead = avail < size ? avail : size;
         if (toRead > 0) {
