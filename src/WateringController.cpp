@@ -7,6 +7,9 @@
 #include <RTClib.h>
 #include "log.h"
 
+static_assert(ZONE_TEST_DURATION_S > 0 && ZONE_TEST_DURATION_S <= 1200,
+              "ZONE_TEST_DURATION_S must stay within 1..1200 s");
+
 const uint8_t WateringController::_relayPins[NUM_ZONES] = {
     PIN_RELAY_1, PIN_RELAY_2, PIN_RELAY_3, PIN_RELAY_4
 };
@@ -340,6 +343,9 @@ void WateringController::update() {
         if (nowMs - _waitStartMs >= ZONE_WAIT_DELAY_MS) {
             _isWaiting = false;
             _startNextZone();
+        } else if (nowMs - _lastPinRefreshMs >= 1000UL) {
+            _lastPinRefreshMs = nowMs;
+            _deactivateAll();
         }
         return;
     }
@@ -353,14 +359,15 @@ void WateringController::update() {
                 _lastPinRefreshMs = _zoneStartMs;
                 gState.watering.progress_pct = 0;
                 _syncState();
-                if (_zoneDurationMs % 60000UL == 0) {
+                const uint32_t startDurMs = _effectiveZoneDurationMs();
+                if (startDurMs % 60000UL == 0) {
                     LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_ACTIVE_MIN,
                           (int)_zoneIdx + 1, gState.zones[_zoneIdx].name,
-                          (unsigned long)(_zoneDurationMs / 60000UL));
+                          (unsigned long)(startDurMs / 60000UL));
                 } else {
                     LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_ACTIVE_SEC,
                           (int)_zoneIdx + 1, gState.zones[_zoneIdx].name,
-                          (unsigned long)(_zoneDurationMs / 1000UL));
+                          (unsigned long)(startDurMs / 1000UL));
                 }
             } else {
                 LOG_E(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_OOB,
@@ -378,11 +385,8 @@ void WateringController::update() {
         }
     }
 
-    const uint32_t maxZoneMs = (_runTrigger == WaterTrigger::TEST)
-        ? ((uint32_t)ZONE_TEST_DURATION_S * 1000UL)
-        : (20UL * 60000UL);
-    const uint32_t effectiveDurationMs =
-        (_zoneDurationMs <= maxZoneMs) ? _zoneDurationMs : maxZoneMs;
+    const uint32_t maxZoneMs = _maxZoneMs();
+    const uint32_t effectiveDurationMs = _effectiveZoneDurationMs();
 
     uint32_t elapsed = nowMs - _zoneStartMs;
 
@@ -467,6 +471,20 @@ void WateringController::update() {
 // ─────────────────────────────────────────────────────────
 // Private
 // ─────────────────────────────────────────────────────────
+
+uint32_t WateringController::_maxZoneMs() const {
+    const uint32_t hardCapMs = 20UL * 60000UL;
+    if (_runTrigger == WaterTrigger::TEST) {
+        const uint32_t testCapMs = (uint32_t)ZONE_TEST_DURATION_S * 1000UL;
+        return (testCapMs <= hardCapMs) ? testCapMs : hardCapMs;
+    }
+    return hardCapMs;
+}
+
+uint32_t WateringController::_effectiveZoneDurationMs() const {
+    const uint32_t maxZoneMs = _maxZoneMs();
+    return (_zoneDurationMs <= maxZoneMs) ? _zoneDurationMs : maxZoneMs;
+}
 
 bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
                                      uint32_t dur_ms,

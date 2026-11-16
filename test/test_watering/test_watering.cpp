@@ -711,6 +711,58 @@ void test_watering_max_zone_cap_and_periodic_pin_refresh(void) {
     TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
 }
 
+void test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log(void) {
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, 1781510400UL };
+    gState.zones[0] = { "Z1", true, 1 };
+    gState.zones[1] = { "Z2", true, 1 };
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+
+    // Complete Zone 1 -> enter 5 s inter-zone wait (_isWaiting)
+    advanceMockMillis(60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+
+    // EMI glitch during 5 s wait must be cleared within 1 s while remaining in wait
+    digitalWrite(PIN_RELAY_1, RELAY_ON);
+    digitalWrite(PIN_RELAY_3, RELAY_ON);
+    advanceMockMillis(1000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_3));
+
+    // Advance past remaining 4 s of ZONE_WAIT_DELAY_MS -> Zone 2 dead-time
+    advanceMockMillis(ZONE_WAIT_DELAY_MS - 1000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(gState.watering.is_waiting);
+
+    // Corrupt _zoneDurationMs prior to dead-time completion: activation log must print clamped 20 min
+    wateringCtrl._zoneDurationMs = 30UL * 60000UL;
+    Serial.reset();
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_2));
+#if LOG_LEVEL >= LVL_INFO
+    char expectedStart[96];
+    snprintf(expectedStart, sizeof(expectedStart), TXT_LOG_ZONE_ACTIVE_MIN, 2, gState.zones[1].name, 20UL);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedStart) != std::string::npos);
+#endif
+    // Runtime still enforces 20-min hard cap cleanly
+    advanceMockMillis(20UL * 60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_2));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -730,5 +782,6 @@ int main(void) {
     RUN_TEST(test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime);
     RUN_TEST(test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings);
     RUN_TEST(test_watering_max_zone_cap_and_periodic_pin_refresh);
+    RUN_TEST(test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log);
     return UNITY_END();
 }

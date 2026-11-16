@@ -54,6 +54,8 @@ private:
 
     bool _buildQueue(const bool zones[NUM_ZONES], uint32_t dur_ms,
                      WaterTrigger trigger);
+    uint32_t _maxZoneMs() const;
+    uint32_t _effectiveZoneDurationMs() const;
     void _startNextZone();
     void _finishCycle();     // record to history and notify scheduler
     void _activateRelay();
