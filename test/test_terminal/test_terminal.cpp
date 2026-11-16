@@ -708,6 +708,77 @@ void test_terminal_status_reports_and_clears_rtc_battery_warning(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_BAT) == std::string::npos);
 }
 
+void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
+    // 1. Unrecognized arguments are rejected without entering confirmation prompt
+    Serial.reset();
+    Serial.feedInput("clear_history -f\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_CLEAR_HIST_ARGS) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_WARN) == std::string::npos);
+
+    Serial.reset();
+    Serial.feedInput("clear_history force extra\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_CLEAR_HIST_ARGS) != std::string::npos);
+
+    // 2. "--force" alias sets _pendingClearForce; "n" cancels and clears _pendingClearForce
+    LittleFS.mountFail = true;
+    history.begin(false);
+    TEST_ASSERT_FALSE(history.isReady());
+
+    Serial.reset();
+    Serial.feedInput("clear_history --force\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+    TEST_ASSERT_TRUE(terminal._pendingClearForce);
+    Serial.feedInput("n\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_FALSE(terminal._pendingClearForce);
+    TEST_ASSERT_FALSE(history.isReady());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_CANCELLED) != std::string::npos);
+
+    // 3. 30 s timeout resets both _pendingClearHistory and _pendingClearForce
+    Serial.reset();
+    Serial.feedInput("clear_history force\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+    TEST_ASSERT_TRUE(terminal._pendingClearForce);
+    advanceMockMillis(IDLE_TIMEOUT_MS);
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_FALSE(terminal._pendingClearForce);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_EXPIRED) != std::string::npos);
+
+    // Subsequent plain clear_history without force still fails on unmounted FS
+    Serial.reset();
+    Serial.feedInput("clear_history\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+    TEST_ASSERT_FALSE(terminal._pendingClearForce);
+    Serial.feedInput("y\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(history.isReady());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_FAIL) != std::string::npos);
+
+    // 4. "--force" repairs mount and also succeeds when mounted FS is already empty
+    LittleFS.mountFail = false;
+    LittleFS.reset();
+    history.begin();
+    TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+    Serial.reset();
+    Serial.feedInput("clear_history --force\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+    Serial.feedInput("y\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -733,5 +804,6 @@ int main(void) {
     RUN_TEST(test_logging_export_suppression_summary_and_human_modes);
     RUN_TEST(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
     RUN_TEST(test_terminal_status_reports_and_clears_rtc_battery_warning);
+    RUN_TEST(test_terminal_clear_history_force_args_timeout_and_empty_repair);
     return UNITY_END();
 }

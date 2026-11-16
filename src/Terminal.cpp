@@ -803,8 +803,15 @@ void Terminal::_cmdExportHistory(char* /*args*/) {
 }
 
 void Terminal::_cmdClearHistory(char* args) {
-    const bool force = (args && (strcasecmp(args, "force") == 0 ||
-                                 strcasecmp(args, "--force") == 0));
+    bool force = false;
+    if (args && *args != '\0') {
+        if (strcasecmp(args, "force") == 0 || strcasecmp(args, "--force") == 0) {
+            force = true;
+        } else {
+            Serial.println(TXT_TERM_ERR_CLEAR_HIST_ARGS);
+            return;
+        }
+    }
     if (!force && history.isReady() && history.entryCount() == 0) {
         Serial.println(TXT_TERM_HIST_EMPTY);
         return;

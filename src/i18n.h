@@ -586,6 +586,8 @@
 #define TXT_TERM_WIPING "Clearing watering history..."
 #define TXT_TERM_WIPE_OK "Watering history cleared successfully."
 #define TXT_TERM_WIPE_FAIL "Error: Failed to clear watering history."
+#define TXT_TERM_ERR_CLEAR_HIST_ARGS                                           \
+  "Error: Invalid argument. Usage: clear_history [force]"
 #define TXT_TERM_REBOOT "Restarting Lawn & Order controller..."
 #define TXT_TERM_STOP_OK "Watering stopped successfully."
 #define TXT_TERM_STOP_IDLE "No watering currently active."
@@ -926,6 +928,8 @@
 #define TXT_TERM_WIPING "A limpar o historico de regas..."
 #define TXT_TERM_WIPE_OK "Historico de regas limpo com sucesso."
 #define TXT_TERM_WIPE_FAIL "Erro: Falha ao apagar o historico de regas."
+#define TXT_TERM_ERR_CLEAR_HIST_ARGS                                           \
+  "Erro: Argumento invalido. Use: clear_history [force]"
 #define TXT_TERM_REBOOT "A reiniciar o controlador Lawn & Order..."
 #define TXT_TERM_STOP_OK "Rega parada com sucesso."
 #define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
