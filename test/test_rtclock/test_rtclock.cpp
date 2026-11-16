@@ -483,6 +483,55 @@ void test_rtclock_battery_low_latch_periodic_recheck_and_clear(void) {
 #endif
 }
 
+void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
+    TEST_ASSERT_EQUAL_UINT32(0, rtclock.manualRevision());
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_EQUAL_UINT32(0, rtclock.manualRevision());
+
+    // Invalid calendar dates/years must NOT increment manualRevision()
+    TEST_ASSERT_FALSE(rtclock.set(2026, 2, 30, 12, 0, 0));
+    TEST_ASSERT_EQUAL_UINT32(0, rtclock.manualRevision());
+    TEST_ASSERT_FALSE(rtclock.set(DATE_YEAR_MIN - 1, 6, 15, 12, 0, 0));
+    TEST_ASSERT_EQUAL_UINT32(0, rtclock.manualRevision());
+
+    // Valid set() with hardware present increments manualRevision()
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    TEST_ASSERT_EQUAL_UINT32(1, rtclock.manualRevision());
+
+    // Valid set() falling back to software RAM clock still increments manualRevision()
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 10, 5, 0));
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
+
+    // Hotplug sync bumps revision() but NOT manualRevision()
+    rtclock._found = false;
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 9, 10, 0));
+    uint32_t revBefore = rtclock.revision();
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
+
+    // Hotplug OSF restore bumps revision() but NOT manualRevision()
+    rtclock._found = false;
+    rtclock._rtc.mockLostPower = true;
+    revBefore = rtclock.revision();
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
+
+    // >300s hardware clock drift bumps revision() but NOT manualRevision()
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 11, 0, 0));
+    revBefore = rtclock.revision();
+    advanceMockMillis(31000);
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
@@ -500,5 +549,6 @@ int main(void) {
     RUN_TEST(test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs);
     RUN_TEST(test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard);
     RUN_TEST(test_rtclock_battery_low_latch_periodic_recheck_and_clear);
+    RUN_TEST(test_rtclock_manual_revision_only_tracks_valid_sets);
     return UNITY_END();
 }

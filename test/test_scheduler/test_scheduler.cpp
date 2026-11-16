@@ -12,10 +12,13 @@
 
 void setUp(void) {
     resetAllTestMocks();
+    wateringCtrl.begin();
     gState.rtc_valid = true;
 }
 
-void tearDown(void) {}
+void tearDown(void) {
+    wateringCtrl.stop();
+}
 
 void test_scheduler_medio_next_slot(void) {
     gState.mode = AppMode::MEDIO;
@@ -429,6 +432,355 @@ void test_scheduler_recovery_max_age_2h(void) {
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, withinLimit, 3600));
 }
 
+static void setSchedulerTestLocalNow(uint16_t y, uint8_t m, uint8_t d,
+                                     uint8_t hh, uint8_t mm, uint8_t ss) {
+    DateTime localDt(y, m, d, hh, mm, ss);
+    DateTime utcDt = RTClock::localToUtc(localDt);
+    gState.now = { y, m, d, hh, mm, ss, localDt.dayOfTheWeek(), utcDt.unixtime() };
+}
+
+static void setSchedulerTestUtcNow(uint32_t utcUnix) {
+    DateTime localDt = RTClock::utcToLocal(DateTime(utcUnix));
+    gState.now = { localDt.year(), localDt.month(), localDt.day(),
+                   localDt.hour(), localDt.minute(), localDt.second(),
+                   localDt.dayOfTheWeek(), utcUnix };
+}
+
+void test_scheduler_catchup_grace_window_and_guards(void) {
+    storage.begin();
+    rtclock = RTClock();
+    rtclock.begin();
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    // 1. Power outage across 08:00 -> boot at 08:15 local catches up missed 08:00 slot
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 15, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // 2. Reboot again at 08:20 local -> _lastTriggerUnix[0] prevents duplicate catch-up
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 20, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 3. Past 30-min window (08:35 local) with cleared triggers -> does NOT catch up
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 35, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 4. Manual rtclock.set() at 08:10 local MUST NOT fire 08:00 catch-up
+    scheduler = Scheduler();
+    scheduler.begin();
+    rtclock.set(2026, 6, 15, 8, 10, 0);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 5. Midnight wrap catch-up (23:50 slot caught up at 00:10 local next day)
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slots[0] = { 23, 50 };
+    gState.mode = AppMode::PERSONALIZADO;
+    setSchedulerTestLocalNow(2026, 6, 16, 0, 10, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // 6. DST spring-forward skipped hour (2026-03-29: 00:59:59 UTC/local -> 02:00:00 local)
+    //    catches up a custom slot scheduled at 01:30
+    gState.auto_dst = true;
+    cs.slots[0] = { 1, 30 };
+    scheduler.clearLastTriggers();
+    DateTime beforeDst(2026, 3, 29, 0, 59, 59); // 00:59:59 UTC == 00:59:59 local
+    gState.now = { 2026, 3, 29, 0, 59, 59, beforeDst.dayOfTheWeek(), beforeDst.unixtime() };
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    DateTime atDst(2026, 3, 29, 1, 0, 0); // 01:00 UTC == 02:00 local (skipped 01:xx)
+    gState.now = { 2026, 3, 29, 2, 0, 0, atDst.dayOfTheWeek(), atDst.unixtime() };
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+}
+
+void test_scheduler_catchup_exact_boundaries_and_dst_fallback(void) {
+    storage.begin();
+    rtclock = RTClock();
+    rtclock.begin();
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    // 1. Exact 1800s vs 1801s catch-up boundary
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 30, 1);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 30, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // 2. Continuous 1-minute skip (wallJump == 120s: 07:59 -> 08:01) catches up 08:00
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 7, 59, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 1, 1);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // 3. Continuous rtclock.set() forward jump across 08:00 (without onModeChanged) and onModeChanged() reset
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 7, 59, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    rtclock.set(2026, 6, 15, 8, 10, 1);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 10, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.onModeChanged(false);
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 11, 1);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 4. rtc_valid == false inhibits catch-up; active recovery at begin() suppresses _catchUpPending;
+    //    MAX_RECOVERY_RETRIES aborting AUTO stays blocked by _lastTriggerUnix
+    gState.rtc_valid = false;
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 15, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    gState.rtc_valid = true;
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    scheduler = Scheduler();
+    scheduler.begin();
+    TEST_ASSERT_FALSE(scheduler._catchUpPending);
+    wateringCtrl.stop();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 16, 0);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    for (int r = 1; r <= MAX_RECOVERY_RETRIES; r++) {
+        setSchedulerTestLocalNow(2026, 6, 15, 8, (uint8_t)(r * 5), 0);
+        wateringCtrl = WateringController();
+        wateringCtrl.begin();
+        TEST_ASSERT_TRUE(wateringCtrl._active);
+    }
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 20, 0);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 5. Continuous suspension expiration after missed slot (08:00) must NOT catch up
+    scheduler.clearLastTriggers();
+    gState.suspended = true;
+    gState.suspended_until = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 10, 0)).unixtime();
+    setSchedulerTestLocalNow(2026, 6, 15, 7, 59, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 5, 1);
+    scheduler.update();
+    TEST_ASSERT_TRUE(gState.suspended);
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 10, 2);
+    scheduler.update();
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 11, 3);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 6. DST fall-back (2026-10-25): missed 1st 01:15 (00:15 UTC) catches up inside 1st hour
+    //    at exact 1800s boundary (00:45:00 UTC), skips 1801s (00:45:01 UTC), and blocks 2nd 01:15
+    gState.auto_dst = true;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slots[0] = { 1, 15 };
+    gState.mode = AppMode::PERSONALIZADO;
+    scheduler.clearLastTriggers();
+
+    setSchedulerTestUtcNow(DateTime(2026, 10, 25, 0, 45, 1).unixtime());
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    setSchedulerTestUtcNow(DateTime(2026, 10, 25, 0, 45, 0).unixtime());
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    setSchedulerTestUtcNow(DateTime(2026, 10, 25, 1, 15, 0).unixtime());
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 7. DST spring-forward outage bounds (02:15 local catches up 01:30; 02:31 local does not)
+    //    and earlier 00:45 slot already run is NOT re-triggered at 02:00 jump
+    scheduler.clearLastTriggers();
+    cs.slots[0] = { 1, 30 };
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 15, 0).unixtime()); // 02:15 local
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    scheduler.clearLastTriggers();
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 31, 0).unixtime()); // 02:31 local (>1800s)
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    scheduler.clearLastTriggers();
+    cs.slots[0] = { 0, 45 };
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 45, 0).unixtime());
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 59, 59).unixtime());
+    scheduler.update();
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 0, 0).unixtime()); // 02:00 local jump
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+}
+
+void test_scheduler_catchup_patterns_and_dense_slots(void) {
+    storage.begin();
+    rtclock = RTClock();
+    rtclock.begin();
+    gState.auto_dst = true;
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.slots[0] = { 23, 50 };
+    gState.mode = AppMode::PERSONALIZADO;
+
+    // 1. DOW_MASK midnight wrap (2026-06-14 is Sun dow=0, 2026-06-15 is Mon dow=1, 2026-06-16 is Tue dow=2)
+    cs.day_pattern = DayPattern::DOW_MASK;
+    cs.dow_mask = (1 << 0); // Sunday enabled, Monday disabled
+    setSchedulerTestLocalNow(2026, 6, 15, 0, 10, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    scheduler.clearLastTriggers();
+    cs.dow_mask = (1 << 2); // Tuesday enabled, Monday disabled -> must NOT catch up Monday 23:50
+    setSchedulerTestLocalNow(2026, 6, 16, 0, 10, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 2. EVERY_X_DAYS midnight wrap preserves custom_ref_day and respects off-cycle days
+    cs.day_pattern = DayPattern::EVERY_X_DAYS;
+    cs.interval_days = 3;
+    const uint32_t activeDay = DateTime(2026, 6, 15, 0, 0, 0).unixtime() / 86400UL;
+    gState.custom_ref_day = activeDay;
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 16, 0, 10, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(activeDay, gState.custom_ref_day);
+    wateringCtrl.stop();
+
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 17, 0, 10, 0); // 2026-06-16 was off-cycle
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(activeDay, gState.custom_ref_day);
+
+    gState.custom_ref_day = 0xFFFFFFFFUL;
+    TEST_ASSERT_FALSE(scheduler._tryCatchUp(gState.now));
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
+
+    // 3. Dense custom slots (< 2h apart): picks newest missed slot and avoids exact-second collision
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 20 };
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 25, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(0UL, scheduler._lastTriggerUnix[0]);
+    TEST_ASSERT_TRUE(scheduler._lastTriggerUnix[1] > 0UL);
+    wateringCtrl.stop();
+
+    // Exact-second / dead-time overlap against 08:30 next slot with 15-min cycle (901s total)
+    gState.zones[0].duration_min = 15;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 30 };
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 15, 0); // 08:15:00 + 901s >= 08:30:00 -> blocked
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 14, 0); // 08:14:00 + 901s < 08:30:00 -> allowed
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -449,5 +801,8 @@ int main(void) {
     RUN_TEST(test_scheduler_last_triggers_persist_across_reboot);
     RUN_TEST(test_scheduler_clock_set_clears_last_triggers);
     RUN_TEST(test_scheduler_recovery_max_age_2h);
+    RUN_TEST(test_scheduler_catchup_grace_window_and_guards);
+    RUN_TEST(test_scheduler_catchup_exact_boundaries_and_dst_fallback);
+    RUN_TEST(test_scheduler_catchup_patterns_and_dense_slots);
     return UNITY_END();
 }

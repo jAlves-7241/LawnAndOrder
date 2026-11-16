@@ -84,12 +84,6 @@ bool RTClock::begin() {
         return true;
     };
 
-#ifdef WOKWI_SIM
-    (void)hwLostPower;
-    _lostPower = false;
-    if (!wasValid) _batteryLow = false;
-    gState.rtc_valid = true;
-#else
     _lostPower = hwLostPower;
 
     if (_lostPower) {
@@ -124,7 +118,6 @@ bool RTClock::begin() {
         if (!wasValid) _batteryLow = false;
         gState.rtc_valid = true;
     }
-#endif
     
     // Proteger o arranque contra barramento I2C preso ou corrompido
     if (_lostPower && !wasValid) {
@@ -190,12 +183,7 @@ void RTClock::update() {
                     _found = false;
                 } else {
                     _found = true;
-                    #ifdef WOKWI_SIM
-                        (void)hwLostPower;
-                        _lostPower = false;
-                    #else
-                        _lostPower = hwLostPower;
-                    #endif
+                    _lostPower = hwLostPower;
 
                     LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_FOUND);
 
@@ -301,7 +289,6 @@ void RTClock::update() {
     }
 
     auto applyUtc = [&](const DateTime& utcDt, bool recoveredPowerLoss) {
-#ifndef WOKWI_SIM
         // Detetar campos fora dos limites validos
         if (!_isValidDateTime(utcDt)) {
             handleReadError(utcDt);
@@ -309,7 +296,6 @@ void RTClock::update() {
         } else {
             _consecErrors = 0;
         }
-#endif
 
         const bool wasRtcValid = gState.rtc_valid;
         _lostPower = false;
@@ -343,7 +329,6 @@ void RTClock::update() {
         _lastKnownUnix = gState.now.unix;
     };
 
-#ifndef WOKWI_SIM
     // Re-check oscillator health only after a verified I2C read succeeds.
     if (hwLostPower) {
         _batteryLow = true;
@@ -376,9 +361,6 @@ void RTClock::update() {
             return;
         }
     }
-#else
-    (void)hwLostPower;
-#endif
 
     applyUtc(rawUtc, false);
 }
@@ -412,15 +394,10 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     bool hwOk = false;
     if (_found) {
-        #ifdef WOKWI_SIM
+        if (_rtc.begin()) {
             _adjustAndVerify(utcDt, hwOk);
-            if (!hwOk) _found = false;
-        #else
-            if (_rtc.begin()) {
-                _adjustAndVerify(utcDt, hwOk);
-            }
-            if (!hwOk) _found = false;
-        #endif
+        }
+        if (!hwOk) _found = false;
     } else {
         LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_SAVE_ATTEMPT);
         if (_rtc.begin()) {
@@ -486,6 +463,7 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
               (int)effectiveLocal.minute(), (int)effectiveLocal.second());
     }
     _revision++;
+    _manualRevision++;
     return hwOk;
 }
 
@@ -533,45 +511,10 @@ DateTime RTClock::_readRtc(bool& ok, bool& lostPower) {
     ok = false;
 #if defined(UNIT_TEST)
     if (!_rtc.mockPresent) return DateTime(2000, 1, 1, 0, 0, 0);
-    #ifdef WOKWI_SIM
-        lostPower = false;
-    #else
-        if (_rtc.mockI2cReadFail) return DateTime(2000, 1, 1, 0, 0, 0);
-        lostPower = _rtc.mockLostPower;
-    #endif
+    if (_rtc.mockI2cReadFail) return DateTime(2000, 1, 1, 0, 0, 0);
+    lostPower = _rtc.mockLostPower;
     ok = true;
     return _rtc.now();
-#elif defined(WOKWI_SIM)
-    static const uint8_t RTC_ADDR = 0x68;
-    Wire.beginTransmission(RTC_ADDR);
-    Wire.write((uint8_t)0x00);
-    if (Wire.endTransmission() != 0) return DateTime(2000, 1, 1, 0, 0, 0);
-    if (Wire.requestFrom(RTC_ADDR, (size_t)7) != 7) return DateTime(2000, 1, 1, 0, 0, 0);
-    uint8_t buf[7];
-    for (int i = 0; i < 7; i++) {
-        int b = Wire.read();
-        if (b < 0) return DateTime(2000, 1, 1, 0, 0, 0);
-        buf[i] = (uint8_t)b;
-    }
-    auto validBcd = [](uint8_t v) -> bool {
-        return (v & 0x0FU) <= 9U && (v >> 4) <= 9U;
-    };
-    auto bcd2bin = [](uint8_t v) -> uint8_t {
-        return (uint8_t)(v - 6U * (v >> 4));
-    };
-    if (!validBcd(buf[0] & 0x7FU) || !validBcd(buf[1]) ||
-        !validBcd(buf[2]) || !validBcd(buf[4]) ||
-        !validBcd(buf[5] & 0x7FU) || !validBcd(buf[6])) {
-        return DateTime(2000, 1, 1, 0, 0, 0);
-    }
-    lostPower = false;
-    ok = true;
-    return DateTime((uint16_t)bcd2bin(buf[6]) + 2000U,
-                    bcd2bin(buf[5] & 0x7FU),
-                    bcd2bin(buf[4]),
-                    bcd2bin(buf[2]),
-                    bcd2bin(buf[1]),
-                    bcd2bin(buf[0] & 0x7FU));
 #else
     static const uint8_t DS3231_ADDR = 0x68;
     static const uint8_t DS3231_STATUSREG = 0x0F;

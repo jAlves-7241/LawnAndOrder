@@ -151,18 +151,3 @@ public:
 private:
     DateTime _current = DateTime(2026, 1, 1, 0, 0, 0);
 };
-
-class RTC_DS1307 {
-public:
-    bool mockPresent = true;
-
-    bool begin() { return mockPresent; }
-    void adjust(const DateTime& dt) { _current = dt; }
-    DateTime now() { return _current; }
-    void resetMock() {
-        mockPresent = true;
-        _current = DateTime(2026, 1, 1, 0, 0, 0);
-    }
-private:
-    DateTime _current = DateTime(2026, 1, 1, 0, 0, 0);
-};

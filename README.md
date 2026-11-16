@@ -124,7 +124,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute full suite (135 tests across 9 suites)
+# Execute full suite (140 tests across 9 suites)
 pio test -e native
 
 # Filter by module (e.g. scheduler, watering, terminal, ui)
@@ -178,7 +178,8 @@ A maioria dos parâmetros do sistema está centralizada em **`src/config.h`** e 
 | `SUSPEND_DEFAULT_DAYS` | Valor inicial sugerido ao suspender a rega | `3` dias |
 | `MAX_RECOVERY_RETRIES` / `RECOVERY_MAX_AGE_S` | Limite de tentativas falhadas de retoma por zona (`3`, repostas apenas ao concluir a zona) e idade máxima absoluta de recuperação (`7200` s / 2 h) | `3` / `7200` |
 | `RECOVERY_CHECKPOINT_MIN` | Intervalo (min) para guardar progresso da zona ativa em NVS durante a rega | `2` min |
-| `SAFETY_GAP_SEC` | Intervalo mínimo de segurança (s) entre o fim estimado de um ciclo recuperado e o próximo ciclo agendado, para evitar sobreposição | `7200` (2 h) |
+| `SAFETY_GAP_SEC` | Intervalo mínimo de segurança (s) entre o fim estimado de um ciclo recuperado e o próximo ciclo agendado, para evitar sobreposição (horários personalizados com menos de ~2 h de intervalo não retomam após blackout) | `7200` (2 h) |
+| `SCHED_CATCHUP_WINDOW_S` | Janela (s) após o arranque ou salto de hora de verão para recuperar um horário perdido sem repetir ciclos já iniciados | `1800` (30 min) |
 | `DATE_YEAR_MIN` / `DATE_YEAR_MAX` | Intervalo de anos aceite no editor de data e no `set_time` | `2020` – `2099` |
 | `HISTORY_MAX_ENTRIES` | Número máximo de linhas guardadas no ficheiro de histórico antes de rotação | `1500` |
 | `HISTORY_DISPLAY` | Número de entradas de histórico mostradas no menu do LCD | `3` |

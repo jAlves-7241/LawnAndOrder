@@ -108,6 +108,7 @@
 #define WDT_TIMEOUT_S 8        // Watchdog timeout em segundos
 #define SUSPEND_DEFAULT_DAYS 3 // Dias padrão para suspensão de rega
 #define SAFETY_GAP_SEC 7200UL  // Tempo de segurança (em segundos) para evitar regas duplas. Valor seguro: 7200 (2h)
+#define SCHED_CATCHUP_WINDOW_S 1800UL // Janela (30 min) para recuperar rega perdida apos falha de energia ou salto DST
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
 #define DATE_YEAR_MAX 2099     // Ano máximo para o editor de data
 #define MAX_RECOVERY_RETRIES 3    // Máximo de retentativas por zona após reboot

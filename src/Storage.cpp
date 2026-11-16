@@ -350,22 +350,32 @@ void Storage::saveLastTriggers(const uint32_t* in, size_t count) {
 
 // ─────────────────────────────────────────────────────────
 bool Storage::loadRecoveryState(RecoveryState& rs) {
+    static_assert(sizeof(RecoveryState) == 36, "RecoveryState must be 36 bytes");
+    static_assert(offsetof(RecoveryState, crc16) == 34,
+                  "RecoveryState must have no padding before crc16");
     if (!_ready) return false;
-    size_t readBytes = prefs.getBytes(KEY_RECV, &rs, sizeof(rs));
+    RecoveryState tmp = {};
+    size_t readBytes = prefs.getBytes(KEY_RECV, &tmp, sizeof(tmp));
     if (readBytes == 0) return false;
-    if (readBytes != sizeof(rs)) {
+    if (readBytes != sizeof(tmp)) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_SIZE);
         return false;
     }
-    if (rs.version != NVS_VERSION) {
+    if (tmp.version != NVS_VERSION) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_VER);
         return false;
     }
-    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&rs);
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&tmp);
     if (raw[offsetof(RecoveryState, active)] > 1) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_BOOL);
         return false;
     }
+    uint16_t expectedCrc = _crc16(raw, offsetof(RecoveryState, crc16));
+    if (tmp.crc16 != expectedCrc) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_RECV);
+        return false;
+    }
+    rs = tmp;
     return true;
 }
 
@@ -375,6 +385,8 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
     memset(&copy, 0, sizeof(RecoveryState));
     copy = rs;
     copy.version = NVS_VERSION;
+    copy.crc16 = _crc16(reinterpret_cast<const uint8_t*>(&copy),
+                        offsetof(RecoveryState, crc16));
     
     RecoveryState current = {};
     if (prefs.getBytes(KEY_RECV, &current, sizeof(current)) != sizeof(current) ||

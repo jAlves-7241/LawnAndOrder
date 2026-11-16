@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <stddef.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
 #include "../../src/AppState.cpp"
@@ -13,7 +14,8 @@ void tearDown(void) {}
 void test_struct_sizes_and_alignment(void) {
     TEST_ASSERT_EQUAL_UINT32(12, sizeof(HistoryEntry));
     // Verify packed layout of RecoveryState and AppConfigBlob
-    TEST_ASSERT_EQUAL_UINT32(34, sizeof(RecoveryState));
+    TEST_ASSERT_EQUAL_UINT32(36, sizeof(RecoveryState));
+    TEST_ASSERT_EQUAL_UINT32(34, offsetof(RecoveryState, crc16));
     TEST_ASSERT_EQUAL_UINT32(36, sizeof(AppConfigBlob));
 }
 
