@@ -30,8 +30,14 @@ void Display::begin() {
     _invalidateShadow();
     _lastFullRefresh = millis();
     _lastAttemptMs = _lastFullRefresh;
+    _lastPeriodicRecoverMs = _lastFullRefresh;
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = _busFault ? 1 : 0;
+    _recoverAttempts = 0;
+    _hasRecoverAttempt = false;
+    _inErrorCallback = false;
+    _errorDeferred = false;
+    _recoverCooldownMs = 10000UL;
     _commErrWarned = false;
     if (_busFault) {
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_INIT_FAIL);
@@ -40,7 +46,14 @@ void Display::begin() {
     }
 }
 
-void Display::recover() {
+uint32_t Display::_cooldownForAttempts(uint8_t attempts) {
+    if (attempts <= 1) return 10000UL;
+    if (attempts == 2) return 60000UL;
+    return 300000UL;
+}
+
+void Display::recover(bool quiet, bool flushShadow) {
+    _recoverExecSeq++;
     _lcd.clearError();
     _lcd.init(false);
     if (_backlightOn) {
@@ -60,7 +73,7 @@ void Display::recover() {
     _invalidateShadow();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = 0;
-    if (!_busFault && _displayOn) {
+    if (!_busFault && _displayOn && flushShadow) {
         for (uint8_t r = 0; r < LCD_ROWS; r++) {
             if (!_flushRow(r)) {
                 _invalidateShadow();
@@ -73,12 +86,32 @@ void Display::recover() {
         }
     }
     _lastAttemptMs = millis();
+    _lastPeriodicRecoverMs = _lastAttemptMs;
     if (_busFault) {
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
     } else {
         _commErrWarned = false;
-        LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
+        _recoverAttempts = 0;
+        _hasRecoverAttempt = false;
+        _recoverCooldownMs = 10000UL;
+        if (!quiet) {
+            LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
+        }
     }
+}
+
+void Display::wake(bool hasRenderer) {
+    if (!_displayOn) {
+        _displayOn = true;
+        _backlightOn = true;
+        recover(true, !hasRenderer);
+        return;
+    }
+    backlightOn();
+}
+
+bool Display::needsPeriodicRecover(uint32_t intervalMs) const {
+    return _displayOn && !_busFault && (millis() - _lastPeriodicRecoverMs) >= intervalMs;
 }
 
 void Display::backlightOn() {
@@ -189,7 +222,7 @@ void Display::setRows(const char* r0, const char* r1,
         _invalidateShadow();
         _busFault = true;
         uint32_t now = millis();
-        bool inCooldown = (_lastRecoverMs != 0 && (now - _lastRecoverMs) < 10000UL);
+        bool inCooldown = (_hasRecoverAttempt && (now - _lastRecoverMs) < _recoverCooldownMs);
         if (!inCooldown) {
             if (_consecErrors < 255) _consecErrors++;
             if (_consecErrors >= 3) {
@@ -197,18 +230,38 @@ void Display::setRows(const char* r0, const char* r1,
                     LOG_W(TXT_LOG_TAG_LCD, TXT_LOG_LCD_COMM_ERR);
                     _commErrWarned = true;
                 }
-                _lastRecoverMs = now;
                 _consecErrors = 0;
+                const uint32_t seqBefore = _recoverExecSeq;
+                _inErrorCallback = true;
+                _errorDeferred = false;
                 if (_onError) {
                     _onError();
                 } else {
                     recover();
+                }
+                _inErrorCallback = false;
+
+                if (_errorDeferred) {
+                    // Shared I2C throttle suppressed bus recovery; retry after 10 s without escalating backoff
+                    _lastRecoverMs = now;
+                    _hasRecoverAttempt = true;
+                    _recoverCooldownMs = 10000UL;
+                } else if (_recoverExecSeq != seqBefore && !_busFault) {
+                    // recover() succeeded and already reset backoff counters
+                } else {
+                    _lastRecoverMs = now;
+                    _hasRecoverAttempt = true;
+                    if (_recoverAttempts < 255) _recoverAttempts++;
+                    _recoverCooldownMs = _cooldownForAttempts(_recoverAttempts);
                 }
             }
         }
     } else if (wroteAny) {
         _busFault = false;
         _consecErrors = 0;
+        _recoverAttempts = 0;
+        _hasRecoverAttempt = false;
+        _recoverCooldownMs = 10000UL;
         _commErrWarned = false;
     }
 }

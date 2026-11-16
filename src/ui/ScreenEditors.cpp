@@ -109,7 +109,9 @@ void ScreenDurPick::handleClick(UI& ui) {
         }
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_INTERVAL_SET, (unsigned)cs.interval_days);
         ui.flagConfigChanged();
-        scheduler.onModeChanged(false);
+        if (!ui.inSetup()) {
+            scheduler.onModeChanged(false);
+        }
         ui.goMenu(_backMenu);
         return;
     }
@@ -150,7 +152,9 @@ void ScreenDurPick::handleClick(UI& ui) {
         }
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_CYCLES_SET, (unsigned)cs.slot_count);
         ui.flagConfigChanged();
-        scheduler.onModeChanged(false);
+        if (!ui.inSetup()) {
+            scheduler.onModeChanged(false);
+        }
         ui.goMenu(_backMenu);
         return;
     }
@@ -399,9 +403,9 @@ void ScreenTimeEdit::handleClick(UI& ui) {
             }
             return;
         }
-        scheduler.onModeChanged(false);
-
-        if (ui.inSetup()) {
+        if (!ui.inSetup()) {
+            scheduler.onModeChanged(false);
+        } else {
             ui.advanceSetup();
             return;
         }
@@ -471,7 +475,9 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_SLOT_SET,
               (int)_teCycleIdx + 1, (unsigned)_teHour, (unsigned)_teMin);
         ui.flagConfigChanged();
-        scheduler.onModeChanged(false);
+        if (!ui.inSetup()) {
+            scheduler.onModeChanged(false);
+        }
         ui.goMenu(_backMenu);
     }
 }

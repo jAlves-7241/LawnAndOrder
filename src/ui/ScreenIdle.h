@@ -8,7 +8,8 @@ public:
     ScreenIdle() : _lastWateringActive(false), _lastIsWaiting(false), _lastProgress(255), _lastMinute(255),
                    _lastSuspended(false), _lastMode(AppMode::MEDIO),
                    _lastNextH(0xFF), _lastNextM(0xFF),
-                   _lastZoneIdx(0xFF), _lastRtcValid(false), _lastBatteryLow(false) {}
+                   _lastZoneIdx(0xFF), _lastRtcValid(false), _lastRtcPresent(false),
+                   _lastBatteryLow(false), _lastHistReady(false), _lastHistCount(0xFFFF) {}
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;
@@ -27,7 +28,10 @@ private:
     uint8_t _lastNextM;
     uint8_t _lastZoneIdx;
     bool _lastRtcValid;
+    bool _lastRtcPresent;
     bool _lastBatteryLow;
+    bool _lastHistReady;
+    uint16_t _lastHistCount;
     
     // Renders the entire screen
     void fullRender(UI& ui);

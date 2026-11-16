@@ -68,6 +68,9 @@
 #define TXT_IDLE_WAITING "Switching zone..."
 #define TXT_IDLE_SET_TIME "Set date and time!"
 #define TXT_IDLE_RTC_BAT "Check RTC battery!"
+#define TXT_IDLE_RTC_MISSING "RTC disconnected!"
+#define TXT_IDLE_HIST_ERR "History unavail."
+#define TXT_IDLE_LAST_FMT "Last: %02d%s %02d:%02d"
 #define TXT_IDLE_SUSPENDED "Watering Suspended"
 #define TXT_IDLE_DISABLED "Watering Disabled"
 #define TXT_TODAY "Today"
@@ -269,6 +272,9 @@
 #define TXT_IDLE_WAITING "A mudar de zona..."
 #define TXT_IDLE_SET_TIME "Acertar data/hora!"
 #define TXT_IDLE_RTC_BAT "Pilha RTC falhou!"
+#define TXT_IDLE_RTC_MISSING "RTC desligado!"
+#define TXT_IDLE_HIST_ERR "Hist. indisponivel"
+#define TXT_IDLE_LAST_FMT "Ult: %02d%s %02d:%02d"
 #define TXT_IDLE_SUSPENDED "Rega Suspensa"
 #define TXT_IDLE_DISABLED "Rega Desativada"
 #define TXT_TODAY "Hoje"
@@ -521,7 +527,7 @@
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Export watering history over Serial"
 #define TXT_TERM_HELP_7                                                        \
-  "  clear_history                - Permanently delete system watering history"
+  "  clear_history [force]        - Permanently delete history (force repairs FS)"
 #define TXT_TERM_HELP_8                                                        \
   "  reboot                       - Restart the controller"
 #define TXT_TERM_HELP_9                                                        \
@@ -580,6 +586,8 @@
 #define TXT_TERM_WIPING "Clearing watering history..."
 #define TXT_TERM_WIPE_OK "Watering history cleared successfully."
 #define TXT_TERM_WIPE_FAIL "Error: Failed to clear watering history."
+#define TXT_TERM_ERR_CLEAR_HIST_ARGS                                           \
+  "Error: Invalid argument. Usage: clear_history [force]"
 #define TXT_TERM_REBOOT "Restarting Lawn & Order controller..."
 #define TXT_TERM_STOP_OK "Watering stopped successfully."
 #define TXT_TERM_STOP_IDLE "No watering currently active."
@@ -629,6 +637,7 @@
 #define TXT_LOG_START_TEST_ONE "Starting test for Zone %d (%s) for %lu s"
 #define TXT_LOG_WATER_INT "Watering stopped early"
 #define TXT_LOG_ZONE_OOB "Invalid zone %u (must be 1-%u) - stopping"
+#define TXT_LOG_ZONE_MAX_CAP "Zone %u exceeded safety time cap (%lu s) - forcing OFF"
 #define TXT_LOG_ZONE_DONE_WAIT "Zone %d finished - pausing %lu s before next zone"
 #define TXT_LOG_CYCLE_DONE "Watering finished"
 #define TXT_LOG_CYCLE_NO_DUR "Stopped under 30 s - too short to save to history"
@@ -859,8 +868,7 @@
 #define TXT_TERM_HELP_6                                                        \
   "  export_history               - Exporta o historico de regas por Serie"
 #define TXT_TERM_HELP_7                                                        \
-  "  clear_history                - Apaga permanentemente o historico de regas " \
-  "do sistema"
+  "  clear_history [force]        - Apaga o historico (force repara o FS)"
 #define TXT_TERM_HELP_8                                                        \
   "  reboot                       - Reinicia o controlador"
 #define TXT_TERM_HELP_9                                                        \
@@ -920,6 +928,8 @@
 #define TXT_TERM_WIPING "A limpar o historico de regas..."
 #define TXT_TERM_WIPE_OK "Historico de regas limpo com sucesso."
 #define TXT_TERM_WIPE_FAIL "Erro: Falha ao apagar o historico de regas."
+#define TXT_TERM_ERR_CLEAR_HIST_ARGS                                           \
+  "Erro: Argumento invalido. Use: clear_history [force]"
 #define TXT_TERM_REBOOT "A reiniciar o controlador Lawn & Order..."
 #define TXT_TERM_STOP_OK "Rega parada com sucesso."
 #define TXT_TERM_STOP_IDLE "Nenhuma rega ativa de momento."
@@ -971,6 +981,7 @@
 #define TXT_LOG_START_TEST_ONE "A iniciar teste para Zona %d (%s) por %lu s"
 #define TXT_LOG_WATER_INT "Rega parada antes do fim"
 #define TXT_LOG_ZONE_OOB "Zona invalida %u (valido 1-%u) - a parar"
+#define TXT_LOG_ZONE_MAX_CAP "Zona %u excedeu limite de seguranca (%lu s) - a desligar"
 #define TXT_LOG_ZONE_DONE_WAIT                                                 \
   "Zona %d concluida - pausa de %lu s antes da proxima zona"
 #define TXT_LOG_CYCLE_DONE "Rega concluida"

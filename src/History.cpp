@@ -60,6 +60,7 @@ bool History::begin(bool formatOnFail) {
     _log_suspended = false;
     _log_suppressed_total = 0;
     _log_suppressed_warn_err = 0;
+    _lastMountRetryMs = millis();
 
     _ready = LittleFS.begin(false);
     if (!_ready) {
@@ -311,19 +312,14 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
     return n;
 }
 
-bool History::clear() {
-    if (!_ready) {
-        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
-        return false;
-    }
-    
+bool History::clear(bool forceFormat) {
+    // Close active rotation/export streams before unlinking or formatting FS
     if (_rotState != RotState::IDLE) {
         if (_rotSrc) _rotSrc.close();
         if (_rotDst) _rotDst.close();
-        LittleFS.remove(HIST_TMP_FILE);
         _rotState = RotState::IDLE;
     }
-    
+
     if (_exportState != ExportState::IDLE) {
         if (_exportFile) _exportFile.close();
         _exportState = ExportState::IDLE;
@@ -332,14 +328,49 @@ bool History::clear() {
         _log_suppressed_total = 0;
         _log_suppressed_warn_err = 0;
     }
-    
-    if (LittleFS.exists(HIST_PENDING_FILE)) {
-        LittleFS.remove(HIST_PENDING_FILE);
+
+    if (!_ready) {
+        if (!forceFormat) {
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+            return false;
+        }
+        esp_task_wdt_reset();
+        _ready = LittleFS.begin(true);
+        esp_task_wdt_reset();
+        if (!_ready) {
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMAT_FAIL);
+            return false;
+        }
+        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
+    } else {
+        bool unlinkFailed = false;
+        if (LittleFS.exists(HIST_TMP_FILE) && !LittleFS.remove(HIST_TMP_FILE)) {
+            unlinkFailed = true;
+        }
+        if (LittleFS.exists(HIST_PENDING_FILE) && !LittleFS.remove(HIST_PENDING_FILE)) {
+            unlinkFailed = true;
+        }
+        if (LittleFS.exists(HISTORY_FILE) && !LittleFS.remove(HISTORY_FILE)) {
+            unlinkFailed = true;
+        }
+        if (unlinkFailed) {
+            if (!forceFormat) {
+                LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
+                return false;
+            }
+            // Directory/file corruption on a mounted FS requires end()+format()
+            LittleFS.end();
+            esp_task_wdt_reset();
+            _ready = LittleFS.format() && LittleFS.begin(false);
+            esp_task_wdt_reset();
+            if (!_ready) {
+                LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMAT_FAIL);
+                return false;
+            }
+            LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
+        }
     }
-    if (LittleFS.exists(HISTORY_FILE) && !LittleFS.remove(HISTORY_FILE)) {
-        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
-        return false;
-    }
+
     _lineCount = 0;
     _cacheCount = 0;
     _pendingCacheSave = false;
@@ -608,6 +639,16 @@ void History::_rotateAndAppend(const char* newLine) {
 }
 
 void History::update() {
+    if (!_ready) {
+        if (!gState.watering.active) {
+            uint32_t nowMs = millis();
+            if (nowMs - _lastMountRetryMs >= 86400000UL) {
+                _lastMountRetryMs = nowMs;
+                begin(false);
+            }
+        }
+        return;
+    }
     if (_rotState == RotState::IDLE && _exportState == ExportState::IDLE) return;
 
     if (_rotState == RotState::COPYING) {

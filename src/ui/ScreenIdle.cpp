@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "../Scheduler.h"
 #include "../RTClock.h"
+#include "../History.h"
 #include <RTClib.h>
 
 void ScreenIdle::onEnter(UI& ui) {
@@ -18,7 +19,10 @@ void ScreenIdle::onEnter(UI& ui) {
     _lastNextM = 0xFF;
     _lastZoneIdx = 0xFF;
     _lastRtcValid = !gState.rtc_valid;
+    _lastRtcPresent = !rtclock.isPresent();
     _lastBatteryLow = !rtclock.isBatteryLow();
+    _lastHistReady = !history.isReady();
+    _lastHistCount = 0xFFFF;
     render(ui);
 }
 
@@ -48,7 +52,9 @@ void ScreenIdle::update(UI& ui) {
     }
 
     if (_lastRtcValid != gState.rtc_valid) needsRender = true;
+    if (_lastRtcPresent != rtclock.isPresent()) needsRender = true;
     if (_lastBatteryLow != rtclock.isBatteryLow()) needsRender = true;
+    if (_lastHistReady != history.isReady() || _lastHistCount != history.entryCount()) needsRender = true;
     if (_lastSuspended != gState.suspended) needsRender = true;
     if (_lastMode != gState.mode) needsRender = true;
     if (_lastNextH != gState.next_hour || _lastNextM != gState.next_min) needsRender = true;
@@ -73,10 +79,15 @@ void ScreenIdle::fullRender(UI& ui) {
     _lastNextM = gState.next_min;
     _lastZoneIdx = gState.watering.zone_idx;
     _lastRtcValid = gState.rtc_valid;
+    const bool rtcPresent = rtclock.isPresent();
+    _lastRtcPresent = rtcPresent;
     const bool batLow = rtclock.isBatteryLow();
     _lastBatteryLow = batLow;
+    const bool histReady = history.isReady();
+    _lastHistReady = histReady;
+    _lastHistCount = history.entryCount();
 
-    char b0[LCD_COLS+1], b1[LCD_COLS+1], b3[LCD_COLS+1];
+    char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
 
     if (gState.rtc_valid) {
         char tstr[8];
@@ -98,13 +109,37 @@ void ScreenIdle::fullRender(UI& ui) {
         const char* statusLine = gState.watering.is_waiting ? TXT_IDLE_WAITING : TXT_IDLE_WATERING;
         ui.getDisplay().setRows(b0, statusLine, zrow, pb);
     } else {
-        const char* batLine = batLow ? ui.getDisplay().cx(b1, TXT_IDLE_RTC_BAT) : "";
+        const char* warnLine = "";
+        if (batLow) {
+            warnLine = ui.getDisplay().cx(b1, TXT_IDLE_RTC_BAT);
+        } else if (!rtcPresent) {
+            warnLine = ui.getDisplay().cx(b1, TXT_IDLE_RTC_MISSING);
+        }
+
+        const char* lastLine = "";
+        if (!histReady) {
+            lastLine = ui.getDisplay().cx(b2, TXT_IDLE_HIST_ERR);
+        } else {
+            HistoryEntry lastEntry = {};
+            if (history.readLast(1, &lastEntry) == 1) {
+                static const char* MON[] = {
+                    "", TXT_MONTH_JAN, TXT_MONTH_FEB, TXT_MONTH_MAR, TXT_MONTH_APR, TXT_MONTH_MAY, TXT_MONTH_JUN,
+                    TXT_MONTH_JUL, TXT_MONTH_AUG, TXT_MONTH_SEP, TXT_MONTH_OCT, TXT_MONTH_NOV, TXT_MONTH_DEC
+                };
+                uint8_t m = (lastEntry.month >= 1 && lastEntry.month <= 12) ? lastEntry.month : 0;
+                char lstr[LCD_COLS + 1];
+                snprintf(lstr, sizeof(lstr), TXT_IDLE_LAST_FMT,
+                         (int)lastEntry.day, MON[m], (int)lastEntry.hour, (int)lastEntry.min);
+                lastLine = ui.getDisplay().cx(b2, lstr);
+            }
+        }
+
         if (!gState.rtc_valid) {
-            ui.getDisplay().setRows(b0, batLine, "", ui.getDisplay().cx(b3, TXT_IDLE_SET_TIME));
+            ui.getDisplay().setRows(b0, warnLine, lastLine, ui.getDisplay().cx(b3, TXT_IDLE_SET_TIME));
         } else if (gState.suspended) {
-            ui.getDisplay().setRows(b0, batLine, ui.getDisplay().cx(b3, TXT_IDLE_SUSPENDED), "");
+            ui.getDisplay().setRows(b0, warnLine, lastLine, ui.getDisplay().cx(b3, TXT_IDLE_SUSPENDED));
         } else if (gState.mode == AppMode::DESATIVADO) {
-            ui.getDisplay().setRows(b0, batLine, ui.getDisplay().cx(b3, TXT_IDLE_DISABLED), "");
+            ui.getDisplay().setRows(b0, warnLine, lastLine, ui.getDisplay().cx(b3, TXT_IDLE_DISABLED));
         } else {
             char nxstr[LCD_COLS+1];
             uint32_t nextDay1970 = 0;
@@ -126,7 +161,7 @@ void ScreenIdle::fullRender(UI& ui) {
             } else {
                 snprintf(nxstr, sizeof(nxstr), TXT_NEXT_NONE);
             }
-            ui.getDisplay().setRows(b0, batLine, "", ui.getDisplay().cx(b3, nxstr));
+            ui.getDisplay().setRows(b0, warnLine, lastLine, ui.getDisplay().cx(b3, nxstr));
         }
     }
 }

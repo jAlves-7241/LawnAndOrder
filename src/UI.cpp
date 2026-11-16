@@ -89,8 +89,7 @@ void UI::update() {
     bool hadInput = (rot != 0 || click);
 
     if (hadInput && (!_d.isBacklightOn() || !_d.isDisplayOn())) {
-        _d.displayOn();
-        _d.backlightOn();
+        _d.wake(_currentScreen != nullptr);
         _lastActivity = millis();
         if (_currentScreen) _currentScreen->render(*this);
         return;
@@ -120,6 +119,11 @@ void UI::update() {
     } else if (gState.backlight_timeout_ms == BACKLIGHT_TIMEOUT_NEVER) {
         if (!_d.isDisplayOn()) _d.displayOn();
         if (!_d.isBacklightOn()) _d.backlightOn();
+    }
+
+    if (_currentScreen == &_screenIdle && !_inSetup && !gState.watering.active &&
+        _d.needsPeriodicRecover()) {
+        _d.recover(true);
     }
 
     if (_currentScreen) {
@@ -175,6 +179,14 @@ void UI::advanceSetup() {
 // ─────────────────────────────────────────────────────────
 // Dispatch / Actions
 // ─────────────────────────────────────────────────────────
+void UI::flagConfigChanged() {
+    if (_inSetup) {
+        _configChanged = true;
+        return;
+    }
+    _configChanged = !storage.save();
+}
+
 void UI::syncSetupState() {
     _configChanged = false;
     if (!gState.setup_done) {
@@ -312,8 +324,10 @@ void UI::dispatchAction(const char* action) {
                 }
             }
         }
-        _configChanged = true;
-        scheduler.onModeChanged();
+        flagConfigChanged();
+        if (!_inSetup) {
+            scheduler.onModeChanged();
+        }
         
         if (_inSetup) {
             if (gState.mode == AppMode::PERSONALIZADO) {
@@ -386,7 +400,7 @@ void UI::dispatchAction(const char* action) {
         gState.auto_dst = !gState.auto_dst;
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_DST_TOGGLED,
               gState.auto_dst ? TXT_SER_ENABLED : TXT_SER_DISABLED);
-        _configChanged = true;
+        flagConfigChanged();
         if (gState.rtc_valid) {
             rtclock.refreshLocalTime();
         }
@@ -411,7 +425,7 @@ void UI::dispatchAction(const char* action) {
             LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_BL_SEC,
                   (unsigned long)(gState.backlight_timeout_ms / 1000UL));
         }
-        _configChanged = true;
+        flagConfigChanged();
         _d.displayOn();
         _d.backlightOn();
         _lastActivity = millis();
@@ -431,7 +445,7 @@ void UI::dispatchAction(const char* action) {
         gState.suspended = false;
         gState.suspended_until = 0;
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_CANCELED);
-        _configChanged = true;
+        flagConfigChanged();
         _screenDone.setup(TXT_PAUSE_CANCELED, "");
         _screenDone.setBackMenu(MenuID::MAIN);
         changeScreen(&_screenDone);

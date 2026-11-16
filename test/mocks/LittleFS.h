@@ -11,26 +11,44 @@ public:
     bool mountFail = false;
     bool writeFail = false;
     bool readFail = false;
+    bool formatFail = false;
+    bool removeFail = false;
 
     void reset() {
         mountFail = false;
         writeFail = false;
         readFail = false;
+        formatFail = false;
+        removeFail = false;
         files.clear();
     }
 
     bool begin(bool formatOnFail = true) {
         if (mountFail) {
-            if (formatOnFail) {
+            if (formatOnFail && !formatFail) {
+                files.clear();
                 mountFail = false;
                 writeFail = false;
                 readFail = false;
+                removeFail = false;
                 return true;
             }
             return false;
         }
         return true;
     }
+
+    bool format() {
+        if (formatFail) return false;
+        files.clear();
+        mountFail = false;
+        writeFail = false;
+        readFail = false;
+        removeFail = false;
+        return true;
+    }
+
+    void end() {}
 
     File open(const char* path, const char* mode = "r") {
         if (!path) return File();
@@ -54,7 +72,7 @@ public:
     }
 
     bool remove(const char* path) {
-        if (!path) return false;
+        if (!path || removeFail) return false;
         files.erase(path);
         return true;
     }

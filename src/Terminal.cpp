@@ -132,7 +132,8 @@ static bool parseExactSetTime(const char* s, int& yr, int& mo, int& dy,
 // ═════════════════════════════════════════════════════════
 
 Terminal::Terminal()
-    : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _pendingClearAtMs(0),
+    : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _pendingClearForce(false),
+      _pendingClearAtMs(0),
       _ansi_buf{}, _in_ansi(false), _ansi_bytes(0), _ignore_rest(false),
       _tailDirty(false), _last_c(0)
 {
@@ -143,6 +144,7 @@ void Terminal::begin() {
     _bufLen = 0;
     _cursorPos = 0;
     _pendingClearHistory = false;
+    _pendingClearForce = false;
     _pendingClearAtMs = 0;
     _in_ansi = false;
     _ansi_bytes = 0;
@@ -246,6 +248,7 @@ void Terminal::_drainInput() {
     _bufLen = 0;
     _cursorPos = 0;
     _pendingClearHistory = false;
+    _pendingClearForce = false;
     _pendingClearAtMs = 0;
     _in_ansi = false;
     _ignore_rest = false;
@@ -411,6 +414,7 @@ bool Terminal::_handleControlChar(char c) {
         _ignore_rest = false;
         if (_pendingClearHistory) {
             _pendingClearHistory = false;
+            _pendingClearForce = false;
             _pendingClearAtMs = 0;
             Serial.println(TXT_TERM_CANCELLED);
             Serial.println();
@@ -463,6 +467,7 @@ void Terminal::_insertChar(char c) {
         _bufLen = 0;
         _cursorPos = 0;
         _pendingClearHistory = false;
+        _pendingClearForce = false;
         _pendingClearAtMs = 0;
         _tailDirty = false;
         _ignore_rest = true;
@@ -487,6 +492,7 @@ void Terminal::update() {
     if (_pendingClearHistory && (uint32_t)(millis() - _pendingClearAtMs) >= IDLE_TIMEOUT_MS) {
         _clearLine();
         _pendingClearHistory = false;
+        _pendingClearForce = false;
         _pendingClearAtMs = 0;
         Serial.println(TXT_TERM_WIPE_EXPIRED);
         Serial.println();
@@ -526,7 +532,9 @@ void Terminal::_processCommand(char *cmd) {
     // Handle pending clear_history confirmation
     if (_pendingClearHistory) {
         bool expired = (uint32_t)(millis() - _pendingClearAtMs) >= IDLE_TIMEOUT_MS;
+        bool force = _pendingClearForce;
         _pendingClearHistory = false;
+        _pendingClearForce = false;
         _pendingClearAtMs = 0;
         if (expired) {
             Serial.println(TXT_TERM_WIPE_EXPIRED);
@@ -535,7 +543,7 @@ void Terminal::_processCommand(char *cmd) {
         if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 ||
             strcasecmp(trimmed, "s") == 0 || strcasecmp(trimmed, "sim") == 0)) {
             Serial.println(TXT_TERM_WIPING);
-            if (history.clear()) {
+            if (history.clear(force)) {
                 // Reposicionar ecrã físico para Idle para refletir o histórico limpo
                 // imediatamente (sem sair do wizard de configuração inicial)
                 if (!ui.inSetup()) {
@@ -794,8 +802,17 @@ void Terminal::_cmdExportHistory(char* /*args*/) {
     history.startExport(true);
 }
 
-void Terminal::_cmdClearHistory(char* /*args*/) {
-    if (history.isReady() && history.entryCount() == 0) {
+void Terminal::_cmdClearHistory(char* args) {
+    bool force = false;
+    if (args && *args != '\0') {
+        if (strcasecmp(args, "force") == 0 || strcasecmp(args, "--force") == 0) {
+            force = true;
+        } else {
+            Serial.println(TXT_TERM_ERR_CLEAR_HIST_ARGS);
+            return;
+        }
+    }
+    if (!force && history.isReady() && history.entryCount() == 0) {
         Serial.println(TXT_TERM_HIST_EMPTY);
         return;
     }
@@ -803,6 +820,7 @@ void Terminal::_cmdClearHistory(char* /*args*/) {
     Serial.print(TXT_TERM_WIPE_CONFIRM);
     Serial.print(" ");
     _pendingClearHistory = true;
+    _pendingClearForce = force;
     _pendingClearAtMs = millis();
 }
 

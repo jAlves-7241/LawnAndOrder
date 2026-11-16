@@ -16,7 +16,10 @@ public:
 
     Display();
     void begin();
-    void recover(); // Re-initializes without forcing backlight/display ON if they were OFF
+    void recover(bool quiet = false, bool flushShadow = true); // Re-initializes without forcing backlight/display ON if they were OFF
+    void wake(bool hasRenderer); // Turns display/backlight on while avoiding stale shadow flush before render
+    void onRecoveryThrottled() { if (_inErrorCallback) _errorDeferred = true; }
+    bool needsPeriodicRecover(uint32_t intervalMs = 6UL * 3600UL * 1000UL) const;
     void setErrorCallback(ErrorCallback cb) { _onError = cb; }
     bool hasBusFault() const { return _busFault; }
 
@@ -55,9 +58,18 @@ private:
     bool _displayOn;
     bool _busFault = false;
     bool _commErrWarned = false;
+    bool _hasRecoverAttempt = false;
+    bool _inErrorCallback = false;
+    bool _errorDeferred = false;
     uint8_t _consecErrors = 0;
+    uint8_t _recoverAttempts = 0;
+    uint32_t _recoverExecSeq = 0;
     uint32_t _lastRecoverMs = 0;
+    uint32_t _recoverCooldownMs = 10000UL;
+    uint32_t _lastPeriodicRecoverMs = 0;
     ErrorCallback _onError = nullptr;
+
+    static uint32_t _cooldownForAttempts(uint8_t attempts);
 
     // Shadow buffer - only writes row if content actually changed
     char _shadow[LCD_ROWS][LCD_COLS + 1];

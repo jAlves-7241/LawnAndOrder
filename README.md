@@ -49,7 +49,7 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 |---|---|
 | I2C SDA / SCL (LCD + RTC) | GPIO 21 / GPIO 22 |
 | Encoder CLK / DT / SW | GPIO 32 / GPIO 33 / GPIO 25 |
-| Relé Zona 1 / 2 / 3 / 4 | GPIO 26 / 27 / 14 / 13 |
+| Relé Zona 1 / 2 / 3 / 4 | GPIO 26 / 27 / 18 / 13 |
 
 > O ficheiro `diagram.json` contém o esquema de ligações pronto a usar no simulador Wokwi.
 
@@ -124,7 +124,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute full suite (128 tests across 9 suites)
+# Execute full suite (135 tests across 9 suites)
 pio test -e native
 
 # Filter by module (e.g. scheduler, watering, terminal, ui)
@@ -146,7 +146,7 @@ Disponível através de `pio device monitor` ou qualquer terminal série:
 | `export_config` | Exporta a configuração atual como string hexadecimal |
 | `import_config <hex>` | Importa configuração v5 a partir de string hexadecimal de 72 carateres com CRC-16 (rejeitada durante rega ativa) |
 | `export_history` | Exporta todo o histórico de regas em CSV via Serial |
-| `clear_history` | Apaga permanentemente o histórico de regas (pede confirmação) |
+| `clear_history [force]` | Apaga permanentemente o histórico de regas (pede confirmação; `force`/`--force` formata LittleFS em erro persistente) |
 | `stop` | Aborta imediatamente a rega ativa |
 | `reboot` | Reinicia o controlador |
 | `i2c_scan` | Executa um scan ao barramento I2C |

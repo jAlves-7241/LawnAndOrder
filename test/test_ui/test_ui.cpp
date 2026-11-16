@@ -679,6 +679,226 @@ void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(voi
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_IDLE_SET_TIME) != nullptr);
 }
 
+void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
+    gState.setup_done = true;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    history.clear();
+    testUi.begin();
+    testUi.goIdle();
+
+    // 1. Immediate save on UI edit without waiting for goIdle()
+    gState.backlight_timeout_ms = 120000UL;
+    storage.save();
+    testUi.dispatchAction("bl:60000");
+    TEST_ASSERT_EQUAL_UINT32(60000UL, gState.backlight_timeout_ms);
+    gState.backlight_timeout_ms = 120000UL;
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL_UINT32(60000UL, gState.backlight_timeout_ms);
+
+    // 2. Wake from displayOff() runs quiet Display::recover(true) without recovery log spam
+    testDisp.displayOff();
+    testDisp.backlightOff();
+    uint32_t prevClears = testDisp._lcd.clearCalls;
+    Serial.reset();
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+    TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_RECOVERED) == std::string::npos);
+#endif
+
+    // 3. Periodic 6h LCD re-init while idle, display ON, and not watering
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    testUi.goIdle();
+    prevClears = testDisp._lcd.clearCalls;
+    advanceMockMillis(6UL * 3600UL * 1000UL);
+    Serial.reset();
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_RECOVERED) == std::string::npos);
+#endif
+
+    // 4. Exponential backoff on persistent LCD I2C failure (10s -> 60s -> 300s)
+    _i2cRecoverCallbackCalls = 0;
+    testDisp.setErrorCallback(_mockI2cRecoverCb);
+    testDisp._lcd.mockI2cError = 1;
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+
+    advanceMockMillis(10000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(2, _i2cRecoverCallbackCalls);
+
+    // After 2nd attempt, cooldown becomes 60s (10s is not enough)
+    advanceMockMillis(10000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(2, _i2cRecoverCallbackCalls);
+
+    advanceMockMillis(50000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(3, _i2cRecoverCallbackCalls);
+
+    // After 3rd attempt, cooldown becomes 300s (60s is not enough)
+    advanceMockMillis(60000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(3, _i2cRecoverCallbackCalls);
+
+    testDisp._lcd.mockI2cError = 0;
+    testDisp.setRows("OK0", "OK1", "OK2", "OK3");
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    TEST_ASSERT_EQUAL_UINT32(10000UL, testDisp._recoverCooldownMs);
+    testDisp.setErrorCallback(nullptr);
+
+    // 5. ScreenIdle shows Last watering, History unavail, and RTC disconnected
+    HistoryEntry he = { 2026, 6, 14, 8, 30, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(he);
+    testUi.goIdle();
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "14") != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "08:30") != nullptr);
+
+    history._ready = false;
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), TXT_IDLE_HIST_ERR) != nullptr);
+    history._ready = true;
+
+    rtclock._found = false;
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_MISSING) != nullptr);
+}
+
+static Display* _throttledDispPtr = nullptr;
+static uint8_t  _throttledCbCalls = 0;
+static bool     _simulateThrottle = false;
+static void _mockThrottledI2cRecoverCb(void) {
+    _throttledCbCalls++;
+    if (_simulateThrottle && _throttledDispPtr) {
+        _throttledDispPtr->onRecoveryThrottled();
+    }
+}
+
+void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void) {
+    // 1. Setup wizard defers NVS writes (including sel:4 custom mode) until completion
+    gState.setup_done = false;
+    gState.mode = AppMode::DESATIVADO;
+    storage.save();
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    testUi.begin();
+    TEST_ASSERT_TRUE(testUi.inSetup());
+    testUi.dispatchAction("sel:4");
+    TEST_ASSERT_EQUAL(AppMode::PERSONALIZADO, gState.mode);
+    // NVS must still retain pre-wizard state until setup finishes
+    AppState snapshot = gState;
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_FALSE(gState.setup_done);
+    TEST_ASSERT_EQUAL(AppMode::DESATIVADO, gState.mode);
+    gState = snapshot;
+
+    testUi.dispatchAction("setup_advance"); // CUSTOM_CONFIG -> ZONE_CONFIG
+    testUi.dispatchAction("setup_advance"); // ZONE_CONFIG -> COMPLETE
+    simulateClick(testUi);                  // COMPLETE -> save & goIdle
+    TEST_ASSERT_TRUE(gState.setup_done);
+    TEST_ASSERT_FALSE(testUi.inSetup());
+    gState.mode = AppMode::DESATIVADO;
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::PERSONALIZADO, gState.mode);
+
+    // 2. Wake from displayOff() does NOT flush stale shadow text prior to ScreenIdle::render()
+    gState.backlight_timeout_ms = 60000UL;
+    testUi.goIdle();
+    testDisp.displayOff();
+    testDisp.backlightOff();
+    rtclock.set(2026, 6, 15, 11, 5, 0);
+    uint32_t prevClears = testDisp._lcd.clearCalls;
+    testDisp._lcd.printCalls = 0;
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+    TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(4, testDisp._lcd.printCalls);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "11:05") != nullptr);
+
+    // 3. 6h periodic LCD recovery is suppressed when watering, in setup, or under bus fault
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    testUi.goIdle();
+    advanceMockMillis(6UL * 3600UL * 1000UL);
+    prevClears = testDisp._lcd.clearCalls;
+    gState.watering.active = true;
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT32(prevClears, testDisp._lcd.clearCalls);
+    gState.watering.active = false;
+
+    testUi.setInSetup(true);
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT32(prevClears, testDisp._lcd.clearCalls);
+    testUi.setInSetup(false);
+
+    testDisp._busFault = true;
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT32(prevClears, testDisp._lcd.clearCalls);
+    testDisp._busFault = false;
+    testUi.update(); // now all guards are clear -> 6h recover executes
+    TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+
+    // 4. Shared recoverI2C() throttle defers without escalating backoff; full 300s backoff fires 4th attempt
+    _throttledDispPtr = &testDisp;
+    _throttledCbCalls = 0;
+    _simulateThrottle = true;
+    testDisp.setErrorCallback(_mockThrottledI2cRecoverCb);
+    testDisp._lcd.mockI2cError = 1;
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(1, _throttledCbCalls);
+    TEST_ASSERT_EQUAL_UINT8(0, testDisp._recoverAttempts);
+    TEST_ASSERT_EQUAL_UINT32(10000UL, testDisp._recoverCooldownMs);
+
+    _simulateThrottle = false;
+    advanceMockMillis(10000UL);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D"); // attempt 1 -> 10s
+    TEST_ASSERT_EQUAL_UINT8(2, _throttledCbCalls);
+    TEST_ASSERT_EQUAL_UINT8(1, testDisp._recoverAttempts);
+
+    advanceMockMillis(10000UL);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D"); // attempt 2 -> 60s
+    TEST_ASSERT_EQUAL_UINT8(3, _throttledCbCalls);
+    advanceMockMillis(60000UL);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D"); // attempt 3 -> 300s
+    TEST_ASSERT_EQUAL_UINT8(4, _throttledCbCalls);
+    TEST_ASSERT_EQUAL_UINT32(300000UL, testDisp._recoverCooldownMs);
+
+    advanceMockMillis(299999UL);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D"); // still inside 300s
+    TEST_ASSERT_EQUAL_UINT8(4, _throttledCbCalls);
+    advanceMockMillis(1UL);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D"); // fires 4th attempt at 300s
+    TEST_ASSERT_EQUAL_UINT8(5, _throttledCbCalls);
+
+    testDisp._lcd.mockI2cError = 0;
+    testDisp.setRows("OK0", "OK1", "OK2", "OK3");
+    testDisp.setErrorCallback(nullptr);
+
+    // 5. Cold boot missing RTC (!gState.rtc_valid && !isPresent) shows RTC missing on Row 1 + Set Time on Row 3,
+    //    and battery-low warning takes priority over !isPresent; verify formatted Last watering date
+    HistoryEntry he = { 2026, 6, 14, 8, 30, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(he);
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = false;
+    gState.rtc_valid = false;
+    TEST_ASSERT_FALSE(rtclock.begin());
+    testUi.goIdle();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "--:--") != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_MISSING) != nullptr);
+    char expectedLast[LCD_COLS + 1];
+    snprintf(expectedLast, sizeof(expectedLast), TXT_IDLE_LAST_FMT, 14, TXT_MONTH_JUN, 8, 30);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), expectedLast) != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_IDLE_SET_TIME) != nullptr);
+
+    rtclock._batteryLow = true;
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) != nullptr);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -696,5 +916,7 @@ int main(void) {
     RUN_TEST(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
     RUN_TEST(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
     RUN_TEST(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
+    RUN_TEST(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
+    RUN_TEST(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
     return UNITY_END();
 }

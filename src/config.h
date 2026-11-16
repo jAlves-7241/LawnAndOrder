@@ -31,10 +31,12 @@
 #define PIN_SW 25
 
 // ── Relay pins (active-LOW - relay board pulls IN to GND to close) ───────────
-// Adjust to your wiring. GPIO 26-27-14-13 are free on a standard DevKit.
+// Adjust to your wiring. GPIO 26-27-18-13 are free on a standard DevKit
+// (GPIO 18 avoids GPIO 14's ROM-boot PWM burst and stays safe on PSRAM/WROVER boards;
+// external 10k pull-ups on active-LOW relay inputs are still recommended).
 #define PIN_RELAY_1 26
 #define PIN_RELAY_2 27
-#define PIN_RELAY_3 14
+#define PIN_RELAY_3 18
 #define PIN_RELAY_4 13
 #define RELAY_ON LOW // change to HIGH if your board is active-HIGH
 #define RELAY_OFF HIGH

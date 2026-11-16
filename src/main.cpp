@@ -103,10 +103,13 @@ static inline void configureI2CTimeout() {
 
 void recoverI2C() {
     static uint32_t lastRecoverMs = 0;
+    static bool hasRecovered = false;
     uint32_t now = millis();
-    if (lastRecoverMs != 0 && (now - lastRecoverMs) < 10000UL) {
+    if (hasRecovered && (now - lastRecoverMs) < 10000UL) {
+        display.onRecoveryThrottled();
         return;
     }
+    hasRecovered = true;
     lastRecoverMs = now;
     esp_task_wdt_reset();
     LOG_W(TXT_LOG_TAG_I2C, TXT_LOG_I2C_REC_START);
@@ -288,6 +291,7 @@ void loop() {
 #if LOG_LEVEL >= LVL_WARN
     uint32_t loopStartMs = millis();
     static uint32_t lastSlowLogMs = 0;
+    static bool hasSlowLogged = false;
 #endif
     esp_task_wdt_reset();   // Alimentar o Watchdog em cada ciclo do loop
     rtclock.update();       // reads DS3231 into gState.now once/sec
@@ -300,7 +304,8 @@ void loop() {
     uint32_t loopEndMs = millis();
     uint32_t loopDurMs = loopEndMs - loopStartMs;
     if (loopDurMs >= 2000UL &&
-        (lastSlowLogMs == 0 || (loopEndMs - lastSlowLogMs) >= 30000UL)) {
+        (!hasSlowLogged || (loopEndMs - lastSlowLogMs) >= 30000UL)) {
+        hasSlowLogged = true;
         lastSlowLogMs = loopEndMs;
         LOG_W(TXT_LOG_TAG_SYS, TXT_LOG_SLOW_LOOP, (unsigned long)(loopDurMs / 1000UL));
     }
