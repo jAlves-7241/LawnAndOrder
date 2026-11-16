@@ -102,7 +102,7 @@ test/
 * `test_scheduler_on_watering_done_does_not_skip_adjacent_minute_slot`: Verifies completing a cycle at `07:59:15` does not skip an upcoming `08:00` slot.
 * `test_scheduler_cycle_expired_bounds_and_overflow_safety`: Verifies `isCycleExpired()` rejects zero or out-of-range `remaining_duration_sec` without `uint32_t` wraparound.
 * `test_scheduler_last_triggers_persist_across_reboot`: Verifies `sched_tr` NVS persistence blocks duplicate DST fallback triggers across reboots.
-* `test_scheduler_clock_set_clears_last_triggers`: Verifies `rtclock.revision()` changes clear cached/persisted trigger locks when time is set manually.
+* `test_scheduler_clock_set_clears_last_triggers`: Verifies `rtclock.manualRevision()` changes clear cached/persisted trigger locks when time is set manually.
 * `test_scheduler_recovery_max_age_2h`: Verifies absolute `RECOVERY_MAX_AGE_S` (7200s / 2h) expiration ceiling (`+1s` boundary), minute-based `TXT_LOG_SCHED_REC_DUR` logging, and quiet `onModeChanged(false)` refresh.
 * `test_scheduler_catchup_grace_window_and_guards`: Verifies 30-min missed-slot catch-up, duplicate suppression, manual `set()` guard, midnight wrap, and DST spring-forward skipped-hour catch-up.
 * `test_scheduler_catchup_exact_boundaries_and_dst_fallback`: Verifies exact 1800s/1801s window boundary, 1-min wall jump (`120s`), continuous manual `set()`/`onModeChanged()`, `!rtc_valid`/active-recovery/`MAX_RECOVERY_RETRIES`/suspension guards, first-hour DST fall-back catch-up without double watering, and spring-forward bounds.
