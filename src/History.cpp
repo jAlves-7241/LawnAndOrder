@@ -60,6 +60,7 @@ bool History::begin(bool formatOnFail) {
     _log_suspended = false;
     _log_suppressed_total = 0;
     _log_suppressed_warn_err = 0;
+    _lastMountRetryMs = millis();
 
     _ready = LittleFS.begin(false);
     if (!_ready) {
@@ -311,10 +312,18 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
     return n;
 }
 
-bool History::clear() {
+bool History::clear(bool forceFormat) {
     if (!_ready) {
-        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
-        return false;
+        if (!forceFormat) {
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+            return false;
+        }
+        _ready = LittleFS.begin(true);
+        if (!_ready) {
+            LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMAT_FAIL);
+            return false;
+        }
+        LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
     }
     
     if (_rotState != RotState::IDLE) {
@@ -608,6 +617,14 @@ void History::_rotateAndAppend(const char* newLine) {
 }
 
 void History::update() {
+    if (!_ready) {
+        uint32_t nowMs = millis();
+        if (nowMs - _lastMountRetryMs >= 86400000UL) {
+            _lastMountRetryMs = nowMs;
+            begin(false);
+        }
+        return;
+    }
     if (_rotState == RotState::IDLE && _exportState == ExportState::IDLE) return;
 
     if (_rotState == RotState::COPYING) {

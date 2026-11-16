@@ -13,6 +13,7 @@ private:
     uint16_t _bufLen = 0;
     uint16_t _cursorPos = 0;
     bool _pendingClearHistory = false;
+    bool _pendingClearForce = false;
     uint32_t _pendingClearAtMs = 0;
     char _ansi_buf[8] = {};
 

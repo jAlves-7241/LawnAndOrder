@@ -26,7 +26,7 @@ public:
     bool    begin(bool formatOnFail = true);
     void    record(const HistoryEntry& entry);
     uint8_t readLast(uint8_t count, HistoryEntry out[]) const;
-    bool     clear();
+    bool     clear(bool forceFormat = false);
     bool     isReady() const;
     uint16_t entryCount() const;
 
@@ -41,6 +41,7 @@ public:
 private:
     bool     _ready = false;
     uint16_t _lineCount = 0;   // cached line count - avoids re-reading file on every record()
+    uint32_t _lastMountRetryMs = 0;
 
     enum class RotState { IDLE, COPYING, FINISHING };
     RotState _rotState = RotState::IDLE;

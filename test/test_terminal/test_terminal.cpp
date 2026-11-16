@@ -662,7 +662,16 @@ void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     terminal.update();
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_FAIL) != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) == std::string::npos);
-    history._ready = true;
+
+    // 5. clear_history force repairs failed LittleFS mount after confirmation
+    LittleFS.mountFail = true;
+    Serial.reset();
+    Serial.feedInput("clear_history force\n");
+    terminal.update();
+    Serial.feedInput("y\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
 }
 
 void test_terminal_status_reports_and_clears_rtc_battery_warning(void) {

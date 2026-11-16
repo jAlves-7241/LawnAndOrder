@@ -513,6 +513,46 @@ void test_history_rotation_read_failure_preserves_original_file(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::MANUAL, latest[0].trigger);
 }
 
+void test_history_periodic_remount_and_force_repair(void) {
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+
+    // Seed NVS history cache so guarded begin() refuses auto-format
+    HistoryEntry sample[HISTORY_DISPLAY] = {};
+    sample[0] = { 2026, 5, 10, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    storage.saveHistoryCache(sample, sizeof(sample), 1, 28);
+
+    LittleFS.mountFail = true;
+    TEST_ASSERT_FALSE(history.begin(true));
+    TEST_ASSERT_FALSE(history.isReady());
+
+    // Plain clear() remains blocked while unmounted
+    TEST_ASSERT_FALSE(history.clear(false));
+    TEST_ASSERT_FALSE(history.isReady());
+
+    // Clear transient mount error -> periodic 24h update() remounts non-destructively
+    LittleFS.mountFail = false;
+    LittleFS.files[HISTORY_FILE] = "2026-05-10T08:00,A,10,0,0,0\r\n";
+    advanceMockMillis(86400000UL - 1000UL);
+    history.update();
+    TEST_ASSERT_FALSE(history.isReady());
+
+    advanceMockMillis(1000UL);
+    history.update();
+    TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // Persistent mount failure can be explicitly repaired via clear(true)
+    LittleFS.mountFail = true;
+    TEST_ASSERT_FALSE(history.begin(true));
+    TEST_ASSERT_FALSE(history.isReady());
+    TEST_ASSERT_TRUE(history.clear(true));
+    TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+    TEST_ASSERT_FALSE(storage.hasHistoryData());
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -533,5 +573,6 @@ int main(void) {
     RUN_TEST(test_history_rejects_test_trigger_and_long_corrupt_line);
     RUN_TEST(test_history_rotation_double_fail_export_suppression_and_guards);
     RUN_TEST(test_history_rotation_read_failure_preserves_original_file);
+    RUN_TEST(test_history_periodic_remount_and_force_repair);
     return UNITY_END();
 }
