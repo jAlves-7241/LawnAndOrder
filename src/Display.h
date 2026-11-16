@@ -16,7 +16,8 @@ public:
 
     Display();
     void begin();
-    void recover(); // Re-initializes without forcing backlight/display ON if they were OFF
+    void recover(bool quiet = false); // Re-initializes without forcing backlight/display ON if they were OFF
+    bool needsPeriodicRecover(uint32_t intervalMs = 6UL * 3600UL * 1000UL) const;
     void setErrorCallback(ErrorCallback cb) { _onError = cb; }
     bool hasBusFault() const { return _busFault; }
 
@@ -56,7 +57,10 @@ private:
     bool _busFault = false;
     bool _commErrWarned = false;
     uint8_t _consecErrors = 0;
+    uint8_t _recoverAttempts = 0;
     uint32_t _lastRecoverMs = 0;
+    uint32_t _recoverCooldownMs = 10000UL;
+    uint32_t _lastPeriodicRecoverMs = 0;
     ErrorCallback _onError = nullptr;
 
     // Shadow buffer - only writes row if content actually changed

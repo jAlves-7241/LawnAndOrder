@@ -679,6 +679,96 @@ void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(voi
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_IDLE_SET_TIME) != nullptr);
 }
 
+void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
+    gState.setup_done = true;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    history.clear();
+    testUi.begin();
+    testUi.goIdle();
+
+    // 1. Immediate save on UI edit without waiting for goIdle()
+    gState.backlight_timeout_ms = 120000UL;
+    storage.save();
+    testUi.dispatchAction("bl:60000");
+    TEST_ASSERT_EQUAL_UINT32(60000UL, gState.backlight_timeout_ms);
+    gState.backlight_timeout_ms = 120000UL;
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL_UINT32(60000UL, gState.backlight_timeout_ms);
+
+    // 2. Wake from displayOff() runs quiet Display::recover(true) without recovery log spam
+    testDisp.displayOff();
+    testDisp.backlightOff();
+    uint32_t prevClears = testDisp._lcd.clearCalls;
+    Serial.reset();
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+    TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_RECOVERED) == std::string::npos);
+#endif
+
+    // 3. Periodic 6h LCD re-init while idle, display ON, and not watering
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    testUi.goIdle();
+    prevClears = testDisp._lcd.clearCalls;
+    advanceMockMillis(6UL * 3600UL * 1000UL);
+    Serial.reset();
+    testUi.update();
+    TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_RECOVERED) == std::string::npos);
+#endif
+
+    // 4. Exponential backoff on persistent LCD I2C failure (10s -> 60s -> 300s)
+    _i2cRecoverCallbackCalls = 0;
+    testDisp.setErrorCallback(_mockI2cRecoverCb);
+    testDisp._lcd.mockI2cError = 1;
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(1, _i2cRecoverCallbackCalls);
+
+    advanceMockMillis(10000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(2, _i2cRecoverCallbackCalls);
+
+    // After 2nd attempt, cooldown becomes 60s (10s is not enough)
+    advanceMockMillis(10000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(2, _i2cRecoverCallbackCalls);
+
+    advanceMockMillis(50000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(3, _i2cRecoverCallbackCalls);
+
+    // After 3rd attempt, cooldown becomes 300s (60s is not enough)
+    advanceMockMillis(60000);
+    for (int i = 0; i < 3; i++) testDisp.setRows("A", "B", "C", "D");
+    TEST_ASSERT_EQUAL_UINT8(3, _i2cRecoverCallbackCalls);
+
+    testDisp._lcd.mockI2cError = 0;
+    testDisp.setRows("OK0", "OK1", "OK2", "OK3");
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    TEST_ASSERT_EQUAL_UINT32(10000UL, testDisp._recoverCooldownMs);
+    testDisp.setErrorCallback(nullptr);
+
+    // 5. ScreenIdle shows Last watering, History unavail, and RTC disconnected
+    HistoryEntry he = { 2026, 6, 14, 8, 30, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(he);
+    testUi.goIdle();
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "14") != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "08:30") != nullptr);
+
+    history._ready = false;
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), TXT_IDLE_HIST_ERR) != nullptr);
+    history._ready = true;
+
+    rtclock._found = false;
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_MISSING) != nullptr);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -696,5 +786,6 @@ int main(void) {
     RUN_TEST(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
     RUN_TEST(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
     RUN_TEST(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
+    RUN_TEST(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
     return UNITY_END();
 }

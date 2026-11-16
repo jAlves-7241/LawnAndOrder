@@ -36,7 +36,7 @@ public:
     void syncSetupState();
     void refreshClockEditors();
 
-    void flagConfigChanged() { _configChanged = true; }
+    void flagConfigChanged();
     bool executeConfirmed(const char* tag);
     void dispatchAction(const char* action);
 

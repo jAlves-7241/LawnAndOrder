@@ -30,8 +30,11 @@ void Display::begin() {
     _invalidateShadow();
     _lastFullRefresh = millis();
     _lastAttemptMs = _lastFullRefresh;
+    _lastPeriodicRecoverMs = _lastFullRefresh;
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = _busFault ? 1 : 0;
+    _recoverAttempts = 0;
+    _recoverCooldownMs = 10000UL;
     _commErrWarned = false;
     if (_busFault) {
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_INIT_FAIL);
@@ -40,7 +43,7 @@ void Display::begin() {
     }
 }
 
-void Display::recover() {
+void Display::recover(bool quiet) {
     _lcd.clearError();
     _lcd.init(false);
     if (_backlightOn) {
@@ -73,12 +76,21 @@ void Display::recover() {
         }
     }
     _lastAttemptMs = millis();
+    _lastPeriodicRecoverMs = _lastAttemptMs;
     if (_busFault) {
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
     } else {
         _commErrWarned = false;
-        LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
+        _recoverAttempts = 0;
+        _recoverCooldownMs = 10000UL;
+        if (!quiet) {
+            LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
+        }
     }
+}
+
+bool Display::needsPeriodicRecover(uint32_t intervalMs) const {
+    return _displayOn && !_busFault && (millis() - _lastPeriodicRecoverMs) >= intervalMs;
 }
 
 void Display::backlightOn() {
@@ -189,7 +201,7 @@ void Display::setRows(const char* r0, const char* r1,
         _invalidateShadow();
         _busFault = true;
         uint32_t now = millis();
-        bool inCooldown = (_lastRecoverMs != 0 && (now - _lastRecoverMs) < 10000UL);
+        bool inCooldown = (_lastRecoverMs != 0 && (now - _lastRecoverMs) < _recoverCooldownMs);
         if (!inCooldown) {
             if (_consecErrors < 255) _consecErrors++;
             if (_consecErrors >= 3) {
@@ -199,6 +211,14 @@ void Display::setRows(const char* r0, const char* r1,
                 }
                 _lastRecoverMs = now;
                 _consecErrors = 0;
+                if (_recoverAttempts < 255) _recoverAttempts++;
+                if (_recoverAttempts <= 1) {
+                    _recoverCooldownMs = 10000UL;
+                } else if (_recoverAttempts == 2) {
+                    _recoverCooldownMs = 60000UL;
+                } else {
+                    _recoverCooldownMs = 300000UL;
+                }
                 if (_onError) {
                     _onError();
                 } else {
@@ -209,6 +229,8 @@ void Display::setRows(const char* r0, const char* r1,
     } else if (wroteAny) {
         _busFault = false;
         _consecErrors = 0;
+        _recoverAttempts = 0;
+        _recoverCooldownMs = 10000UL;
         _commErrWarned = false;
     }
 }
