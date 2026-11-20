@@ -10,16 +10,20 @@ public:
 
     bool mountFail = false;
     bool writeFail = false;
+    bool partialWriteFail = false;
     bool readFail = false;
     bool formatFail = false;
     bool removeFail = false;
+    bool bufferedSize = false;
 
     void reset() {
         mountFail = false;
         writeFail = false;
+        partialWriteFail = false;
         readFail = false;
         formatFail = false;
         removeFail = false;
+        bufferedSize = false;
         files.clear();
     }
 
@@ -29,6 +33,7 @@ public:
                 files.clear();
                 mountFail = false;
                 writeFail = false;
+                partialWriteFail = false;
                 readFail = false;
                 removeFail = false;
                 return true;
@@ -43,6 +48,7 @@ public:
         files.clear();
         mountFail = false;
         writeFail = false;
+        partialWriteFail = false;
         readFail = false;
         removeFail = false;
         return true;
@@ -57,17 +63,17 @@ public:
 
         if (m == "w") {
             files[p] = "";
-            return File(p, m, &files[p], &writeFail);
+            return File(p, m, &files[p], &writeFail, nullptr, &bufferedSize, &partialWriteFail);
         } else if (m == "a") {
             if (files.find(p) == files.end()) {
                 files[p] = "";
             }
-            return File(p, m, &files[p], &writeFail);
+            return File(p, m, &files[p], &writeFail, nullptr, &bufferedSize, &partialWriteFail);
         } else {
             // Read mode
             auto it = files.find(p);
             if (it == files.end()) return File();
-            return File(p, m, &it->second, nullptr, &readFail);
+            return File(p, m, &it->second, nullptr, &readFail, &bufferedSize, nullptr);
         }
     }
 

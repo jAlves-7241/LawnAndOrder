@@ -192,22 +192,54 @@ void test_history_cache_fifo_eviction(void) {
 void test_history_deferred_queue_when_busy(void) {
     history.clear();
 
-    // Simulate disk operation in progress
-    history._rotState = History::RotState::COPYING;
+    // Seed 1 record so export can run
+    HistoryEntry base = { 2026, 8, 1, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(base);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // Start async export so disk is busy, then queue 3 deferred entries (full 3-slot ring)
+    TEST_ASSERT_TRUE(history.startExport());
+    TEST_ASSERT_TRUE(history.isExporting());
+
+    HistoryEntry d1 = { 2026, 8, 10, 8, 0, { 11, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    HistoryEntry d2 = { 2026, 8, 11, 8, 0, { 12, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    HistoryEntry d3 = { 2026, 8, 12, 8, 0, { 13, 0, 0, 0 }, WaterTrigger::CUSTOM, 0 };
+    history.record(d1);
+    history.record(d2);
+    history.record(d3);
+
+    // None written yet while exporting
+    TEST_ASSERT_NOT_EQUAL(history._defHead, history._defTail);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // Finish export -> FOOTER drains d1 immediately; d2 and d3 stay queued
+    int safety = 100;
+    while (history.isExporting() && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+    TEST_ASSERT_NOT_EQUAL(history._defHead, history._defTail);
+
+    // Enqueue d4 while d2/d3 are still waiting -> must stay strictly behind d3 (no reordering)
+    HistoryEntry d4 = { 2026, 8, 13, 8, 0, { 14, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(d4);
+
+    // Subsequent IDLE update() ticks drain d2, d3, d4 one per tick without stranding
+    history.update();
+    TEST_ASSERT_EQUAL_UINT16(3, history.entryCount());
+    history.update();
+    TEST_ASSERT_EQUAL_UINT16(4, history.entryCount());
+    history.update();
+    TEST_ASSERT_EQUAL_UINT16(5, history.entryCount());
     TEST_ASSERT_EQUAL_UINT8(history._defHead, history._defTail);
 
-    HistoryEntry deferred = { 2026, 8, 10, 8, 0, { 15, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
-    history.record(deferred);
-
-    // Entry should be held in deferred queue without writing to disk yet
-    TEST_ASSERT_NOT_EQUAL(history._defHead, history._defTail);
-    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
-
-    // Restore state and drain queue (simulating completion)
-    history._rotState = History::RotState::IDLE;
-    history._defTail = (history._defTail + 1) % 4;
-    history.record(deferred);
-    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    // Cache holds the latest 3 entries in exact chronological order: days 11, 12, 13
+    HistoryEntry out[3] = {};
+    TEST_ASSERT_EQUAL_UINT8(3, history.readLast(3, out));
+    TEST_ASSERT_EQUAL_UINT8(11, out[0].day);
+    TEST_ASSERT_EQUAL_UINT8(12, out[1].day);
+    TEST_ASSERT_EQUAL_UINT8(13, out[2].day);
 }
 
 void test_history_export_stream(void) {
@@ -609,6 +641,76 @@ void test_history_remount_watering_guard_and_clear_edge_cases(void) {
 #endif
 }
 
+void test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv(void) {
+    // 1. Buffered VFSFileImpl::size() emulation: record() must flush/close before saving fsize to NVS
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    LittleFS.bufferedSize = true;
+    gState.rtc_valid = true;
+    TEST_ASSERT_TRUE(history.begin(true));
+
+    HistoryEntry e1 = { 2026, 9, 1, 7, 30, { 8, 6, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e1);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // Stored NVS fileSize must equal actual flushed file size (NOT 0!)
+    HistoryEntry nvsCache[HISTORY_DISPLAY] = {};
+    uint16_t nvsCount = 0;
+    uint32_t nvsFsize = 0;
+    TEST_ASSERT_TRUE(storage.loadHistoryCache(nvsCache, sizeof(nvsCache), nvsCount, &nvsFsize));
+    TEST_ASSERT_EQUAL_UINT16(1, nvsCount);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)LittleFS.files[HISTORY_FILE].size(), nvsFsize);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, nvsFsize);
+
+    // Fresh boot must load directly from NVS quick cache without FS rebuild
+    Serial.reset();
+    History fresh;
+    TEST_ASSERT_TRUE(fresh.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(1, fresh.entryCount());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_FS_REASON_REBUILD) == std::string::npos);
+
+    // 2. Partial write failure must be rejected cleanly in both sync record() and async rotation
+    LittleFS.partialWriteFail = true;
+    HistoryEntry ePartial = { 2026, 9, 2, 7, 30, { 10, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(ePartial);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount()); // NOT incremented on partial write
+    LittleFS.partialWriteFail = false;
+
+    // 3. Rotation when file has more valid lines than _lineCount preserves newest tail entries
+    history.clear();
+    std::string oversized;
+    oversized.reserve((HISTORY_MAX_ENTRIES + 12) * 32);
+    for (int i = 0; i < HISTORY_MAX_ENTRIES + 10; i++) {
+        oversized.append("2026-06-01T08:00,A,10,0,0,0\r\n");
+    }
+    oversized.append("2026-06-29T09:15,M,7,0,0,0\r\n");
+    oversized.append("2026-06-30T10:20,C,9,0,0,0\r\n");
+    LittleFS.files[HISTORY_FILE] = std::move(oversized);
+    history._lineCount = HISTORY_MAX_ENTRIES; // Deliberately underestimated by 12 lines
+
+    HistoryEntry newest = { 2026, 7, 1, 11, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(newest);
+    int safety = 1000;
+    while (history._rotState != History::RotState::IDLE && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
+    // Tail entries 2026-06-29 and 2026-06-30 must NOT have been cut off!
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-29T09:15,M,7,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-30T10:20,C,9,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-07-01T11:00,A,5,0,0,0") != std::string::npos);
+
+    // 4. Stricter _lineToEntry() checks: missing zone comma, trigger garbage, non-numeric dur, invalid calendar day
+    HistoryEntry parsed = {};
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,Mabc,10,0,0,0", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,M,abc,0,0,0", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,M,10x,0,0,0", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-02-29T10:00,A,10,0,0,0", parsed)); // 2026 not leap
+    TEST_ASSERT_TRUE(History::_lineToEntry("2028-02-29T10:00,A,10,0,0,0", parsed));  // 2028 leap
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -631,5 +733,6 @@ int main(void) {
     RUN_TEST(test_history_rotation_read_failure_preserves_original_file);
     RUN_TEST(test_history_periodic_remount_and_force_repair);
     RUN_TEST(test_history_remount_watering_guard_and_clear_edge_cases);
+    RUN_TEST(test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv);
     return UNITY_END();
 }

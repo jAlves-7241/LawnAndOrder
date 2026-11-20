@@ -49,10 +49,10 @@ private:
     File _rotSrc;
     File _rotDst;
     uint16_t _rotDiscard = 0;
-    uint16_t _rotKeep = 0;
     uint16_t _rotSkipped = 0;
     uint16_t _rotCopied = 0;
     uint16_t _rotCorruptLines = 0;
+    uint32_t _rotExpectedBytes = 0;
 
     char _rotLineBuf[LINE_BUF] = {};
     size_t _rotLinePos = 0;
@@ -83,8 +83,13 @@ private:
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
     static char* _trimLineBuffer(char* buf, size_t& pos);
+    static bool _writeCsvLine(File& f, const char* line);
     uint16_t    _countLines() const;
+    uint32_t    _fileSize(const char* path) const;
     uint32_t    _currentFileSize() const;
+    void        _pushCache(const HistoryEntry& entry);
+    void        _recordNow(const HistoryEntry& entry);
+    void        _drainOneDeferred();
     void        _rotateAndAppend(const char* newLine);
     void        _populateCache();
 };

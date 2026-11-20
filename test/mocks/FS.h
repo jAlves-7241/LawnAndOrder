@@ -17,19 +17,36 @@ public:
     std::string mode;
     std::string* contentPtr = nullptr;
     size_t readPos = 0;
+    size_t committedSize = 0;
     bool isOpen = false;
     bool* writeFailPtr = nullptr;
+    bool* partialWritePtr = nullptr;
     bool* readFailPtr = nullptr;
+    bool* bufferedSizePtr = nullptr;
 
-    File() : contentPtr(nullptr), readPos(0), isOpen(false), writeFailPtr(nullptr), readFailPtr(nullptr) {}
+    File() : contentPtr(nullptr), readPos(0), committedSize(0), isOpen(false),
+             writeFailPtr(nullptr), partialWritePtr(nullptr),
+             readFailPtr(nullptr), bufferedSizePtr(nullptr) {}
     File(const std::string& p, const std::string& m, std::string* ptr,
-         bool* wfPtr = nullptr, bool* rfPtr = nullptr)
-        : path(p), mode(m), contentPtr(ptr), readPos(0), isOpen(true),
-          writeFailPtr(wfPtr), readFailPtr(rfPtr) {}
+         bool* wfPtr = nullptr, bool* rfPtr = nullptr,
+         bool* bufSizePtr = nullptr, bool* pwPtr = nullptr)
+        : path(p), mode(m), contentPtr(ptr), readPos(0),
+          committedSize(ptr ? ptr->size() : 0), isOpen(true),
+          writeFailPtr(wfPtr), partialWritePtr(pwPtr),
+          readFailPtr(rfPtr), bufferedSizePtr(bufSizePtr) {}
 
     operator bool() const { return isOpen && contentPtr != nullptr; }
 
+    void flush() {
+        if (isOpen && contentPtr) {
+            committedSize = contentPtr->size();
+        }
+    }
+
     void close() {
+        if (isOpen && contentPtr) {
+            committedSize = contentPtr->size();
+        }
         isOpen = false;
         contentPtr = nullptr;
     }
@@ -50,9 +67,21 @@ public:
     size_t println(const char* s) {
         if (!isOpen || !contentPtr) return 0;
         if (writeFailPtr && *writeFailPtr) return 0;
+        std::string full = (s ? std::string(s) : std::string()) + "\r\n";
+        if (partialWritePtr && *partialWritePtr) {
+            size_t half = full.size() / 2;
+            if (half == 0) half = 1;
+            contentPtr->append(full.data(), half);
+            if (!(bufferedSizePtr && *bufferedSizePtr)) {
+                committedSize = contentPtr->size();
+            }
+            return half;
+        }
         size_t prevLen = contentPtr->size();
-        if (s) contentPtr->append(s);
-        contentPtr->append("\r\n");
+        contentPtr->append(full);
+        if (!(bufferedSizePtr && *bufferedSizePtr)) {
+            committedSize = contentPtr->size();
+        }
         return contentPtr->size() - prevLen;
     }
 
@@ -83,6 +112,10 @@ public:
     }
 
     size_t size() const {
-        return contentPtr ? contentPtr->size() : 0;
+        if (!contentPtr) return 0;
+        if (bufferedSizePtr && *bufferedSizePtr) {
+            return committedSize;
+        }
+        return contentPtr->size();
     }
 };
