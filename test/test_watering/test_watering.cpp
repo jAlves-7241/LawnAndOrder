@@ -125,7 +125,7 @@ void test_watering_test_run_does_not_log_to_history(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::TEST, wateringCtrl._runTrigger);
     TEST_ASSERT_EQUAL_UINT32(ZONE_TEST_DURATION_S * 1000UL, wateringCtrl._queue[0].duration_ms);
 
-    // Advance past test duration (30s) + dead-time
+    // Advance past test duration (ZONE_TEST_DURATION_S) + dead-time
     advanceMockMillis(60);
     wateringCtrl.update(); // starts relay
     advanceMockMillis(ZONE_TEST_DURATION_S * 1000UL + 100);
@@ -763,6 +763,127 @@ void test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log(void) {
     TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_2));
 }
 
+void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
+    // 1. Cycle started without valid RTC must NOT log bogus 2026-01-01 if clock is set mid-cycle
+    history.clear();
+    gState.rtc_valid = false;
+    gState.now = { 2026, 1, 1, 0, 0, 0, 4, 0 };
+    gState.zones[0] = { "Z1", true, 1 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+
+    // User sets clock mid-cycle
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 9, 0, 0, 1, DateTime(2026, 6, 15, 8, 0, 0).unixtime() };
+    advanceMockMillis(60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+
+    // 2. Aborted valid blackout recovery (MAX_RECOVERY_RETRIES) logs already-watered partial minutes
+    history.clear();
+    DateTime startUtc(2026, 6, 15, 7, 0, 0); // 08:00 WEST
+    gState.auto_dst = true;
+    gState.mode = AppMode::MEDIO;
+    gState.now = { 2026, 6, 15, 8, 15, 0, 1, startUtc.unixtime() + 900UL };
+
+    RecoveryState rs = {};
+    rs.version = NVS_VERSION;
+    rs.active = true;
+    rs.start_unix_time = startUtc.unixtime();
+    rs.queuePos = 1;
+    rs.queueLen = 2;
+    rs.queue[0] = { 0, 5UL * 60000UL };
+    rs.queue[1] = { 1, 5UL * 60000UL };
+    rs.zone_dur_min[0] = 5;
+    rs.zone_dur_min[1] = 2;
+    rs.trigger = WaterTrigger::AUTO;
+    rs.retry_count = MAX_RECOVERY_RETRIES;
+    storage.saveRecoveryState(rs);
+
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    HistoryEntry partial[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, partial));
+    TEST_ASSERT_EQUAL_UINT16(2026, partial[0].year);
+    TEST_ASSERT_EQUAL_UINT8(6, partial[0].month);
+    TEST_ASSERT_EQUAL_UINT8(15, partial[0].day);
+    TEST_ASSERT_EQUAL_UINT8(8, partial[0].hour);
+    TEST_ASSERT_EQUAL_UINT8(0, partial[0].min);
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, partial[0].trigger);
+    TEST_ASSERT_EQUAL_UINT8(5, partial[0].zone_dur[0]);
+    TEST_ASSERT_EQUAL_UINT8(2, partial[0].zone_dur[1]);
+
+    // 3. Aborted expired cycle also logs partial minutes, while corrupt recovery must NOT log
+    history.clear();
+    rs.retry_count = 0;
+    gState.now = { 2026, 6, 15, 11, 0, 0, 1, startUtc.unixtime() + 10800UL }; // 3h > 2h max age
+    storage.saveRecoveryState(rs);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    history.clear();
+    rs.queue[1].duration_ms = 0; // structurally invalid!
+    rs.retry_count = MAX_RECOVERY_RETRIES;
+    storage.saveRecoveryState(rs);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+
+    // 4. Single-zone recovery completion logs TXT_LOG_REC_STABLE, and early stop on resumed zone logs cumulative min
+    gState.mode = AppMode::DESATIVADO;
+    gState.now = { 2026, 6, 15, 8, 10, 0, 1, startUtc.unixtime() + 600UL };
+    RecoveryState srs = {};
+    srs.version = NVS_VERSION;
+    srs.active = true;
+    srs.start_unix_time = startUtc.unixtime();
+    srs.queuePos = 0;
+    srs.queueLen = 1;
+    srs.queue[0] = { 0, 2UL * 60000UL };
+    srs.zone_dur_min[0] = 4; // 4 min already watered before blackout
+    srs.trigger = WaterTrigger::MANUAL;
+    srs.retry_count = 0;
+    storage.saveRecoveryState(srs);
+
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    Serial.reset();
+    advanceMockMillis(2UL * 60000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+#if LOG_LEVEL >= LVL_INFO
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_REC_STABLE) != std::string::npos);
+#endif
+
+    // Resumed zone with 4 prior min stopped early after 20s logs cumulative 4 min (not "20s")
+    storage.saveRecoveryState(srs);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    advanceMockMillis(20000UL);
+    Serial.reset();
+    wateringCtrl.stop();
+#if LOG_LEVEL >= LVL_INFO
+    char expectedCum[128];
+    snprintf(expectedCum, sizeof(expectedCum), TXT_LOG_ZONE_DEACTIVATED_INT,
+             1, gState.zones[0].name, 4U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedCum) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -783,5 +904,6 @@ int main(void) {
     RUN_TEST(test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings);
     RUN_TEST(test_watering_max_zone_cap_and_periodic_pin_refresh);
     RUN_TEST(test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log);
+    RUN_TEST(test_watering_mid_cycle_rtc_set_and_aborted_recovery_history);
     return UNITY_END();
 }

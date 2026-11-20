@@ -2,7 +2,8 @@
 #include "log.h"
 #include "i18n.h"
 #include <esp_timer.h>
-#include <driver/gpio.h>
+#include <soc/gpio_struct.h>
+#include <hal/gpio_ll.h>
 
 Encoder* volatile Encoder::_inst = nullptr;
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
@@ -50,7 +51,7 @@ void IRAM_ATTR Encoder::_isr() {
     _inst->_last_isr_us = now_us;
     _inst->_has_last_isr = true;
 
-    int16_t d = (gpio_get_level((gpio_num_t)_inst->_dt) == 0) ? 1 : -1;
+    int16_t d = (gpio_ll_get_level(&GPIO, (uint32_t)_inst->_dt) == 0) ? 1 : -1;
     if (d > 0) {
         if (_inst->_delta < 32000) _inst->_delta += d;
     } else {

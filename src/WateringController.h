@@ -37,7 +37,7 @@ private:
     bool     _active;
     bool     _isWaiting;
     bool     _isRelayDeadTimeWaiting;
-    bool     _recoveryRetryPending;
+    bool     _cycleStartValid;
     uint8_t  _recoveryRetryCount;
     uint8_t  _zoneIdx;
     uint32_t _zoneStartMs;
