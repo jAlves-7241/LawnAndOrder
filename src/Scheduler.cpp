@@ -10,7 +10,7 @@ Scheduler scheduler;
 
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
-    : _lastMin(0xFF), _lastSec(0xFF),
+    : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0),
       _lastManualClockRev(0), _catchUpPending(false), _prevLocalWallUnix(0)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
@@ -20,6 +20,7 @@ Scheduler::Scheduler()
 void Scheduler::begin() {
     _lastSec = 0xFF;
     _lastMin = 0xFF;
+    _lastClockRev = rtclock.revision();
     _lastManualClockRev = rtclock.manualRevision();
     _prevLocalWallUnix = 0;
     _catchUpPending = !gState.suspended && !wateringCtrl.isActive();
@@ -51,18 +52,27 @@ void Scheduler::clearLastTriggers() {
 
 // ─────────────────────────────────────────────────────────
 void Scheduler::update() {
+    bool clockChanged = false;
+    if (rtclock.revision() != _lastClockRev) {
+        _lastClockRev = rtclock.revision();
+        clockChanged = true;
+    }
     if (rtclock.manualRevision() != _lastManualClockRev) {
         _lastManualClockRev = rtclock.manualRevision();
         clearLastTriggers();
         _catchUpPending = false;
         _prevLocalWallUnix = 0;
+        clockChanged = true;
     }
 
     if (!gState.rtc_valid)  return;
 
-    // Apenas processar se o segundo do relogio tiver mudado (reducao de carga sobre o CPU)
-    if (gState.now.sec == _lastSec) return;
+    // Apenas processar se o segundo do relogio tiver mudado ou apos salto/acerto de relogio
+    if (!clockChanged && gState.now.sec == _lastSec) return;
     _lastSec = gState.now.sec;
+    if (clockChanged) {
+        _lastMin = 0xFF;
+    }
 
     const SystemTime& t = gState.now;
 
@@ -125,6 +135,10 @@ void Scheduler::update() {
                                   (int)sched.slots[i].hour, (int)sched.slots[i].minute);
                             break;
                         }
+                        if (!_hasEnabledZones()) {
+                            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
+                            break;
+                        }
                         _lastTriggerUnix[i] = t.unix;
                         storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
                         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_AUTO_START,
@@ -145,6 +159,29 @@ void Scheduler::update() {
     }
 }
 
+bool Scheduler::_hasEnabledZones() {
+    for (int z = 0; z < NUM_ZONES; z++) {
+        if (gState.zones[z].enabled && gState.zones[z].duration_min > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+uint32_t Scheduler::_resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc, bool* outDstSkipped) {
+    DateTime slotUtc = RTClock::localToUtc(slotLocal, afterUtc);
+    DateTime roundTrip = RTClock::utcToLocal(slotUtc);
+    uint32_t effSlotUtc = slotUtc.unixtime();
+    const bool dstSkipped = (roundTrip.hour() != slotLocal.hour() ||
+                             roundTrip.minute() != slotLocal.minute());
+    if (dstSkipped) {
+        const uint32_t minSec = (uint32_t)slotLocal.minute() * 60UL;
+        if (effSlotUtc >= minSec) effSlotUtc -= minSec;
+    }
+    if (outDstSkipped) *outDstSkipped = dstSkipped;
+    return effSlotUtc;
+}
+
 bool Scheduler::_tryCatchUp(const SystemTime& t) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return false;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
@@ -155,8 +192,10 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
 
     bool found = false;
     uint8_t bestIdx = 0;
+#if LOG_LEVEL >= LVL_INFO
     uint8_t bestHour = 0;
     uint8_t bestMin = 0;
+#endif
     uint32_t bestAge = 0xFFFFFFFFUL;
 
     for (int dayOff = 0; dayOff >= -1; dayOff--) {
@@ -176,14 +215,8 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
             const uint32_t afterUtc = (t.unix > SCHED_CATCHUP_WINDOW_S + 1UL)
                 ? (t.unix - SCHED_CATCHUP_WINDOW_S - 1UL)
                 : 0UL;
-            DateTime slotUtc = RTClock::localToUtc(slotLocal, afterUtc);
-            DateTime roundTrip = RTClock::utcToLocal(slotUtc);
-            uint32_t effSlotUtc = slotUtc.unixtime();
-            const bool dstSkipped = (roundTrip.hour() != sl.hour || roundTrip.minute() != sl.minute);
-            if (dstSkipped) {
-                const uint32_t minSec = (uint32_t)sl.minute * 60UL;
-                if (effSlotUtc >= minSec) effSlotUtc -= minSec;
-            }
+            bool dstSkipped = false;
+            uint32_t effSlotUtc = _resolveSlotUtc(slotLocal, afterUtc, &dstSkipped);
             if (t.unix < effSlotUtc) continue;
             if (!dstSkipped && t.unix == effSlotUtc) continue;
 
@@ -191,8 +224,10 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
             if (age <= SCHED_CATCHUP_WINDOW_S && (!found || age < bestAge)) {
                 found = true;
                 bestIdx = i;
+#if LOG_LEVEL >= LVL_INFO
                 bestHour = sl.hour;
                 bestMin = sl.minute;
+#endif
                 bestAge = age;
             }
         }
@@ -236,6 +271,8 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
 void Scheduler::onModeChanged(bool announceMode) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
     clearLastTriggers();
+    _lastClockRev = rtclock.revision();
+    _lastManualClockRev = rtclock.manualRevision();
     _lastSec = 0xFF;
     _catchUpPending = false;
     _prevLocalWallUnix = 0;
@@ -303,7 +340,7 @@ uint32_t Scheduler::getNextCycleUnix(SystemTime now) {
 
     DateTime dt(nextDay1970 * 86400UL);
     DateTime nextLocal(dt.year(), dt.month(), dt.day(), nextH, nextM, 0);
-    return RTClock::localToUtc(nextLocal, now.unix).unixtime();
+    return _resolveSlotUtc(nextLocal, now.unix);
 }
 
 // ─────────────────────────────────────────────────────────

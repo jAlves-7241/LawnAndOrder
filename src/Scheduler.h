@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <RTClib.h>
 #include "AppState.h"
 
 // ─────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ public:
 
     // Public utility: compute the next fire time for a given mode and
     // current time. Writes result into out_hour / out_min.
-    // Returns false if the mode has no schedule (DESATIVADO / PERSONALIZADO).
+    // Returns false if the mode has no schedule (e.g. DESATIVADO).
     bool computeNext(AppMode mode, const SystemTime& now,
                             uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970 = nullptr, bool writeBack = true);
 
@@ -64,13 +65,13 @@ private:
     // Returns true if the schedule is active on the given calendar day (since 1970).
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
     bool _tryCatchUp(const SystemTime& t);
-
-    // True while we're inside the trigger minute to prevent double-fire.
-
+    static bool _hasEnabledZones();
+    static uint32_t _resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc, bool* outDstSkipped = nullptr);
 
     // Last minute we checked - used to detect minute rollover.
     uint8_t _lastMin;
     uint8_t _lastSec;
+    uint32_t _lastClockRev;
     uint32_t _lastManualClockRev;
     bool _catchUpPending;
     uint32_t _prevLocalWallUnix;

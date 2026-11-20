@@ -23,7 +23,7 @@ void tearDown(void) {
 void test_scheduler_medio_next_slot(void) {
     gState.mode = AppMode::MEDIO;
 
-    // Morning: 05:00 -> next is 07:00
+    // Morning: 05:00 -> next is slot 0 (08:00)
     SystemTime now = { 2026, 6, 15, 5, 0, 0, 1, 1781500000UL };
     uint8_t nextH = 0, nextM = 0;
     bool ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM);
@@ -31,14 +31,14 @@ void test_scheduler_medio_next_slot(void) {
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT0_H, nextH);
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT0_M, nextM);
 
-    // Midday: 12:00 -> next is 21:30
+    // Midday: 12:00 -> next is slot 1 (20:00)
     now.hour = 12;
     ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_H, nextH);
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_M, nextM);
 
-    // Late night: 22:00 -> wraps to tomorrow 07:00
+    // Late night: 22:00 -> wraps to tomorrow slot 0 (08:00)
     now.hour = 22;
     ok = scheduler.computeNext(AppMode::MEDIO, now, nextH, nextM);
     TEST_ASSERT_TRUE(ok);
@@ -52,24 +52,24 @@ void test_scheduler_intenso_next_slot(void) {
     SystemTime now = { 2026, 6, 15, 4, 0, 0, 1, 1781500000UL };
     uint8_t nextH = 0, nextM = 0;
 
-    // 04:00 -> next is slot 0 (06:00)
+    // 04:00 -> next is slot 0 (07:00)
     bool ok = scheduler.computeNext(AppMode::INTENSO, now, nextH, nextM);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT0_H, nextH);
 
-    // 10:00 -> next is slot 1 (14:00)
+    // 10:00 -> next is slot 1 (13:00)
     now.hour = 10;
     ok = scheduler.computeNext(AppMode::INTENSO, now, nextH, nextM);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT1_H, nextH);
 
-    // 16:00 -> next is slot 2 (22:00)
+    // 16:00 -> next is slot 2 (21:00)
     now.hour = 16;
     ok = scheduler.computeNext(AppMode::INTENSO, now, nextH, nextM);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_UINT8(SCHED_INTENSO_SLOT2_H, nextH);
 
-    // 23:00 -> wraps to tomorrow slot 0 (06:00)
+    // 23:00 -> wraps to tomorrow slot 0 (07:00)
     now.hour = 23;
     ok = scheduler.computeNext(AppMode::INTENSO, now, nextH, nextM);
     TEST_ASSERT_TRUE(ok);
@@ -781,6 +781,149 @@ void test_scheduler_catchup_patterns_and_dense_slots(void) {
     wateringCtrl.stop();
 }
 
+void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
+    storage.begin();
+    gState.auto_dst = true;
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    // 1. Forward RTC drift (>300s) after completed 08:00 slot must NOT wipe _lastTriggerUnix or catch-up double-run
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = false;
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 7, 0, 0)); // 08:00 WEST
+    rtclock.begin();
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    const uint32_t trig0 = scheduler._lastTriggerUnix[0];
+    TEST_ASSERT_TRUE(trig0 > 0UL);
+    wateringCtrl.stop();
+
+    // Advance 5 min in software clock (08:05 WEST), then simulate RTC ahead by +6 min (08:11 WEST -> >300s drift)
+    advanceMockMillis(300000UL);
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 7, 11, 0)); // 08:11 WEST
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT8(8, gState.now.hour);
+    TEST_ASSERT_EQUAL_UINT8(11, gState.now.min);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(trig0, scheduler._lastTriggerUnix[0]);
+
+    // 2. Transient I2C glitch + hotplug OSF restore during October DST fall-back preserves sched_tr
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slot_count = 1;
+    cs.slots[0] = { 1, 15 };
+    gState.mode = AppMode::PERSONALIZADO;
+
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = false;
+    rtclock._rtc.adjust(DateTime(2026, 10, 25, 0, 15, 0)); // 01:15 WEST (first pass)
+    rtclock.begin();
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.clearLastTriggers();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    const uint32_t dstTrig = scheduler._lastTriggerUnix[0];
+    TEST_ASSERT_EQUAL_UINT32(DateTime(2026, 10, 25, 0, 15, 0).unixtime(), dstTrig);
+    wateringCtrl.stop();
+
+    // Simulate RTC drop + hotplug OSF restore at 01:30 WEST (00:30 UTC) -> bumps revision(), not manualRevision()
+    rtclock._found = false;
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(900000UL); // +15 min -> 00:30 UTC
+    rtclock.update();
+    scheduler.update();
+    TEST_ASSERT_EQUAL_UINT32(dstTrig, scheduler._lastTriggerUnix[0]);
+
+    // 45 min later at 01:15 WET (01:15 UTC): repeated hour must STILL be blocked
+    advanceMockMillis(2700000UL);
+    rtclock._rtc.adjust(DateTime(2026, 10, 25, 1, 15, 0));
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT8(1, gState.now.hour);
+    TEST_ASSERT_EQUAL_UINT8(15, gState.now.min);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // 3. Cold-boot with absent RTC followed by hotplug must preserve persisted NVS sched_tr before catch-up
+    gState.mode = AppMode::MEDIO;
+    uint32_t savedTr[MAX_SLOTS_PER_MODE] = { DateTime(2026, 6, 15, 7, 0, 0).unixtime(), 0, 0, 0 }; // 08:00 WEST already ran
+    storage.saveLastTriggers(savedTr, MAX_SLOTS_PER_MODE);
+
+    gState.rtc_valid = false;
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = false;
+    rtclock.begin();
+    scheduler = Scheduler();
+    scheduler.begin(); // loads savedTr from NVS, _catchUpPending = true
+
+    // Hotplug RTC at 08:10 WEST (within 30-min catch-up window of 08:00)
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = false;
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 7, 10, 0));
+    advanceMockMillis(35000UL);
+    rtclock.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(savedTr[0], scheduler._lastTriggerUnix[0]);
+}
+
+void test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump(void) {
+    storage.begin();
+    rtclock = RTClock();
+    rtclock.begin();
+    gState.auto_dst = true;
+
+    // 1. getNextCycleUnix() matches _tryCatchUp() spring-forward transition instant (01:00 UTC for skipped 01:45)
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slot_count = 1;
+    cs.slots[0] = { 1, 45 };
+    gState.mode = AppMode::PERSONALIZADO;
+
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 30, 0).unixtime()); // 00:30 WET before jump
+    uint32_t nextUnix = scheduler.getNextCycleUnix(gState.now);
+    TEST_ASSERT_EQUAL_UINT32(DateTime(2026, 3, 29, 1, 0, 0).unixtime(), nextUnix);
+
+    // 2. Exact-minute slot with all zones disabled does NOT write sched_tr to NVS
+    for (int i = 0; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.clearLastTriggers();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(0UL, scheduler._lastTriggerUnix[0]);
+    uint32_t persisted[MAX_SLOTS_PER_MODE] = { 99, 99, 99, 99 };
+    storage.loadLastTriggers(persisted, MAX_SLOTS_PER_MODE);
+    TEST_ASSERT_EQUAL_UINT32(0UL, persisted[0]);
+
+    // 3. Exact 60-minute mid-minute clock jump (07:00:15 -> 08:00:15, same min & sec) evaluates new hour slot immediately
+    gState.zones[0] = { "Z1", true, 5 };
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockLostPower = false;
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 6, 0, 15)); // 07:00:15 WEST
+    rtclock.begin();
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // Jump exactly +60 min (same min=0, same sec=15) via rtclock.set()
+    rtclock.set(2026, 6, 15, 8, 0, 15);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -804,5 +947,7 @@ int main(void) {
     RUN_TEST(test_scheduler_catchup_grace_window_and_guards);
     RUN_TEST(test_scheduler_catchup_exact_boundaries_and_dst_fallback);
     RUN_TEST(test_scheduler_catchup_patterns_and_dense_slots);
+    RUN_TEST(test_scheduler_non_manual_rtc_revisions_preserve_triggers);
+    RUN_TEST(test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump);
     return UNITY_END();
 }
