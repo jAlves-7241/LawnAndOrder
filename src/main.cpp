@@ -294,7 +294,7 @@ void loop() {
     static bool hasSlowLogged = false;
 #endif
     esp_task_wdt_reset();   // Alimentar o Watchdog em cada ciclo do loop
-    rtclock.update();       // reads DS3231 into gState.now once/sec
+    rtclock.update();       // advances software clock once/sec and polls DS3231 every 30 s
     scheduler.update();     // checks trigger, advances next_*, fires watering
     ui.update();            // handles encoder, redraws LCD
     wateringCtrl.update();  // advances zone timer, drives relays

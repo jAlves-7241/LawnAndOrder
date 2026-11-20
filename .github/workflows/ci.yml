@@ -37,9 +37,14 @@ jobs:
             ${{ runner.os }}-pio-native-
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.2.0
 
-      - name: Run unit tests
+      - name: Run unit tests (default configuration)
+        run: pio test -e native
+
+      - name: Run unit tests (EN UI + PT Serial + LOG_LEVEL=LVL_NONE)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DLOG_LEVEL=LVL_NONE -DMENU_WRAP_AROUND=0"
         run: pio test -e native
 
       - name: Run soak & wraparound tests (only if unit tests pass)
@@ -70,11 +75,16 @@ jobs:
             ${{ runner.os }}-pio-esp32-
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.2.0
 
       - name: Build firmware (alternate flags / EN UI + PT Serial + Debug)
         env:
           PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DLOG_LEVEL=LVL_DEBUG -DMENU_WRAP_AROUND=0"
+        run: pio run -e esp32dev
+
+      - name: Build firmware (LOG_LEVEL=LVL_NONE)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DLOG_LEVEL=LVL_NONE"
         run: pio run -e esp32dev
 
       - name: Build firmware (default release configuration)

@@ -23,9 +23,9 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 
 ## Decisões de projeto e limites operacionais
 
-- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila, a posição da zona, os minutos acumulados e o tempo restante da zona ativa em incrementos de `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar escritas na flash. Se faltar energia durante uma zona, ao reiniciar são executados apenas os minutos inteiros em falta (repetindo no máximo até ao intervalo do último checkpoint, <2 min). O contador `retry_count` só é limpo quando a zona conclui, limitando qualquer zona em falha periódica a `MAX_RECOVERY_RETRIES` (3) tentativas. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Para instalações em que qualquer repetição adicional não seja aceitável, usar um corte de água independente ou exigir confirmação manual após um blackout.
-- **Hora de verão**: a proteção contra a hora repetida no fim do DST persiste os marcadores de último disparo em NVS (`sched_tr`, com CRC-16) para evitar ativações duplicadas mesmo após reinício dentro da janela de recuo (2 h), sendo limpa ao alterar o modo ou acertar a hora manualmente.
-- **RTC indisponível**: no assistente inicial, é possível confirmar que se pretende continuar sem RTC. A interface e a rega manual continuam disponíveis. Sem uma hora válida, rega agendada, suspensões temporizadas e validação da retoma após blackout ficam inibidas. `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot; para operação automática persistente, defina/recupere o RTC.
+- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila, a posição da zona, os minutos acumulados e o tempo restante da zona ativa em incrementos de `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar escritas na flash. Se faltar energia durante uma zona, ao reiniciar são executados apenas os minutos inteiros em falta (repetindo no máximo até ao intervalo do último checkpoint, <2 min). O contador `retry_count` só é limpo quando a zona conclui, limitando qualquer zona em falha periódica a `MAX_RECOVERY_RETRIES` (3) tentativas. Quando uma retoma válida é abortada (limite de tentativas, expiração ou suspensão), os minutos já regados antes da falha são registados no histórico antes de limpar o estado. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Para instalações em que qualquer repetição adicional não seja aceitável, usar um corte de água independente ou exigir confirmação manual após um blackout.
+- **Hora de verão**: a proteção contra a hora repetida no fim do DST persiste os marcadores de último disparo em NVS (`sched_tr`, com CRC-16) para evitar ativações duplicadas mesmo após reinício dentro da janela de recuo (2 h), sendo limpa apenas ao alterar o modo ou acertar a hora manualmente (`manualRevision()`).
+- **RTC indisponível**: no assistente inicial, é possível confirmar que se pretende continuar sem RTC. A interface e a rega manual continuam disponíveis. Sem uma hora válida, rega agendada, suspensões temporizadas e validação da retoma após blackout ficam inibidas. No LCD, falhas de escrita no DS3231 não ativam silenciosamente o relógio por software; apenas `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot. Para operação automática persistente, defina/recupere o RTC.
 - **Histórico**: o arranque tenta montar LittleFS sem formatação (`begin(false)`, com retentativa) e consulta a cache NVS (`hblob`, com CRC-16 e verificação de tamanho). Se houver histórico conhecido em NVS, a formatação automática destrutiva é inibida para preservar os dados; registos adiados durante rotação são persistidos em `/hist_pend.txt` e reprocessados no arranque. As configurações NVS são armazenadas separadamente; exporte o histórico para cópia duradoura.
 - **Saída de relé**: o firmware comanda os GPIOs para o estado OFF no arranque, mas não consegue detetar um relé ou válvula mecanicamente preso. A instalação deve usar alimentação, isolamento e válvulas adequados; para instalações onde uma fuga tenha consequências relevantes, considere um corte de água independente.
 
@@ -51,7 +51,9 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 | Encoder CLK / DT / SW | GPIO 32 / GPIO 33 / GPIO 25 |
 | Relé Zona 1 / 2 / 3 / 4 | GPIO 26 / 27 / 18 / 13 |
 
-> O ficheiro `diagram.json` contém o esquema de ligações pronto a usar no simulador Wokwi.
+> O ficheiro `diagram.json` contém o esquema de ligações pronto a usar no simulador Wokwi (incluindo 4 LEDs indicadores ativos em LOW para as zonas Z1–Z4).
+>
+> **Atenção (hardware real):** Os GPIOs do ESP32 operam a **3,3 V** e não são tolerantes a 5 V. Ao ligar um LCD 2004 ou módulo RTC alimentado a 5 V com resistências de pull-up a 5 V no barramento I2C (`SDA`/`SCL`), utilize um conversor bidirecional de níveis lógicos (3,3 V ↔ 5 V) ou alimente o DS3231 a 3,3 V com pull-ups ligados a 3,3 V.
 
 ---
 
@@ -124,7 +126,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute fast unit suites (140 tests across 9 suites)
+# Execute fast unit suites (149 tests across 9 suites)
 pio test -e native
 
 # Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2)
@@ -153,7 +155,7 @@ Disponível através de `pio device monitor` ou qualquer terminal série:
 | `clear_history [force]` | Apaga permanentemente o histórico de regas (pede confirmação; `force`/`--force` formata LittleFS em erro persistente) |
 | `stop` | Aborta imediatamente a rega ativa |
 | `reboot` | Reinicia o controlador |
-| `i2c_scan` | Executa um scan ao barramento I2C |
+| `i2c_scan` | Executa um scan ao barramento I2C (rejeitado durante rega ativa) |
 
 ---
 
@@ -170,8 +172,8 @@ A maioria dos parâmetros do sistema está centralizada em **`src/config.h`** e 
 | `SCHED_INTENSO_*` / `SCHED_MEDIO_*` / `SCHED_FRACO_*` | Horários (hora/minuto) de cada slot dos modos predefinidos | ver `config.h` |
 | `SCHED_CUSTOM_*` | Valores iniciais do modo Personalizado (hora do 1º ciclo, intervalo em dias, nº de ciclos) | 06:00 / 1 dia / 1 ciclo |
 | `ZONE1_NAME..ZONE4_NAME` / `ZONE1_DUR..ZONE4_DUR` | Nome e duração (min) de fábrica de cada zona (nomes devem ter ≤7 carateres para caber no LCD) | ver `config.h` |
-| `NUM_ZONES` | Número de zonas de rega suportadas | `4` |
-| `MAX_SLOTS_PER_MODE` | Número máximo de ciclos diários no modo Personalizado | `4` |
+| `NUM_ZONES` | Número de zonas de rega suportadas (fixo em `4` pelo esquema binário NVS v5, CSV e UI 20×4) | `4` |
+| `MAX_SLOTS_PER_MODE` | Número máximo de ciclos diários no modo Personalizado (fixo em `4` pelo esquema NVS v5 e UI 20×4) | `4` |
 | `IDLE_TIMEOUT_MS` | Tempo de inatividade até regressar ao ecrã inicial | `30000` (30 s) |
 | `BACKLIGHT_TIMEOUT_NEVER` | Valor sentinela para "luz de fundo sempre ligada" (selecionável no menu Definições Avançadas) | `0xFFFFFFFF` |
 | `DISPLAY_OFF_DELAY_MS` | Atraso adicional após apagar a luz de fundo até desligar os pixels do LCD | `20000` (20 s) |
