@@ -82,6 +82,77 @@ const char* i2cDeviceName(uint8_t addr) {
     return TXT_I2C_DEV_UNKNOWN;
 }
 
+uint8_t daysInMonth(uint16_t year, uint8_t month) {
+    if (month < 1 || month > 12) return 0;
+    static const uint8_t kDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0))) {
+        return 29;
+    }
+    return kDays[month - 1];
+}
+
+uint16_t computeMinCustomSpacing() {
+    uint16_t total = 0;
+    uint8_t enCount = 0;
+    for (int z = 0; z < NUM_ZONES; z++) {
+        if (gState.zones[z].enabled) {
+            total += gState.zones[z].duration_min;
+            enCount++;
+        }
+    }
+    if (enCount > 1) total += (uint16_t)(enCount - 1);
+    return (total > 0) ? total : 1;
+}
+
+void sortCustomSlots(ModeSchedule& sched) {
+    uint8_t count = (sched.slot_count <= MAX_SLOTS_PER_MODE) ? sched.slot_count : MAX_SLOTS_PER_MODE;
+    for (uint8_t i = 0; i + 1 < count; i++) {
+        for (uint8_t j = (uint8_t)(i + 1); j < count; j++) {
+            uint16_t ti = (uint16_t)sched.slots[i].hour * 60U + sched.slots[i].minute;
+            uint16_t tj = (uint16_t)sched.slots[j].hour * 60U + sched.slots[j].minute;
+            if (tj < ti) {
+                ScheduleSlot tmp = sched.slots[i];
+                sched.slots[i] = sched.slots[j];
+                sched.slots[j] = tmp;
+            }
+        }
+    }
+}
+
+bool hasCustomSlotOverlap(const ModeSchedule& sched, uint16_t minSpacingMin) {
+    uint8_t count = (sched.slot_count <= MAX_SLOTS_PER_MODE) ? sched.slot_count : MAX_SLOTS_PER_MODE;
+    if (count <= 1) return false;
+    for (uint8_t i = 0; i < count; i++) {
+        for (uint8_t j = (uint8_t)(i + 1); j < count; j++) {
+            uint16_t s1 = (uint16_t)sched.slots[i].hour * 60U + sched.slots[i].minute;
+            uint16_t s2 = (uint16_t)sched.slots[j].hour * 60U + sched.slots[j].minute;
+            int16_t diff = (int16_t)s1 - (int16_t)s2;
+            if (diff < 0) diff = (int16_t)(-diff);
+            if (diff > 720) diff = (int16_t)(1440 - diff);
+            if ((uint16_t)diff < minSpacingMin) return true;
+        }
+    }
+    return false;
+}
+
+void respaceCustomSlots(ModeSchedule& sched) {
+    if (sched.slot_count == 0 || sched.slot_count > MAX_SLOTS_PER_MODE) {
+        sched.slot_count = 1;
+    }
+    uint16_t baseMins = (uint16_t)sched.slots[0].hour * 60U + sched.slots[0].minute;
+    uint16_t stepMins = 1440U / sched.slot_count;
+    for (uint8_t i = 1; i < sched.slot_count; i++) {
+        uint16_t nextMins = (uint16_t)((baseMins + (uint16_t)i * stepMins) % 1440U);
+        sched.slots[i].hour   = (uint8_t)(nextMins / 60U);
+        sched.slots[i].minute = (uint8_t)(nextMins % 60U);
+    }
+    for (uint8_t i = sched.slot_count; i < MAX_SLOTS_PER_MODE; i++) {
+        sched.slots[i].hour   = 0;
+        sched.slots[i].minute = 0;
+    }
+    sortCustomSlots(sched);
+}
+
 // ─────────────────────────────────────────────────────────
 void initAppState() {
     // ── Zone defaults ────────────────────────────────────

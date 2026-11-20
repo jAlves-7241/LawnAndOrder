@@ -91,10 +91,52 @@ void test_mode_schedules_table(void) {
     TEST_ASSERT_EQUAL_STRING(TXT_SER_TRIG_TEST, serialTriggerName(WaterTrigger::TEST));
 }
 
+void test_calendar_and_custom_schedule_helpers(void) {
+    initAppState();
+
+    // daysInMonth: normal, leap, century non-leap, 400-yr leap, out-of-range
+    TEST_ASSERT_EQUAL_UINT8(0, daysInMonth(2026, 0));
+    TEST_ASSERT_EQUAL_UINT8(0, daysInMonth(2026, 13));
+    TEST_ASSERT_EQUAL_UINT8(28, daysInMonth(2026, 2));
+    TEST_ASSERT_EQUAL_UINT8(29, daysInMonth(2024, 2));
+    TEST_ASSERT_EQUAL_UINT8(28, daysInMonth(2100, 2));
+    TEST_ASSERT_EQUAL_UINT8(29, daysInMonth(2000, 2));
+    TEST_ASSERT_EQUAL_UINT8(30, daysInMonth(2026, 4));
+    TEST_ASSERT_EQUAL_UINT8(31, daysInMonth(2026, 12));
+
+    // computeMinCustomSpacing: enabled durations + inter-zone pauses, min 1 when all off
+    for (int i = 0; i < NUM_ZONES; i++) { gState.zones[i].enabled = false; gState.zones[i].duration_min = 0; }
+    TEST_ASSERT_EQUAL_UINT16(1, computeMinCustomSpacing());
+    gState.zones[0] = { "Z1", true, 5 };
+    TEST_ASSERT_EQUAL_UINT16(5, computeMinCustomSpacing());
+    gState.zones[2] = { "Z3", true, 10 };
+    TEST_ASSERT_EQUAL_UINT16(16, computeMinCustomSpacing()); // 5 + 10 + 1 transition
+
+    // sortCustomSlots, hasCustomSlotOverlap (including midnight wrap), and respaceCustomSlots
+    ModeSchedule sched = {};
+    sched.slot_count = 3;
+    sched.slots[0] = { 23, 55 };
+    sched.slots[1] = { 0, 5 };
+    sched.slots[2] = { 12, 0 };
+    sortCustomSlots(sched);
+    TEST_ASSERT_EQUAL_UINT8(0, sched.slots[0].hour);
+    TEST_ASSERT_EQUAL_UINT8(12, sched.slots[1].hour);
+    TEST_ASSERT_EQUAL_UINT8(23, sched.slots[2].hour);
+    TEST_ASSERT_TRUE(hasCustomSlotOverlap(sched, 15));  // 23:55 -> 00:05 is 10 min < 15
+    TEST_ASSERT_FALSE(hasCustomSlotOverlap(sched, 10)); // exactly 10 min >= 10
+
+    sched.slots[3] = { 22, 22 };
+    respaceCustomSlots(sched);
+    TEST_ASSERT_FALSE(hasCustomSlotOverlap(sched, 16));
+    TEST_ASSERT_EQUAL_UINT8(0, sched.slots[3].hour);
+    TEST_ASSERT_EQUAL_UINT8(0, sched.slots[3].minute);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_struct_sizes_and_alignment);
     RUN_TEST(test_init_app_state_defaults);
     RUN_TEST(test_mode_schedules_table);
+    RUN_TEST(test_calendar_and_custom_schedule_helpers);
     return UNITY_END();
 }

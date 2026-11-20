@@ -108,7 +108,7 @@ struct AppState {
     SystemTime now;
     bool       rtc_valid;   // false = RTC lost power or not found
 
-    // Custom manual-run selection (set by UI, consumed by scheduler)
+    // Custom manual-run selection (set by UI, consumed by WateringController)
     bool    custom_sel[NUM_ZONES];
     uint8_t custom_dur_min;
 
@@ -133,6 +133,13 @@ struct AppState {
 extern AppState gState;
 
 void initAppState();
+
+// Calendar & custom-schedule helpers shared across Storage, UI, RTClock, History & Terminal
+uint8_t  daysInMonth(uint16_t year, uint8_t month);
+uint16_t computeMinCustomSpacing();
+void     sortCustomSlots(ModeSchedule& sched);
+bool     hasCustomSlotOverlap(const ModeSchedule& sched, uint16_t minSpacingMin);
+void     respaceCustomSlots(ModeSchedule& sched);
 
 // Localized plain-language names for Serial logs & terminal output
 const char* serialModeName(AppMode m);
