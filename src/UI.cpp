@@ -14,6 +14,17 @@
 // Nota: extern wateringCtrl, rtclock, scheduler, storage, history
 // já declarados nos respectivos headers (.h) incluídos acima.
 
+static bool parseStrictIndex(const char* s, int minVal, int maxVal, int& out) {
+    if (!s || *s < '0' || *s > '9') return false;
+    char* endp = nullptr;
+    errno = 0;
+    long v = strtol(s, &endp, 10);
+    if (endp == s || *endp != '\0' || errno == ERANGE) return false;
+    if (v < minVal || v > maxVal) return false;
+    out = (int)v;
+    return true;
+}
+
 static char* nextToken(char** strp, char delim) {
     if (!strp || !*strp) return nullptr;
     char* start = *strp;
@@ -63,7 +74,7 @@ void UI::changeScreen(UIScreen* screen) {
 }
 
 void UI::goIdle() {
-    if (_configChanged) {
+    if (_configChanged && !_inSetup) {
         storage.save();
         _configChanged = false;
     }
@@ -79,7 +90,7 @@ void UI::goMenu(MenuID mid) {
 // update()
 // ─────────────────────────────────────────────────────────
 void UI::update() {
-    if (_currentScreen == &_screenIdle && _configChanged) {
+    if (_currentScreen == &_screenIdle && _configChanged && !_inSetup) {
         storage.save();
         _configChanged = false;
     }
@@ -213,7 +224,7 @@ bool UI::executeConfirmed(const char* tag) {
     if (!strcmp(tag, "reset")) {
         LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_RESET);
         wateringCtrl.stop();
-        history.clear();
+        history.clear(true);
         storage.clear();
         Serial.flush();   // Garantir que logs pendentes no buffer UART são transmitidos
         delay(50);
@@ -256,8 +267,8 @@ bool UI::executeConfirmed(const char* tag) {
     }
 
     if (strncmp(tag, "test_", 5) == 0) {
-        int z = atoi(tag + 5);
-        if (z >= 0 && z < NUM_ZONES) {
+        int z = 0;
+        if (parseStrictIndex(tag + 5, 0, NUM_ZONES - 1, z)) {
             wateringCtrl.startTest((int8_t)z);
             return false;
         }
@@ -279,50 +290,17 @@ void UI::dispatchAction(const char* action) {
     }
 
     if (strncmp(action, "sel:", 4) == 0) {
-        char* endp = nullptr;
-        long m = strtol(action + 4, &endp, 10);
-        if (endp == action + 4 || *endp != '\0' || m < 0 || m >= (long)AppMode::_COUNT) return;
+        int m = 0;
+        if (!parseStrictIndex(action + 4, 0, (int)AppMode::_COUNT - 1, m)) {
+            LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
+            return;
+        }
         gState.mode = (AppMode)m;
         if (gState.mode == AppMode::PERSONALIZADO) {
             ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-            if (cs.slot_count > 1) {
-                uint16_t total_dur = getTotalZoneDuration();
-                uint8_t enCount = 0;
-                for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
-                if (enCount > 1) total_dur += (enCount - 1);
-                uint16_t min_spacing = (total_dur > 0) ? total_dur : 1;
-                bool overlap = false;
-                for (int i = 0; i < cs.slot_count && !overlap; i++) {
-                    for (int j = i + 1; j < cs.slot_count; j++) {
-                        uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                        uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                        int16_t diff = (int16_t)s1 - (int16_t)s2;
-                        if (diff < 0) diff = -diff;
-                        if (diff > 720) diff = 1440 - diff;
-                        if ((uint16_t)diff < min_spacing) { overlap = true; break; }
-                    }
-                }
-                if (overlap) {
-                    LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_NVS_CUSTOM_RESPACED);
-                    uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
-                    uint16_t stepMins = 1440 / cs.slot_count;
-                    for (int i = 1; i < cs.slot_count; i++) {
-                        uint16_t nextMins = (baseMins + i * stepMins) % 1440;
-                        cs.slots[i].hour   = (uint8_t)(nextMins / 60);
-                        cs.slots[i].minute = (uint8_t)(nextMins % 60);
-                    }
-                    for (int i = 0; i < cs.slot_count - 1; i++) {
-                        for (int j = i + 1; j < cs.slot_count; j++) {
-                            uint16_t t1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                            uint16_t t2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                            if (t2 < t1) {
-                                ScheduleSlot temp = cs.slots[i];
-                                cs.slots[i] = cs.slots[j];
-                                cs.slots[j] = temp;
-                            }
-                        }
-                    }
-                }
+            if (hasCustomSlotOverlap(cs, computeMinCustomSpacing())) {
+                LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_NVS_CUSTOM_RESPACED);
+                respaceCustomSlots(cs);
             }
         }
         flagConfigChanged();
@@ -345,20 +323,24 @@ void UI::dispatchAction(const char* action) {
     }
 
     if (strncmp(action, "cfgz:", 5) == 0) {
-        int zi = atoi(action+5);
-        if (zi >= 0 && zi < NUM_ZONES) {
-            _screenDurPick.setup(gState.zones[zi].duration_min, DurContext::CFG_ZONE, zi, _inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
+        int zi = 0;
+        if (parseStrictIndex(action + 5, 0, NUM_ZONES - 1, zi)) {
+            _screenDurPick.setup(gState.zones[zi].duration_min, DurContext::CFG_ZONE, (uint8_t)zi, _inSetup ? MenuID::SETUP_ZONES : MenuID::CFG_ZONAS);
             changeScreen(&_screenDurPick);
+            return;
         }
+        LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
         return;
     }
 
     if (strncmp(action, "cz:", 3) == 0) {
-        int zi = atoi(action+3);
-        if (zi >= 0 && zi < NUM_ZONES) {
+        int zi = 0;
+        if (parseStrictIndex(action + 3, 0, NUM_ZONES - 1, zi)) {
             gState.custom_sel[zi] = !gState.custom_sel[zi];
             goMenu(MenuID::CUSTOM_ZONAS);
+            return;
         }
+        LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
         return;
     }
 
@@ -389,11 +371,13 @@ void UI::dispatchAction(const char* action) {
 
     if (strncmp(action, "time_edit:", 10) == 0) {
         const char* type = action + 10;
-        if (type[0] == 'c') {
-            int ci = atoi(type+1);
-            _screenTimeEdit.setup(TimeEditContext::CUSTOM_CYCLE, ci, _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
+        int ci = 0;
+        if (type[0] == 'c' && parseStrictIndex(type + 1, 0, MAX_SLOTS_PER_MODE - 1, ci)) {
+            _screenTimeEdit.setup(TimeEditContext::CUSTOM_CYCLE, (uint8_t)ci, _inSetup ? MenuID::SETUP_CUSTOM : MenuID::CFG_CUSTOM);
             changeScreen(&_screenTimeEdit);
+            return;
         }
+        LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
         return;
     }
 
@@ -415,7 +399,8 @@ void UI::dispatchAction(const char* action) {
         errno = 0;
         unsigned long ms = strtoul(action + 3, &endp, 10);
         if (action[3] < '0' || action[3] > '9' || endp == action + 3 ||
-            *endp != '\0' || errno == ERANGE || ms > BACKLIGHT_TIMEOUT_NEVER) {
+            *endp != '\0' || errno == ERANGE || ms > BACKLIGHT_TIMEOUT_NEVER ||
+            (ms != BACKLIGHT_TIMEOUT_NEVER && (ms < 30000UL || ms > 3600000UL))) {
             LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
             return;
         }
@@ -447,6 +432,7 @@ void UI::dispatchAction(const char* action) {
         gState.suspended_until = 0;
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_CANCELED);
         flagConfigChanged();
+        scheduler.onModeChanged(false);
         _screenDone.setup(TXT_PAUSE_CANCELED, "");
         _screenDone.setBackMenu(MenuID::MAIN);
         changeScreen(&_screenDone);
@@ -503,9 +489,6 @@ void UI::dispatchAction(const char* action) {
         }
 
         _screenInfo.setup(TXT_CURRENT_SCHED, l1, l2, l3, MenuID::PROG);
-        // Para o caso de 4 ciclos, a linha l4 seria a 4ª linha do ScreenInfo
-        // mas setup() só aceita 4 parâmetros de linha (l0..l3).
-        // Com a estrutura atual, l3 fica como frequência ou último ciclo.
         changeScreen(&_screenInfo);
         return;
     }
@@ -569,13 +552,4 @@ void UI::dispatchAction(const char* action) {
     }
 
     LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
-}
-
-uint16_t UI::getTotalZoneDuration() {
-    uint16_t total = 0;
-    for (int i = 0; i < NUM_ZONES; i++) {
-        if (gState.zones[i].enabled)
-            total += gState.zones[i].duration_min;
-    }
-    return total;
 }

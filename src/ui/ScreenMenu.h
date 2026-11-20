@@ -21,6 +21,7 @@ private:
     uint8_t _cur = 0;
     uint8_t _off = 0;
     bool _lastWateringActive = false;
+    bool _lastSuspended = false;
 
     void dispatch(UI& ui, const char* action);
 };

@@ -779,6 +779,79 @@ void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
 }
 
+void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date(void) {
+    // 1. export_history on unmounted FS reports unavailable (not "History is empty.")
+    HistoryEntry seed = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(seed);
+    LittleFS.mountFail = true;
+    history.begin();
+    TEST_ASSERT_FALSE(history.isReady());
+    Serial.reset();
+    Serial.feedInput("export_history\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_HIST_UNAVAIL) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_HIST_EMPTY) == std::string::npos);
+#if LOG_LEVEL >= LVL_ERROR
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_NOT_READY) != std::string::npos);
+#endif
+    LittleFS.mountFail = false;
+    history.begin();
+
+    // 2. i2c_scan while watering is active is rejected cleanly
+    gState.watering.active = true;
+    Wire.detectedAddresses.push_back(0x27);
+    Serial.reset();
+    Serial.feedInput("i2c_scan\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_I2C_ACTIVE) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("0x27") == std::string::npos);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_I2C_SCAN_ACTIVE) != std::string::npos);
+#endif
+    gState.watering.active = false;
+
+    // 3. reboot during Setup Wizard does NOT call ui.goIdle()
+    _ui_in_setup = true;
+    _ui_went_idle = false;
+    ESP.reset();
+    Serial.reset();
+    Serial.feedInput("reboot\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(ESP.rebooted);
+    TEST_ASSERT_FALSE(_ui_went_idle);
+    _ui_in_setup = false;
+
+    // 4. status prints full YYYY-MM-DD HH:MM for next scheduled watering (multi-day custom mode)
+    gState.mode = AppMode::PERSONALIZADO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.day_pattern = DayPattern::EVERY_X_DAYS;
+    cs.interval_days = 3;
+    cs.slot_count = 1;
+    cs.slots[0] = { 7, 30 };
+    const uint32_t todayDay = DateTime(2026, 6, 15, 0, 0, 0).unixtime() / 86400UL;
+    gState.custom_ref_day = todayDay;
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 10, 0, 0, 1, DateTime(2026, 6, 15, 9, 0, 0).unixtime() };
+    Serial.reset();
+    Serial.feedInput("status\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-18 07:30") != std::string::npos);
+
+    // 5. Expired clear_history confirmation appends blank line
+    HistoryEntry he = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(he);
+    Serial.reset();
+    Serial.feedInput("clear_history\r\n");
+    terminal.update();
+    advanceMockMillis(IDLE_TIMEOUT_MS);
+    Serial.reset();
+    Serial.feedInput("y\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_EXPIRED) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.size() >= 4 &&
+                     Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -805,5 +878,6 @@ int main(void) {
     RUN_TEST(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
     RUN_TEST(test_terminal_status_reports_and_clears_rtc_battery_warning);
     RUN_TEST(test_terminal_clear_history_force_args_timeout_and_empty_repair);
+    RUN_TEST(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
     return UNITY_END();
 }

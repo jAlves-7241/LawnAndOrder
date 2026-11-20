@@ -12,6 +12,10 @@ void ScreenIdle::onEnter(UI& ui) {
     _lastWateringActive = false;
     _lastIsWaiting = false;
     _lastProgress = 255;
+    _lastYear = 0;
+    _lastMonth = 0;
+    _lastDay = 0;
+    _lastHour = 255;
     _lastMinute = 255;
     _lastSuspended = false;
     _lastMode = AppMode::MEDIO;
@@ -47,7 +51,9 @@ void ScreenIdle::update(UI& ui) {
         }
     }
 
-    if (_lastMinute != gState.now.min) {
+    if (_lastMinute != gState.now.min || _lastHour != gState.now.hour ||
+        _lastDay != gState.now.day || _lastMonth != gState.now.month ||
+        _lastYear != gState.now.year) {
         needsRender = true;
     }
 
@@ -72,6 +78,10 @@ void ScreenIdle::fullRender(UI& ui) {
     _lastWateringActive = gState.watering.active;
     _lastIsWaiting = gState.watering.is_waiting;
     _lastProgress = gState.watering.progress_pct;
+    _lastYear = gState.now.year;
+    _lastMonth = gState.now.month;
+    _lastDay = gState.now.day;
+    _lastHour = gState.now.hour;
     _lastMinute = gState.now.min;
     _lastSuspended = gState.suspended;
     _lastMode = gState.mode;

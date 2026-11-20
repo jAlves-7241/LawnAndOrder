@@ -51,8 +51,6 @@ public:
     ScreenTimeEdit& getScreenTimeEdit() { return _screenTimeEdit; }
     ScreenSetupWelcome& getScreenSetupWelcome() { return _screenSetupWelcome; }
 
-    uint16_t getTotalZoneDuration();
-    
     // Cross-screen data access for Date -> Time setup transition
     void setDateCache(uint16_t year, uint8_t month, uint8_t day) {
         _dateYear = year; _dateMonth = month; _dateDay = day;

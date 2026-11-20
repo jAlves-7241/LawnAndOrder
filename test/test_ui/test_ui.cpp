@@ -899,6 +899,153 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) != nullptr);
 }
 
+void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) {
+    // 1. Failed hardware write in ScreenTimeEdit leaves rtc_valid == false (no silent SW fallback)
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockAdjustFail = true;
+    rtclock._found = true;
+    gState.rtc_valid = false;
+    gState.now = { 2026, 1, 1, 0, 0, 0, 4, 0 };
+    testUi.setInSetup(false);
+    testUi.setDateCache(2026, 6, 15);
+    testUi.getScreenTimeEdit().setup(TimeEditContext::RTC, 0, MenuID::DEF);
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    simulateClick(testUi); // hour -> min
+    simulateClick(testUi); // attempt save -> hwOk == false
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    rtclock._rtc.mockAdjustFail = false;
+
+    // 2. NUM_CYCLES with unchanged slot_count preserves custom times; decreasing zeroes unused trailing slots
+    gState.mode = AppMode::PERSONALIZADO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.slots[0] = { 6, 15 };
+    cs.slots[1] = { 19, 45 };
+    cs.slots[2] = { 22, 0 };
+    testUi.getScreenDurPick().setup(2, DurContext::NUM_CYCLES, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi); // unchanged count -> preserve slots
+    TEST_ASSERT_EQUAL_UINT8(2, cs.slot_count);
+    TEST_ASSERT_EQUAL_UINT8(6, cs.slots[0].hour);
+    TEST_ASSERT_EQUAL_UINT8(15, cs.slots[0].minute);
+    TEST_ASSERT_EQUAL_UINT8(19, cs.slots[1].hour);
+    TEST_ASSERT_EQUAL_UINT8(45, cs.slots[1].minute);
+
+    testUi.getScreenDurPick().setup(1, DurContext::NUM_CYCLES, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi); // decrease 2 -> 1 -> zeroes trailing slots
+    TEST_ASSERT_EQUAL_UINT8(1, cs.slot_count);
+    TEST_ASSERT_EQUAL_UINT8(0, cs.slots[1].hour);
+    TEST_ASSERT_EQUAL_UINT8(0, cs.slots[1].minute);
+    TEST_ASSERT_EQUAL_UINT8(0, cs.slots[2].hour);
+
+    // 3. CUSTOM_CYCLE logs post-sort index when editing slot 2 earlier than slot 1
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 20, 0 };
+    testUi.getScreenTimeEdit().setup(TimeEditContext::CUSTOM_CYCLE, 1, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    testUi.getScreenTimeEdit()._teHour = 6;
+    testUi.getScreenTimeEdit()._teMin = 30;
+    testUi.getScreenTimeEdit()._teField = 1;
+    Serial.reset();
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_UINT8(6, cs.slots[0].hour);
+    TEST_ASSERT_EQUAL_UINT8(30, cs.slots[0].minute);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedPostSort[96];
+    snprintf(expectedPostSort, sizeof(expectedPostSort), TXT_LOG_UI_SLOT_SET, 1, 6U, 30U);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedPostSort) != std::string::npos);
+#endif
+
+    // 4. SUSPEND clamps suspended_until to 4102444799UL near 2099-12-31
+    gState.rtc_valid = true;
+    gState.now = { 2099, 12, 30, 12, 0, 0, 3, DateTime(2099, 12, 30, 12, 0, 0).unixtime() };
+    testUi.getScreenDurPick().setup(10, DurContext::SUSPEND, 0, MenuID::PROG);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+    TEST_ASSERT_TRUE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
+
+    // 5. cancel_susp recomputes next_* immediately via scheduler.onModeChanged(false)
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    gState.now = { 2026, 6, 15, 10, 0, 0, 1, DateTime(2026, 6, 15, 9, 0, 0).unixtime() };
+    gState.next_hour = 0;
+    gState.next_min = 0;
+    testUi.dispatchAction("cancel_susp");
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_H, gState.next_hour);
+    TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_M, gState.next_min);
+
+    // 6. ScreenIdle::update() re-renders on same-minute hour change and day change
+    testUi.goIdle();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "10:00") != nullptr);
+    gState.now.hour = 11; // same minute (00)
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "11:00") != nullptr);
+
+    // 7. ScreenMenu::update() clamps _off on MAIN shrink (no blank row) and live-refreshes PROG on suspension expiry
+    gState.watering.active = true;
+    testUi.goMenu(MenuID::MAIN); // 5 items (0..4)
+    testUi.getScreenMenu()._cur = 4;
+    testUi.getScreenMenu()._off = 2;
+    testUi.getScreenMenu().render(testUi);
+    gState.watering.active = false;
+    testUi.update(); // shrinks 5 -> 4 items; _off must clamp to 1 so row 3 is not blank!
+    TEST_ASSERT_EQUAL_UINT8(3, testUi.getScreenMenu()._cur);
+    TEST_ASSERT_EQUAL_UINT8(1, testUi.getScreenMenu()._off);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_BACK) != nullptr);
+
+    gState.suspended = true;
+    testUi.goMenu(MenuID::PROG);
+    gState.suspended = false;
+    testUi.update();
+    bool hasSuspendOption = false;
+    for (uint8_t i = 0; i < testUi.getScreenMenu()._itemCount; i++) {
+        if (strcmp(testUi.getScreenMenu()._items[i].action, "dur_pick:suspend") == 0) {
+            hasSuspendOption = true;
+        }
+    }
+    TEST_ASSERT_TRUE(hasSuspendOption);
+
+    // 8. goIdle() during setup does NOT flush _configChanged to NVS
+    storage.clear();
+    gState.setup_done = false;
+    gState.mode = AppMode::DESATIVADO;
+    testUi.setInSetup(true);
+    testUi.flagConfigChanged();
+    testUi.goIdle();
+    TEST_ASSERT_FALSE(storage.load());
+    testUi.setInSetup(false);
+
+    // 9. Strict index parsing rejects non-numeric actions and out-of-range bl: timeout
+    uint32_t prevBl = gState.backlight_timeout_ms;
+    testUi.dispatchAction("bl:4000000"); // > 3600000ms and != NEVER
+    TEST_ASSERT_EQUAL_UINT32(prevBl, gState.backlight_timeout_ms);
+    testUi.dispatchAction("cfgz:abc");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
+    gState.custom_sel[0] = false;
+    testUi.dispatchAction("cz:abc");
+    TEST_ASSERT_FALSE(gState.custom_sel[0]);
+    testUi.dispatchAction("time_edit:cabc");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(testUi.executeConfirmed("test_abc"));
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    // 10. Factory reset calls history.clear(true) and repairs unmounted FS (even while mountFail is active)
+    HistoryEntry preReset = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(preReset);
+    LittleFS.mountFail = true;
+    history.begin();
+    TEST_ASSERT_FALSE(history.isReady());
+    ESP.reset();
+    TEST_ASSERT_TRUE(testUi.executeConfirmed("reset"));
+    TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_TRUE(ESP.rebooted);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -918,5 +1065,6 @@ int main(void) {
     RUN_TEST(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
     RUN_TEST(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
     RUN_TEST(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
+    RUN_TEST(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
     return UNITY_END();
 }

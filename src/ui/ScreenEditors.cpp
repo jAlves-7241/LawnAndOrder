@@ -62,32 +62,14 @@ void ScreenDurPick::handleClick(UI& ui) {
         gState.zones[_durZoneIdx].duration_min = _durValue;
 
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        if (gState.mode == AppMode::PERSONALIZADO && cs.slot_count > 1) {
-            uint16_t total_dur = ui.getTotalZoneDuration();
-            uint8_t enCount = 0;
-            for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
-            if (enCount > 1) total_dur += (enCount - 1);
-            uint16_t min_spacing = (total_dur > 0) ? total_dur : 1;
-            bool overlap = false;
-            for (int i = 0; i < cs.slot_count; i++) {
-                for (int j = i + 1; j < cs.slot_count; j++) {
-                    uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                    uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                    int16_t diff = (int16_t)s1 - (int16_t)s2;
-                    if (diff < 0) diff = -diff;
-                    if (diff > 720) diff = 1440 - diff;
-                    if (diff < min_spacing) { overlap = true; break; }
-                }
-                if (overlap) break;
-            }
-            if (overlap) {
-                gState.zones[_durZoneIdx].enabled      = old_en;
-                gState.zones[_durZoneIdx].duration_min = old_dur;
-                ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_DUR_EXCESS,
-                          TXT_ERR_FOR_CYCLES, TXT_ERR_REDUCE, _backMenu);
-                ui.changeScreen(&ui.getScreenInfo());
-                return;
-            }
+        if (gState.mode == AppMode::PERSONALIZADO &&
+            hasCustomSlotOverlap(cs, computeMinCustomSpacing())) {
+            gState.zones[_durZoneIdx].enabled      = old_en;
+            gState.zones[_durZoneIdx].duration_min = old_dur;
+            ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_DUR_EXCESS,
+                      TXT_ERR_FOR_CYCLES, TXT_ERR_REDUCE, _backMenu);
+            ui.changeScreen(&ui.getScreenInfo());
+            return;
         }
 
         LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_ZONE_SET,
@@ -118,38 +100,19 @@ void ScreenDurPick::handleClick(UI& ui) {
 
     if (_durContext == DurContext::NUM_CYCLES) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        uint16_t total_dur = ui.getTotalZoneDuration();
-        uint8_t enCount = 0;
-        for (int z = 0; z < NUM_ZONES; z++) if (gState.zones[z].enabled) enCount++;
-        if (enCount > 1) total_dur += (enCount - 1);
-        
-        if ((uint32_t)_durValue * total_dur > 1440) {
+        if (_durValue == cs.slot_count) {
+            ui.goMenu(_backMenu);
+            return;
+        }
+        uint16_t min_spacing = computeMinCustomSpacing();
+        if ((uint32_t)_durValue * (uint32_t)min_spacing > 1440UL) {
             ui.getScreenInfo().setup(TXT_ERR_TITLE, TXT_ERR_TOTAL_DUR,
                       TXT_ERR_EXCEEDS_24H, "", _backMenu);
             ui.changeScreen(&ui.getScreenInfo());
             return;
         }
-        uint8_t anchor_hour = cs.slots[0].hour;
-        uint8_t anchor_min = cs.slots[0].minute;
         cs.slot_count = (_durValue > 0) ? _durValue : 1;
-        if (cs.slot_count == 0) cs.slot_count = 1;
-        uint16_t interval = 1440 / cs.slot_count;
-        for (int i = 0; i < cs.slot_count; i++) {
-            uint16_t mins = (anchor_hour * 60 + anchor_min + i * interval) % 1440;
-            cs.slots[i].hour   = mins / 60;
-            cs.slots[i].minute = mins % 60;
-        }
-        for (int i = 0; i < cs.slot_count - 1; i++) {
-            for (int j = 0; j < cs.slot_count - i - 1; j++) {
-                uint16_t t1 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                uint16_t t2 = cs.slots[j+1].hour * 60 + cs.slots[j+1].minute;
-                if (t1 > t2) {
-                    ScheduleSlot temp = cs.slots[j];
-                    cs.slots[j] = cs.slots[j+1];
-                    cs.slots[j+1] = temp;
-                }
-            }
-        }
+        respaceCustomSlots(cs);
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_CYCLES_SET, (unsigned)cs.slot_count);
         ui.flagConfigChanged();
         if (!ui.inSetup()) {
@@ -166,7 +129,9 @@ void ScreenDurPick::handleClick(UI& ui) {
             return;
         }
         gState.suspended = true;
-        gState.suspended_until = gState.now.unix + ((uint32_t)_durValue * 86400UL);
+        uint64_t until = (uint64_t)gState.now.unix + ((uint64_t)_durValue * 86400ULL);
+        if (until > 4102444799ULL) until = 4102444799ULL;
+        gState.suspended_until = (uint32_t)until;
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_SET, (int)_durValue);
         ui.flagConfigChanged();
         char msg[21];
@@ -252,19 +217,9 @@ void ScreenDateEdit::onEnter(UI& ui) {
     render(ui);
 }
 
-// Internal helper logic that was static in UI
-static uint8_t daysInMonthLocal(uint16_t year, uint8_t month) {
-    if (month == 2) {
-        bool isLeap = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
-        return isLeap ? 29 : 28;
-    }
-    if (month == 4 || month == 6 || month == 9 || month == 11) return 30;
-    return 31;
-}
-
 void ScreenDateEdit::handleRotation(UI& ui, int8_t dir) {
     if (_deField == 0) {
-        uint8_t max_days = daysInMonthLocal(_deYear, _deMonth);
+        uint8_t max_days = daysInMonth(_deYear, _deMonth);
         int d = (int)_deDay + dir;
         while (d < 1) d += max_days;
         while (d > max_days) d -= max_days;
@@ -274,14 +229,14 @@ void ScreenDateEdit::handleRotation(UI& ui, int8_t dir) {
         while (m < 1) m += 12;
         while (m > 12) m -= 12;
         _deMonth = (uint8_t)m;
-        uint8_t max_days = daysInMonthLocal(_deYear, _deMonth);
+        uint8_t max_days = daysInMonth(_deYear, _deMonth);
         if (_deDay > max_days) _deDay = max_days;
     } else {
         int y = (int)_deYear + dir;
         while (y < DATE_YEAR_MIN) y += DATE_YEAR_SPAN;
         while (y > DATE_YEAR_MAX) y -= DATE_YEAR_SPAN;
         _deYear = (uint16_t)y;
-        uint8_t max_days = daysInMonthLocal(_deYear, _deMonth);
+        uint8_t max_days = daysInMonth(_deYear, _deMonth);
         if (_deDay > max_days) _deDay = max_days;
     }
     render(ui);
@@ -389,14 +344,13 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         }
 
         bool hwOk = rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
-                    ui.getDateEditDay(), _teHour, _teMin, 0);
+                    ui.getDateEditDay(), _teHour, _teMin, 0, false);
         if (!hwOk) {
             if (ui.inSetup()) {
                 ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
                                             MenuID::SETUP_MODE, "skip_clock");
                 ui.changeScreen(&ui.getScreenConfirm());
             } else {
-                scheduler.onModeChanged(false);
                 ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT,
                                          TXT_FOUND, "", MenuID::DEF);
                 ui.changeScreen(&ui.getScreenInfo());
@@ -419,36 +373,12 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
 
         // Validar sobreposições antes de guardar
-        uint16_t total_dur = ui.getTotalZoneDuration();
-        uint8_t enCount = 0;
-        for (int z = 0; z < NUM_ZONES; z++) {
-            if (gState.zones[z].enabled) enCount++;
-        }
-        if (enCount > 1) total_dur += (enCount - 1); // incluir delays de relés
-        uint16_t min_spacing = (total_dur > 0) ? total_dur : 1;
-
         uint8_t old_h = cs.slots[_teCycleIdx].hour;
         uint8_t old_m = cs.slots[_teCycleIdx].minute;
         cs.slots[_teCycleIdx].hour = _teHour;
         cs.slots[_teCycleIdx].minute = _teMin;
 
-        bool overlap = false;
-        for (int i = 0; i < cs.slot_count; i++) {
-            for (int j = i + 1; j < cs.slot_count; j++) {
-                uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                int16_t diff = (int16_t)s1 - (int16_t)s2;
-                if (diff < 0) diff = -diff;
-                if (diff > 720) diff = 1440 - diff;
-                if ((uint16_t)diff < min_spacing) {
-                    overlap = true;
-                    break;
-                }
-            }
-            if (overlap) break;
-        }
-
-        if (overlap) {
+        if (hasCustomSlotOverlap(cs, computeMinCustomSpacing())) {
             // Reverter alteração
             cs.slots[_teCycleIdx].hour = old_h;
             cs.slots[_teCycleIdx].minute = old_m;
@@ -460,20 +390,18 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         }
 
         // Ensure chronological order
-        for (int i = 0; i < cs.slot_count - 1; i++) {
-            for (int j = 0; j < cs.slot_count - i - 1; j++) {
-                uint16_t t1 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                uint16_t t2 = cs.slots[j + 1].hour * 60 + cs.slots[j + 1].minute;
-                if (t1 > t2) {
-                    ScheduleSlot temp = cs.slots[j];
-                    cs.slots[j] = cs.slots[j + 1];
-                    cs.slots[j + 1] = temp;
-                }
+        sortCustomSlots(cs);
+#if LOG_LEVEL >= LVL_INFO
+        uint8_t loggedIdx = _teCycleIdx;
+        for (uint8_t i = 0; i < cs.slot_count; i++) {
+            if (cs.slots[i].hour == _teHour && cs.slots[i].minute == _teMin) {
+                loggedIdx = i;
+                break;
             }
         }
-
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_UI_SLOT_SET,
-              (int)_teCycleIdx + 1, (unsigned)_teHour, (unsigned)_teMin);
+              (int)loggedIdx + 1, (unsigned)_teHour, (unsigned)_teMin);
+#endif
         ui.flagConfigChanged();
         if (!ui.inSetup()) {
             scheduler.onModeChanged(false);

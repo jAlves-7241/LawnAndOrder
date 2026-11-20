@@ -8,6 +8,7 @@ void ScreenMenu::setup(MenuID mid) {
     _cur = 0;
     _off = 0;
     _lastWateringActive = gState.watering.active;
+    _lastSuspended = gState.suspended;
     MenuBuilder::build(mid, _items, _itemCount);
 }
 
@@ -16,14 +17,21 @@ void ScreenMenu::onEnter(UI& ui) {
 }
 
 void ScreenMenu::update(UI& ui) {
-    if (_mid == MenuID::MAIN && _lastWateringActive != gState.watering.active) {
+    if ((_mid == MenuID::MAIN && _lastWateringActive != gState.watering.active) ||
+        (_mid == MenuID::PROG && _lastSuspended != gState.suspended)) {
         _lastWateringActive = gState.watering.active;
+        _lastSuspended = gState.suspended;
         MenuBuilder::build(_mid, _items, _itemCount);
         if (_itemCount == 0) {
             _cur = 0;
             _off = 0;
-        } else if (_cur >= _itemCount) {
-            _cur = _itemCount - 1;
+        } else {
+            if (_cur >= _itemCount) _cur = _itemCount - 1;
+            if (_itemCount <= MENU_VISIBLE) {
+                _off = 0;
+            } else if (_off > _itemCount - MENU_VISIBLE) {
+                _off = _itemCount - MENU_VISIBLE;
+            }
         }
         render(ui);
     }
@@ -59,6 +67,11 @@ void ScreenMenu::handleClick(UI& ui) {
 void ScreenMenu::render(UI& ui) {
     if (_cur < _off)                 _off = _cur;
     if (_cur >= _off + MENU_VISIBLE) _off = _cur - MENU_VISIBLE + 1;
+    if (_itemCount <= MENU_VISIBLE) {
+        _off = 0;
+    } else if (_off > _itemCount - MENU_VISIBLE) {
+        _off = _itemCount - MENU_VISIBLE;
+    }
 
     auto menuTitle = [](MenuID m) -> const char* {
         switch (m) {

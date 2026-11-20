@@ -19,7 +19,6 @@
 #define TXT_MANUAL_WATERING "Manual Watering"
 #define TXT_STOP_WATERING "Stop Watering"
 #define TXT_WATERING_STOPPED "Watering Stopped"
-#define TXT_START_GEN_WATERING "Start Gen. Watering"
 #define TXT_SET_DURATION "-> Set Duration"
 #define TXT_BACK "<- Back"
 #define TXT_FINISH_BACK "<- Finish"
@@ -32,7 +31,6 @@
 #define TXT_TZ_FIXED "Timezone: Fixed"
 #define TXT_FIRMWARE_VER "Firmware Version"
 #define TXT_FACTORY_RESET "Factory Reset"
-#define TXT_TEST_ALL_5S "Test All (5s)"
 #define TXT_TEST_ALL_FMT "Test All (%ds)"
 #define TXT_TEST_ZONE_ITEM_FMT "Z%d %-8s  %2ds"
 #define TXT_HIST_TRIG_AUTO "AUTO"
@@ -46,7 +44,6 @@
 #define TXT_UNKNOWN "Unknown"
 #define TXT_ON "ON"
 #define TXT_OFF "OFF"
-#define TXT_NA "N/A"
 #define TXT_SKIP "Skip >"
 #define TXT_FINISH "Finish >"
 #define TXT_BL_30S "Screen: 30 sec"
@@ -59,9 +56,7 @@
 #define TXT_CONFIG_DONE "Config complete!"
 #define TXT_RTC_UPDATED "RTC updated!"
 #define TXT_MODE_CUSTOM_SHORT "Custom Mode"
-#define TXT_WATERING_ACTIVE "Active Watering: "
 #define TXT_NEXT_NONE "Next: --:--"
-#define TXT_NEXT_WATERING "Next watering: %02d:%02d"
 #define TXT_NO_ACTIVE_ZONES "No active zones."
 #define TXT_IDLE_ERR_ZONE "Error: Zone %d"
 #define TXT_IDLE_WATERING "Watering now..."
@@ -83,7 +78,6 @@
 #define TXT_DOW_FRI "Friday"
 #define TXT_DOW_SAT "Saturday"
 #define TXT_NEXT_DAY_TIME "%s at %02d:%02d"
-#define TXT_NEXT_TIME "Next: %02d:%02d"
 #define TXT_ERR_ACTIVE_ZONES "! ERROR !"
 #define TXT_ERR_ACTIVATE_ZONES "Activate zones in"
 #define TXT_ERR_SCHEDULE "schedule."
@@ -96,13 +90,6 @@
 #define TXT_PAUSE_CANCELED "Pause cancelled"
 #define TXT_SETUP_INITIAL "initial setup"
 #define TXT_ZONE_PREFIX "Zone %d"
-#define TXT_DOW_SUN_SHORT "Sun"
-#define TXT_DOW_MON_SHORT "Mon"
-#define TXT_DOW_TUE_SHORT "Tue"
-#define TXT_DOW_WED_SHORT "Wed"
-#define TXT_DOW_THU_SHORT "Thu"
-#define TXT_DOW_FRI_SHORT "Fri"
-#define TXT_DOW_SAT_SHORT "Sat"
 
 // UI Ecrãs (Ecrãs UI Hardcoded Strings)
 #define TXT_CONFIRM_TITLE "-- CONFIRM? --"
@@ -223,7 +210,6 @@
 #define TXT_MANUAL_WATERING "Rega Manual"
 #define TXT_STOP_WATERING "Parar Rega"
 #define TXT_WATERING_STOPPED "Rega Parada"
-#define TXT_START_GEN_WATERING "Iniciar rega geral"
 #define TXT_SET_DURATION "-> Definir duracao"
 #define TXT_BACK "<- Voltar"
 #define TXT_FINISH_BACK "<- Terminar"
@@ -236,7 +222,6 @@
 #define TXT_TZ_FIXED "Fuso Horario: Fixo"
 #define TXT_FIRMWARE_VER "Versao Firmware"
 #define TXT_FACTORY_RESET "Reset Fabrica"
-#define TXT_TEST_ALL_5S "Testar Todas (5s)"
 #define TXT_TEST_ALL_FMT "Testar Todas (%ds)"
 #define TXT_TEST_ZONE_ITEM_FMT "Z%d %-8s  %2ds"
 #define TXT_HIST_TRIG_AUTO "AUTO"
@@ -250,7 +235,6 @@
 #define TXT_UNKNOWN "Desconhecido"
 #define TXT_ON "ON"
 #define TXT_OFF "OFF"
-#define TXT_NA "N/D"
 #define TXT_SKIP "Saltar >"
 #define TXT_FINISH "Terminar >"
 #define TXT_BL_30S "Ecra: 30 seg"
@@ -263,9 +247,7 @@
 #define TXT_CONFIG_DONE "Config. concluida!"
 #define TXT_RTC_UPDATED "RTC atualizado!"
 #define TXT_MODE_CUSTOM_SHORT "Modo Pers."
-#define TXT_WATERING_ACTIVE "Rega Ativa:  "
 #define TXT_NEXT_NONE "Proxima: --:--"
-#define TXT_NEXT_WATERING "Proxima rega: %02d:%02d"
 #define TXT_NO_ACTIVE_ZONES "Nenhuma zona ativa."
 #define TXT_IDLE_ERR_ZONE "Erro: Zona %d"
 #define TXT_IDLE_WATERING "A regar agora..."
@@ -287,7 +269,6 @@
 #define TXT_DOW_FRI "Sexta"
 #define TXT_DOW_SAT "Sabado"
 #define TXT_NEXT_DAY_TIME "%s as %02d:%02d"
-#define TXT_NEXT_TIME "Proxima: %02d:%02d"
 #define TXT_ERR_ACTIVE_ZONES "! ERRO !"
 #define TXT_ERR_ACTIVATE_ZONES "Ative as zonas na"
 #define TXT_ERR_SCHEDULE "programacao."
@@ -300,13 +281,6 @@
 #define TXT_PAUSE_CANCELED "Pausa cancelada"
 #define TXT_SETUP_INITIAL "a config. inicial"
 #define TXT_ZONE_PREFIX "Zona %d"
-#define TXT_DOW_SUN_SHORT "Dom"
-#define TXT_DOW_MON_SHORT "Seg"
-#define TXT_DOW_TUE_SHORT "Ter"
-#define TXT_DOW_WED_SHORT "Qua"
-#define TXT_DOW_THU_SHORT "Qui"
-#define TXT_DOW_FRI_SHORT "Sex"
-#define TXT_DOW_SAT_SHORT "Sab"
 
 // UI Ecrãs (Ecrãs UI Hardcoded Strings)
 #define TXT_CONFIRM_TITLE "-- CONFIRMAR? --"
@@ -547,7 +521,7 @@
 #define TXT_TERM_STAT_INACTIVE "  Watering State: INACTIVE (Disabled)"
 #define TXT_TERM_STAT_AWAIT_RTC "  Watering State: STANDBY (waiting for valid clock time to schedule)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
-  "  Watering State: ACTIVE (Next watering scheduled for %02d:%02d)\r\n"
+  "  Watering State: ACTIVE (Next watering scheduled for %04d-%02d-%02d %02d:%02d)\r\n"
 #define TXT_TERM_STAT_ZONES "  Watering Zones:"
 #define TXT_TERM_STAT_Z_FMT "    Zone %d: [%s] Duration: %d min - Name: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Active Watering: "
@@ -594,6 +568,8 @@
 #define TXT_TERM_I2C_FOUND "Device found at 0x%02X (%s)\r\n"
 #define TXT_TERM_I2C_NONE "No connected devices found - check wiring and power"
 #define TXT_TERM_I2C_DONE "Scan complete: %d device(s) found\r\n"
+#define TXT_TERM_ERR_I2C_ACTIVE                                                \
+  "Error: Cannot run i2c_scan while watering is active. Stop watering first."
 
 // Modes for Terminal Status & Logs
 #define TXT_TERM_MODE_INTENSE "Intense"
@@ -664,9 +640,12 @@
 #define TXT_TERM_HIST_HDR "--- LAWN&ORDER HISTORY ---"
 #define TXT_TERM_HIST_CSV_HDR "Date,Type,Z1(min),Z2(min),Z3(min),Z4(min)"
 #define TXT_TERM_HIST_EMPTY "History is empty."
+#define TXT_TERM_HIST_UNAVAIL                                                  \
+  "Error: History storage is unavailable. Run 'clear_history force' to format."
 #define TXT_TERM_HIST_EXPORT_END "--- END: %d records ---\r\n"
 #define TXT_LOG_I2C_SDA_STUCK "Device data line (SDA) still stuck - check wiring"
 #define TXT_LOG_I2C_SCAN_NONE "No connected devices found - check wiring and power"
+#define TXT_LOG_I2C_SCAN_ACTIVE "I2C scan rejected while watering is active"
 #define TXT_LOG_I2C_SCAN_SUMMARY "Found %u connected device(s): %s"
 #define TXT_LOG_I2C_REC_START "Resetting stuck device connection..."
 #define TXT_LOG_I2C_REC_DONE "Device connection reset complete"
@@ -693,7 +672,6 @@
 #define TXT_LOG_RTC_I2C_CORRUPT "Clock gave invalid time 3 times (%04d-%02d-%02d %02d:%02d:%02d) - resetting connection"
 #define TXT_LOG_RTC_TIME_JUMP "Hardware clock time jumped unexpectedly - updated schedule"
 #define TXT_LOG_RTC_SAVE_ATTEMPT "Saving time to clock..."
-#define TXT_LOG_RTC_SAVE_OK "Time saved to clock"
 #define TXT_LOG_RTC_TIME_SET "Clock set to %04d-%02d-%02d %02d:%02d:%02d (saved to clock)"
 #define TXT_LOG_RTC_TIME_SET_SW "Clock set to %04d-%02d-%02d %02d:%02d:%02d (memory only, clock unavailable)"
 #define TXT_LOG_RTC_INVALID_SET "Invalid clock time rejected (%04u-%02u-%02u %02u:%02u:%02u)"
@@ -889,7 +867,7 @@
 #define TXT_TERM_STAT_INACTIVE "  Estado Rega: INATIVA (Desativada)"
 #define TXT_TERM_STAT_AWAIT_RTC "  Estado Rega: EM ESPERA (a aguardar hora valida para agendar)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
-  "  Estado Rega: ATIVA (Proxima rega agendada para %02d:%02d)\r\n"
+  "  Estado Rega: ATIVA (Proxima rega agendada para %04d-%02d-%02d %02d:%02d)\r\n"
 #define TXT_TERM_STAT_ZONES "  Zonas de Rega:"
 #define TXT_TERM_STAT_Z_FMT "    Zona %d: [%s] Duracao: %d min - Nome: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Rega Ativa:  "
@@ -938,6 +916,8 @@
 #define TXT_TERM_I2C_NONE                                                      \
   "Nenhum dispositivo encontrado - verifique cablagem e alimentacao"
 #define TXT_TERM_I2C_DONE "Analise concluida: %d dispositivo(s) encontrado(s)\r\n"
+#define TXT_TERM_ERR_I2C_ACTIVE                                                \
+  "Erro: Nao e possivel executar i2c_scan enquanto a rega esta ativa. Pare a rega primeiro."
 
 // Modos para o Status do Terminal e Logs
 #define TXT_TERM_MODE_INTENSE "Intenso"
@@ -1023,11 +1003,14 @@
 #define TXT_TERM_HIST_HDR "--- HISTORICO LAWN&ORDER ---"
 #define TXT_TERM_HIST_CSV_HDR "Data,Tipo,Z1(min),Z2(min),Z3(min),Z4(min)"
 #define TXT_TERM_HIST_EMPTY "Historico vazio."
+#define TXT_TERM_HIST_UNAVAIL                                                  \
+  "Erro: Armazenamento do historico indisponivel. Use 'clear_history force' para formatar."
 #define TXT_TERM_HIST_EXPORT_END "--- FIM: %d registos ---\r\n"
 #define TXT_LOG_I2C_SDA_STUCK                                                  \
   "Linha de dados (SDA) ainda bloqueada - verifique a cablagem"
 #define TXT_LOG_I2C_SCAN_NONE                                                  \
   "Nenhum dispositivo encontrado - verifique cabos e alimentacao"
+#define TXT_LOG_I2C_SCAN_ACTIVE "Analise I2C rejeitada com rega ativa"
 #define TXT_LOG_I2C_SCAN_SUMMARY "Encontrado(s) %u dispositivo(s) ligado(s): %s"
 #define TXT_LOG_I2C_REC_START                                                  \
   "A reiniciar ligacao bloqueada aos dispositivos..."
@@ -1071,7 +1054,6 @@
 #define TXT_LOG_RTC_TIME_JUMP                                                  \
   "Hora do relogio saltou inesperadamente - agendamento atualizado"
 #define TXT_LOG_RTC_SAVE_ATTEMPT "A gravar hora no relogio..."
-#define TXT_LOG_RTC_SAVE_OK "Hora gravada no relogio"
 #define TXT_LOG_RTC_TIME_SET                                                   \
   "Hora definida para %04d-%02d-%02d %02d:%02d:%02d (gravada no relogio)"
 #define TXT_LOG_RTC_TIME_SET_SW                                                \

@@ -24,7 +24,7 @@ void Display::begin() {
     _backlightOn = true;
     _displayOn = true;
     _lcd.clear();
-    delay(10); // Aguardar que o comando de limpeza termine no hardware real
+    if (_lcd.lastError() == 0) delay(10); // Aguardar que o comando de limpeza termine no hardware real
     memset(_shadow, ' ', sizeof(_shadow));
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
     _invalidateShadow();
@@ -69,7 +69,7 @@ void Display::recover(bool quiet, bool flushShadow) {
     }
     
     _lcd.clear();
-    delay(10);
+    if (_lcd.lastError() == 0) delay(10);
     _invalidateShadow();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = 0;

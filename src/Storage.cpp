@@ -61,6 +61,9 @@ uint16_t Storage::_crc16(const uint8_t* data, size_t len) {
 // C++ bool representations.
 static bool _blobHasValidBooleans(const AppConfigBlob& blob) {
     static_assert(sizeof(bool) == 1, "AppConfigBlob expects 1-byte bools");
+    static_assert(sizeof(AppConfigBlob) == 36, "AppConfigBlob must be 36 bytes");
+    static_assert(offsetof(AppConfigBlob, crc16) == 34,
+                  "AppConfigBlob must have no padding before crc16");
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(&blob);
 
     if (raw[offsetof(AppConfigBlob, auto_dst)] > 1 ||
@@ -82,7 +85,7 @@ static bool _validateImportBlob(const AppConfigBlob& blob) {
         return false;
     }
     if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER &&
-        blob.backlight_timeout_ms < 30000UL) {
+        (blob.backlight_timeout_ms < 30000UL || blob.backlight_timeout_ms > 3600000UL)) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_BACKLIGHT);
         return false;
     }
@@ -528,7 +531,7 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
     gState.mode = (AppMode)blob.mode;
 
     if (blob.backlight_timeout_ms != BACKLIGHT_TIMEOUT_NEVER &&
-        blob.backlight_timeout_ms < 30000UL) {
+        (blob.backlight_timeout_ms < 30000UL || blob.backlight_timeout_ms > 3600000UL)) {
         gState.backlight_timeout_ms = 120000UL; // Fallback para 2 minutos
     } else {
         gState.backlight_timeout_ms = blob.backlight_timeout_ms;
@@ -561,75 +564,20 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
     }
 
     // Keep active slots in chronological order.
-    for (int i = 0; i < cs.slot_count - 1; i++) {
-        for (int j = i + 1; j < cs.slot_count; j++) {
-            uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
-            uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
-            if (mins_j < mins_i) {
-                auto temp = cs.slots[i];
-                cs.slots[i] = cs.slots[j];
-                cs.slots[j] = temp;
-            }
-        }
-    }
+    sortCustomSlots(cs);
 
     // Reject schedules whose watering runs could overlap (enforce >= 1 min even if total_dur == 0).
-    if (cs.slot_count > 1) {
-        uint32_t total_dur = 0;
-        uint8_t enabledZones = 0;
-        for (int i = 0; i < NUM_ZONES; i++) {
-            if (gState.zones[i].enabled) {
-                total_dur += gState.zones[i].duration_min;
-                enabledZones++;
-            }
+    if (hasCustomSlotOverlap(cs, computeMinCustomSpacing())) {
+        if (gState.mode == AppMode::PERSONALIZADO) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_OVERLAP);
+            gState = previousState;
+            MODE_SCHEDULES[customMode] = previousCustomSchedule;
+            return false;
         }
-        // Match the UI check: include one minute per inter-zone transition.
-        if (enabledZones > 1) total_dur += enabledZones - 1;
-        uint32_t min_spacing = (total_dur > 0) ? total_dur : 1;
-
-        bool hasOverlap = false;
-        for (int i = 0; i < cs.slot_count && !hasOverlap; i++) {
-            for (int j = i + 1; j < cs.slot_count; j++) {
-                uint16_t s1 = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                uint16_t s2 = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                int16_t diff = (int16_t)s1 - (int16_t)s2;
-                if (diff < 0) diff = -diff;
-                if (diff > 720) diff = 1440 - diff;
-                if ((uint32_t)diff < min_spacing) {
-                    hasOverlap = true;
-                    break;
-                }
-            }
-        }
-        if (hasOverlap) {
-            if (gState.mode == AppMode::PERSONALIZADO) {
-                LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_OVERLAP);
-                gState = previousState;
-                MODE_SCHEDULES[customMode] = previousCustomSchedule;
-                return false;
-            }
-            // Dormant custom schedule overlaps current zone durations: respace evenly
-            // anchored at slots[0] and keep sorted so user settings are preserved.
-            uint16_t baseMins = cs.slots[0].hour * 60 + cs.slots[0].minute;
-            uint16_t stepMins = 1440 / cs.slot_count;
-            for (int i = 1; i < cs.slot_count; i++) {
-                uint16_t nextMins = (baseMins + i * stepMins) % 1440;
-                cs.slots[i].hour   = (uint8_t)(nextMins / 60);
-                cs.slots[i].minute = (uint8_t)(nextMins % 60);
-            }
-            for (int i = 0; i < cs.slot_count - 1; i++) {
-                for (int j = i + 1; j < cs.slot_count; j++) {
-                    uint16_t mins_i = cs.slots[i].hour * 60 + cs.slots[i].minute;
-                    uint16_t mins_j = cs.slots[j].hour * 60 + cs.slots[j].minute;
-                    if (mins_j < mins_i) {
-                        auto temp = cs.slots[i];
-                        cs.slots[i] = cs.slots[j];
-                        cs.slots[j] = temp;
-                    }
-                }
-            }
-            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CUSTOM_RESPACED);
-        }
+        // Dormant custom schedule overlaps current zone durations: respace evenly
+        // anchored at slots[0] and keep sorted so user settings are preserved.
+        respaceCustomSlots(cs);
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CUSTOM_RESPACED);
     }
 
     return true;

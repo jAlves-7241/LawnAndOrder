@@ -538,6 +538,7 @@ void Terminal::_processCommand(char *cmd) {
         _pendingClearAtMs = 0;
         if (expired) {
             Serial.println(TXT_TERM_WIPE_EXPIRED);
+            Serial.println();
             return;
         }
         if (trimmed && (strcasecmp(trimmed, "y") == 0 || strcasecmp(trimmed, "yes") == 0 ||
@@ -657,8 +658,17 @@ void Terminal::_cmdStatus(char* /*args*/) {
     } else if (!gState.rtc_valid) {
         Serial.println(TXT_TERM_STAT_AWAIT_RTC);
     } else {
-        Serial.printf(TXT_TERM_STAT_ACTIVE,
-                      gState.next_hour, gState.next_min);
+        uint8_t nextH = gState.next_hour;
+        uint8_t nextM = gState.next_min;
+        uint32_t nextDay1970 = 0;
+        if (scheduler.computeNext(gState.mode, gState.now, nextH, nextM, &nextDay1970, false)) {
+            DateTime nextDt(nextDay1970 * 86400UL);
+            Serial.printf(TXT_TERM_STAT_ACTIVE,
+                          (int)nextDt.year(), (int)nextDt.month(), (int)nextDt.day(),
+                          (int)nextH, (int)nextM);
+        } else {
+            Serial.println(TXT_TERM_STAT_INACTIVE);
+        }
     }
     Serial.println();
 
@@ -695,13 +705,6 @@ void Terminal::_cmdSetTime(char *args) {
         return;
     }
 
-    for (const char* p = args; *p; ++p) {
-        if (*p == '+') {
-            Serial.println(TXT_TERM_ERR_FORMAT);
-            return;
-        }
-    }
-
     int yr, mo, dy, hh, mm, ss;
     if (!parseExactSetTime(args, yr, mo, dy, hh, mm, ss)) {
         Serial.println(TXT_TERM_ERR_FORMAT);
@@ -718,13 +721,7 @@ void Terminal::_cmdSetTime(char *args) {
         return;
     }
     // Validação avançada de dias por mês (incluindo ano bissexto)
-    int maxDays = 31;
-    if (mo == 2) {
-        bool isLeap = ((yr % 4 == 0 && yr % 100 != 0) || (yr % 400 == 0));
-        maxDays = isLeap ? 29 : 28;
-    } else if (mo == 4 || mo == 6 || mo == 9 || mo == 11) {
-        maxDays = 30;
-    }
+    int maxDays = (int)daysInMonth((uint16_t)yr, (uint8_t)mo);
 
     if (dy < 1 || dy > maxDays) {
         Serial.printf(TXT_TERM_ERR_DAY, dy, mo, yr, maxDays);
@@ -795,6 +792,11 @@ void Terminal::_cmdImportConfig(char *args) {
 }
 
 void Terminal::_cmdExportHistory(char* /*args*/) {
+    if (!history.isReady()) {
+        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+        Serial.println(TXT_TERM_HIST_UNAVAIL);
+        return;
+    }
     if (history.entryCount() == 0) {
         Serial.println(TXT_TERM_HIST_EMPTY);
         return;
@@ -827,7 +829,9 @@ void Terminal::_cmdClearHistory(char* args) {
 void Terminal::_cmdReboot(char* /*args*/) {
     LOG_I(TXT_LOG_TAG_TERM, TXT_LOG_TERM_REBOOT);
     wateringCtrl.deenergizeRelays();
-    ui.goIdle();
+    if (!ui.inSetup()) {
+        ui.goIdle();
+    }
     Serial.println(TXT_TERM_REBOOT);
     Serial.println();
     Serial.flush();
@@ -836,6 +840,11 @@ void Terminal::_cmdReboot(char* /*args*/) {
 }
 
 void Terminal::_cmdI2cScan(char* /*args*/) {
+    if (gState.watering.active) {
+        LOG_W(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_ACTIVE);
+        Serial.println(TXT_TERM_ERR_I2C_ACTIVE);
+        return;
+    }
     byte i2cCount = 0;
     for (byte i = 8; i < 120; i++) {
         esp_task_wdt_reset();

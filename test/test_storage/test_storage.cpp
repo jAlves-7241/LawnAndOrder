@@ -487,6 +487,41 @@ void test_storage_clear_guard_invalid_hist_cache_and_respace_logs(void) {
 #endif
 }
 
+void test_storage_backlight_upper_bound_import_and_load(void) {
+    char hexBuf[sizeof(AppConfigBlob) * 2 + 1];
+
+    // 1. importConfigHex rejects backlight_timeout_ms > 3600000ms (unless BACKLIGHT_TIMEOUT_NEVER)
+    gState.backlight_timeout_ms = 0xFFFFFFFEUL;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.importConfigHex(hexBuf));
+
+    gState.backlight_timeout_ms = 3600001UL;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.importConfigHex(hexBuf));
+
+    // Accepts valid upper bound 3600000UL and BACKLIGHT_TIMEOUT_NEVER
+    gState.backlight_timeout_ms = 3600000UL;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_TRUE(storage.importConfigHex(hexBuf));
+    TEST_ASSERT_EQUAL_UINT32(3600000UL, gState.backlight_timeout_ms);
+
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_TRUE(storage.importConfigHex(hexBuf));
+    TEST_ASSERT_EQUAL_UINT32(BACKLIGHT_TIMEOUT_NEVER, gState.backlight_timeout_ms);
+
+    // 2. NVS load() defensively falls back to 120000UL if stored backlight_timeout_ms exceeds 3600000UL
+    gState.backlight_timeout_ms = 0xFFFFFFFEUL;
+    TEST_ASSERT_TRUE(storage.save());
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL_UINT32(120000UL, gState.backlight_timeout_ms);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
@@ -506,5 +541,6 @@ int main(void) {
     RUN_TEST(test_storage_history_blob_atomic_and_filesize);
     RUN_TEST(test_storage_last_triggers_roundtrip);
     RUN_TEST(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);
+    RUN_TEST(test_storage_backlight_upper_bound_import_and_load);
     return UNITY_END();
 }

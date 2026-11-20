@@ -87,6 +87,15 @@ void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
 		_displayfunction |= LCD_5x10DOTS;
 	}
 
+	// Fast-abort if the PCF8574 expander is not responding on I2C so failed
+	// recovery attempts do not stall the cooperative loop with init delays.
+	Wire.beginTransmission(_Addr);
+	uint8_t probeErr = Wire.endTransmission();
+	if (probeErr != 0) {
+		_i2cErr = probeErr;
+		return;
+	}
+
 	// SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
 	// according to datasheet, we need at least 40ms after power rises above 2.7V
 	// before sending commands. Arduino can turn on way befer 4.5V so we'll wait 50
@@ -94,6 +103,7 @@ void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
   
 	// Now we pull both RS and R/W low to begin commands
 	expanderWrite(_backlightval);	// reset expanderand turn backlight off (Bit 8 =1)
+	if (_i2cErr != 0) return;
 	delay(10);
 
   	//put the LCD into 4 bit mode
@@ -102,35 +112,43 @@ void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
 	
 	  // we start in 8bit mode, try to set 4 bit mode
    write4bits(0x03 << 4);
+   if (_i2cErr != 0) return;
    delayMicroseconds(4500); // wait min 4.1ms
    
    // second try
    write4bits(0x03 << 4);
+   if (_i2cErr != 0) return;
    delayMicroseconds(4500); // wait min 4.1ms
    
    // third go!
    write4bits(0x03 << 4); 
+   if (_i2cErr != 0) return;
    delayMicroseconds(150);
    
    // finally, set to 4-bit interface
    write4bits(0x02 << 4); 
+   if (_i2cErr != 0) return;
 
 
 	// set # lines, font size, etc.
 	command(LCD_FUNCTIONSET | _displayfunction);  
+	if (_i2cErr != 0) return;
 	
 	// turn the display on with no cursor or blinking default
 	_displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF;
 	display();
+	if (_i2cErr != 0) return;
 	
 	// clear it off
 	clear();
+	if (_i2cErr != 0) return;
 	
 	// Initialize to default text direction (for roman languages)
 	_displaymode = LCD_ENTRYLEFT | LCD_ENTRYSHIFTDECREMENT;
 	
 	// set the entry mode
 	command(LCD_ENTRYMODESET | _displaymode);
+	if (_i2cErr != 0) return;
 	
 	home();
   
@@ -139,12 +157,14 @@ void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
 /********** high level commands, for the user! */
 void LiquidCrystal_I2C::clear(){
 	command(LCD_CLEARDISPLAY);// clear display, set cursor position to zero
+	if (_i2cErr != 0) return;
 	delayMicroseconds(2000);  // this command takes a long time!
   if (_oled) setCursor(0,0);
 }
 
 void LiquidCrystal_I2C::home(){
 	command(LCD_RETURNHOME);  // set cursor position to zero
+	if (_i2cErr != 0) return;
 	delayMicroseconds(2000);  // this command takes a long time!
 }
 

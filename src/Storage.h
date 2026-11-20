@@ -15,7 +15,7 @@
 //   - gState.suspended_until (monotonic UTC boundary)
 //   - gState.auto_dst, gState.setup_done
 //   - NVS v5 blobs (`cfg`, `hblob`, `sched_tr`, `recv`) include CRC-16/CCITT integrity verification
-//   - RecoveryState (`rec`) includes `retry_count` for bounded blackout recovery
+//   - RecoveryState (`recv`) includes `retry_count` for bounded blackout recovery
 //   - Scheduler slot trigger guards (`sched_tr`) persist across reboots
 //
 // What is NOT persisted (intentionally):
