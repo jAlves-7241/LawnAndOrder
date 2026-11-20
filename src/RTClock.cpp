@@ -16,18 +16,34 @@ static const char* DOW_NAMES[] = {
 
 // ─────────────────────────────────────────────────────────
 RTClock::RTClock()
-    : _found(false), _lostPower(false), _batteryLow(false), _batRecoveryWarned(false), _lastReadMs(0),
+    : _found(false), _rtcDriverReady(false), _lostPower(false), _batteryLow(false), _batRecoveryWarned(false), _lastReadMs(0),
       _lastRtcRetryMs(0), _consecErrors(0),
       _anchorMs(0), _anchorUnix(0), _lastKnownUnix(0),
       _errorCb(nullptr)
 {}
+
+bool RTClock::_probeRtcI2c() {
+    static const uint8_t DS3231_ADDR = 0x68;
+    static const uint8_t DS3231_STATUSREG = 0x0F;
+    Wire.beginTransmission(DS3231_ADDR);
+    Wire.write(DS3231_STATUSREG);
+    return Wire.endTransmission() == 0;
+}
+
+bool RTClock::_ensureRtcDriver() {
+    if (!_probeRtcI2c()) return false;
+    if (!_rtcDriverReady) {
+        _rtcDriverReady = _rtc.begin();
+    }
+    return _rtcDriverReady;
+}
 
 bool RTClock::begin() {
     const bool wasValid = gState.rtc_valid;
     const SystemTime prevTime = gState.now;
     _consecErrors = 0;
 
-    if (!_rtc.begin()) {
+    if (!_ensureRtcDriver()) {
         LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_NOT_FOUND);
         _found = false;
         if (!wasValid) {
@@ -172,7 +188,7 @@ void RTClock::update() {
         if (nowMs - _lastRtcRetryMs >= 30000UL) {
             _lastRtcRetryMs = nowMs;
             LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_DETECT);
-            if (_rtc.begin()) {
+            if (_ensureRtcDriver()) {
                 bool wasValid = gState.rtc_valid;
                 bool readOk = false;
                 bool hwLostPower = false;
@@ -263,6 +279,7 @@ void RTClock::update() {
     }
 
     auto handleReadError = [&](const DateTime& badDt) {
+        (void)badDt;
         _consecErrors++;
         if (_consecErrors >= 3) {
             LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_I2C_CORRUPT,
@@ -367,7 +384,8 @@ void RTClock::update() {
 
 // ─────────────────────────────────────────────────────────
 bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
-                  uint8_t  hour, uint8_t minute, uint8_t second) {
+                  uint8_t  hour, uint8_t minute, uint8_t second,
+                  bool allowSwFallback) {
     
     // Filtro contra underflow/campos invalidos (corrupcao por dados manuais ou software)
     if (year < DATE_YEAR_MIN || year > DATE_YEAR_MAX) {
@@ -390,27 +408,38 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     // A hora recebida do utilizador e HORA LOCAL.
     DateTime utcDt = localToUtc(localDt);
+    if (!_isValidDateTime(utcDt)) {
+        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_INVALID_SET,
+              (unsigned)year, (unsigned)month, (unsigned)day,
+              (unsigned)hour, (unsigned)minute, (unsigned)second);
+        return false;
+    }
     DateTime effectiveLocal = utcToLocal(utcDt);
 
     bool hwOk = false;
     if (_found) {
-        if (_rtc.begin()) {
+        if (_ensureRtcDriver()) {
             _adjustAndVerify(utcDt, hwOk);
         }
         if (!hwOk) _found = false;
     } else {
         LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_SAVE_ATTEMPT);
-        if (_rtc.begin()) {
+        if (_ensureRtcDriver()) {
             _adjustAndVerify(utcDt, hwOk);
             if (hwOk) _found = true;
         }
+    }
+
+    if (!hwOk && !allowSwFallback) {
+        _lastRtcRetryMs = millis();
+        return false;
     }
 
     if (hwOk) {
         _lostPower = false;
         _batteryLow = false;
         _batRecoveryWarned = false;
-        _lastReadMs = millis() - 30000UL;
+        _lastReadMs = millis();
     } else {
         _lastRtcRetryMs = millis();
     }
@@ -430,8 +459,9 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
             int64_t newUntil = (int64_t)gState.suspended_until + delta;
             // Se a nova hora ultrapassou a meta de suspensao, ou overflow negativo
-            if (newUntil > UINT32_MAX) {
-                gState.suspended_until = UINT32_MAX;
+            static constexpr uint32_t MAX_VALID_UNIX = 4102444799UL; // 2099-12-31 23:59:59 UTC
+            if (newUntil > (int64_t)MAX_VALID_UNIX) {
+                gState.suspended_until = MAX_VALID_UNIX;
             } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
                 gState.suspended = false;
                 gState.suspended_until = 0;
@@ -509,13 +539,6 @@ void RTClock::_incrementSoftwareClock() {
 
 DateTime RTClock::_readRtc(bool& ok, bool& lostPower) {
     ok = false;
-#if defined(UNIT_TEST)
-    if (!_rtc.mockPresent) return DateTime(2000, 1, 1, 0, 0, 0);
-    if (_rtc.mockI2cReadFail) return DateTime(2000, 1, 1, 0, 0, 0);
-    lostPower = _rtc.mockLostPower;
-    ok = true;
-    return _rtc.now();
-#else
     static const uint8_t DS3231_ADDR = 0x68;
     static const uint8_t DS3231_STATUSREG = 0x0F;
 
@@ -525,6 +548,9 @@ DateTime RTClock::_readRtc(bool& ok, bool& lostPower) {
     if (Wire.requestFrom(DS3231_ADDR, (size_t)1) != 1) return DateTime(2000, 1, 1, 0, 0, 0);
     int stat = Wire.read();
     if (stat < 0) return DateTime(2000, 1, 1, 0, 0, 0);
+    // Bits 6..4 of DS3231 status reg 0x0F are always 0 (and 0x00 on Wokwi DS1307);
+    // non-zero (e.g. 0xFF floating bus) indicates a corrupt I2C read, not valid OSF.
+    if (((uint8_t)stat & 0x70U) != 0) return DateTime(2000, 1, 1, 0, 0, 0);
     lostPower = ((uint8_t)stat & 0x80U) != 0;
 
     Wire.beginTransmission(DS3231_ADDR);
@@ -545,9 +571,31 @@ DateTime RTClock::_readRtc(bool& ok, bool& lostPower) {
         return (uint8_t)(v - 6U * (v >> 4));
     };
 
-    const bool bcdOk = validBcd(buf[0] & 0x7FU) && validBcd(buf[1]) &&
-                       validBcd(buf[2]) && validBcd(buf[4]) &&
-                       validBcd(buf[5] & 0x7FU) && validBcd(buf[6]);
+    bool hrOk = false;
+    uint8_t hour24 = 0;
+    if ((buf[2] & 0x80U) == 0) {
+        if ((buf[2] & 0x40U) != 0) {
+            // 12-hour mode: bit 5 is PM, bits 4..0 are 01..12 BCD
+            uint8_t hr12Bcd = buf[2] & 0x1FU;
+            if (validBcd(hr12Bcd)) {
+                uint8_t hr12 = bcd2bin(hr12Bcd);
+                if (hr12 >= 1 && hr12 <= 12) {
+                    bool isPm = (buf[2] & 0x20U) != 0;
+                    hour24 = (uint8_t)((hr12 % 12U) + (isPm ? 12U : 0U));
+                    hrOk = true;
+                }
+            }
+        } else {
+            uint8_t hr24Bcd = buf[2] & 0x3FU;
+            if (validBcd(hr24Bcd)) {
+                hour24 = bcd2bin(hr24Bcd);
+                hrOk = (hour24 <= 23U);
+            }
+        }
+    }
+
+    const bool bcdOk = hrOk && validBcd(buf[0] & 0x7FU) && validBcd(buf[1]) &&
+                       validBcd(buf[4]) && validBcd(buf[5] & 0x7FU) && validBcd(buf[6]);
     if (!bcdOk) {
         if (!lostPower) return DateTime(2000, 1, 1, 0, 0, 0);
         ok = true;
@@ -558,10 +606,9 @@ DateTime RTClock::_readRtc(bool& ok, bool& lostPower) {
     return DateTime((uint16_t)bcd2bin(buf[6]) + 2000U,
                     bcd2bin(buf[5] & 0x7FU),
                     bcd2bin(buf[4]),
-                    bcd2bin(buf[2]),
+                    hour24,
                     bcd2bin(buf[1]),
                     bcd2bin(buf[0] & 0x7FU));
-#endif
 }
 
 DateTime RTClock::_adjustAndVerify(const DateTime& utcDt, bool& ok) {
@@ -570,6 +617,11 @@ DateTime RTClock::_adjustAndVerify(const DateTime& utcDt, bool& ok) {
     bool checkLost = false;
     DateTime checkDt = _readRtc(readOk, checkLost);
     if (!readOk || checkLost || !_isValidDateTime(checkDt)) {
+        ok = false;
+        return checkDt;
+    }
+    int64_t diff = (int64_t)checkDt.unixtime() - (int64_t)utcDt.unixtime();
+    if (diff < -2 || diff > 2) {
         ok = false;
         return checkDt;
     }
@@ -596,13 +648,8 @@ bool RTClock::_isValidDateTime(const DateTime& dt) {
     uint8_t  mm = dt.minute();
     uint8_t  ss = dt.second();
     if (y < DATE_YEAR_MIN || y > DATE_YEAR_MAX) return false;
-    if (m < 1 || m > 12) return false;
-    static const uint8_t kDaysInMonth[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
-    uint8_t maxD = kDaysInMonth[m - 1];
-    if (m == 2 && ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0))) {
-        maxD = 29;
-    }
-    if (d < 1 || d > maxD) return false;
+    uint8_t maxD = daysInMonth(y, m);
+    if (maxD == 0 || d < 1 || d > maxD) return false;
     if (hh > 23 || mm > 59 || ss > 59) return false;
     return true;
 }

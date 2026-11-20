@@ -284,7 +284,13 @@ void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
     TEST_ASSERT_TRUE(rtclock.begin());
     Serial.reset();
     TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 12, 0, 0));
-    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_SAVE_OK) == std::string::npos);
+#if LOG_LEVEL >= LVL_INFO
+    char expectedSet[128];
+    snprintf(expectedSet, sizeof(expectedSet), TXT_LOG_RTC_TIME_SET, 2026, 6, 15, 12, 0, 0);
+    size_t firstPos = Serial.outputBuffer.find(expectedSet);
+    TEST_ASSERT_TRUE(firstPos != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedSet, firstPos + 1) == std::string::npos);
+#endif
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_NOT_FOUND) == std::string::npos);
 
     // 1. Persistent lostPower across repeated 30 s polls logs warning only once until a clean poll
@@ -532,6 +538,102 @@ void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
     TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
 }
 
+void test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback(void) {
+    // 1. Successful set() updates _lastReadMs to millis() (no redundant poll on next loop)
+    setMockMillis(50000);
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    TEST_ASSERT_EQUAL_UINT32(50000UL, rtclock._lastReadMs);
+
+    // 2. Silent adjust() failure on an RTC holding an older valid date MUST fail verification
+    rtclock._rtc.mockAdjustFail = true;
+    uint32_t revBefore = rtclock.revision();
+    uint32_t manRevBefore = rtclock.manualRevision();
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 14, 0, 0, /*allowSwFallback=*/false));
+    TEST_ASSERT_EQUAL_UINT8(10, gState.now.hour); // RAM untouched when allowSwFallback=false
+    TEST_ASSERT_EQUAL_UINT32(revBefore, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(manRevBefore, rtclock.manualRevision());
+    rtclock._rtc.mockAdjustFail = false;
+
+    // 3. allowSwFallback=false when RTC is absent keeps rtc_valid=false
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = false;
+    gState.rtc_valid = false;
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 11, 0, 0, /*allowSwFallback=*/false));
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+
+    // 4. Raw DS3231 Wire/BCD decoding: 12-hour AM/PM and 0xFF floating-bus rejection
+    rtclock = RTClock();
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.mockRawOverride = true;
+    rtclock._rtc.mockRawStatus = 0x00;
+
+    // Helper: sec=05, min=15, dow=2, day=15, month=06, year=26 (2026)
+    auto setRaw12h = [&](uint8_t hrReg) {
+        rtclock._rtc.mockRawTime[0] = 0x05;
+        rtclock._rtc.mockRawTime[1] = 0x15;
+        rtclock._rtc.mockRawTime[2] = hrReg;
+        rtclock._rtc.mockRawTime[3] = 0x02;
+        rtclock._rtc.mockRawTime[4] = 0x15;
+        rtclock._rtc.mockRawTime[5] = 0x06;
+        rtclock._rtc.mockRawTime[6] = 0x26;
+    };
+
+    bool ok = false, lost = false;
+    // 12:15 AM (bit6=1, PM=0, BCD 12 = 0x12 -> 0x52) -> 00:15
+    setRaw12h(0x52);
+    DateTime dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_FALSE(lost);
+    TEST_ASSERT_EQUAL_UINT8(0, dt.hour());
+    TEST_ASSERT_EQUAL_UINT8(15, dt.minute());
+
+    // 05:15 AM (bit6=1, PM=0, BCD 05 = 0x05 -> 0x45) -> 05:15
+    setRaw12h(0x45);
+    dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(5, dt.hour());
+
+    // 12:15 PM (bit6=1, PM=1, BCD 12 = 0x12 -> 0x72) -> 12:15
+    setRaw12h(0x72);
+    dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(12, dt.hour());
+
+    // 05:15 PM (bit6=1, PM=1, BCD 05 = 0x05 -> 0x65) -> 17:15
+    setRaw12h(0x65);
+    dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_UINT8(17, dt.hour());
+
+    // All-0xFF floating bus must be rejected (ok=false), NOT mistaken for valid OSF!
+    rtclock._rtc.mockRawStatus = 0xFF;
+    memset(rtclock._rtc.mockRawTime, 0xFF, 7);
+    dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_FALSE(ok);
+
+    // Invalid reserved status bit (0x10) also rejected
+    rtclock._rtc.mockRawStatus = 0x10;
+    dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_FALSE(ok);
+
+    // Genuine OSF (0x80, reserved bits 6..4 == 0) with corrupt BCD returns ok=true, lostPower=true
+    rtclock._rtc.mockRawStatus = 0x80;
+    dt = rtclock._readRtc(ok, lost);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(lost);
+
+    // 5. suspended_until shift clamps to 2099-12-31 23:59:59 UTC (4102444799UL), never UINT32_MAX
+    rtclock = RTClock();
+    storage.begin();
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    gState.suspended = true;
+    gState.suspended_until = gState.now.unix + 10UL * 86400UL;
+    TEST_ASSERT_TRUE(rtclock.set(2099, 12, 31, 23, 0, 0));
+    TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eu_dst_winter_and_summer_months);
@@ -550,5 +652,6 @@ int main(void) {
     RUN_TEST(test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard);
     RUN_TEST(test_rtclock_battery_low_latch_periodic_recheck_and_clear);
     RUN_TEST(test_rtclock_manual_revision_only_tracks_valid_sets);
+    RUN_TEST(test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback);
     return UNITY_END();
 }

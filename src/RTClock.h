@@ -28,9 +28,11 @@ public:
     // gState.now with a software clock between hardware reads.
     void update();
 
-    // Set date and time. Returns true if hardware RTC was updated, false if only RAM fallback.
+    // Set date and time. Returns true if hardware RTC was updated, false if only RAM fallback
+    // (or rejected when allowSwFallback is false and hardware RTC is unavailable/failed).
     bool set(uint16_t year, uint8_t month,  uint8_t day,
-             uint8_t  hour, uint8_t minute, uint8_t second);
+             uint8_t  hour, uint8_t minute, uint8_t second,
+             bool allowSwFallback = true);
 
     // Set only hour and minute, keeping the current date.
     void setTime(uint8_t hour, uint8_t minute);
@@ -63,6 +65,7 @@ public:
 private:
     RTC_DS3231 _rtc;
     bool     _found;
+    bool     _rtcDriverReady = false;
     bool     _lostPower;
     bool     _batteryLow = false;
     bool     _batRecoveryWarned = false;
@@ -77,6 +80,8 @@ private:
     ErrorCallback _errorCb;
 
     void _incrementSoftwareClock();
+    bool _probeRtcI2c();
+    bool _ensureRtcDriver();
     DateTime _readRtc(bool& ok, bool& lostPower);
     DateTime _adjustAndVerify(const DateTime& utcDt, bool& ok);
 
