@@ -23,7 +23,7 @@ void Scheduler::begin() {
     _lastClockRev = rtclock.revision();
     _lastManualClockRev = rtclock.manualRevision();
     _prevLocalWallUnix = 0;
-    _catchUpPending = !gState.suspended && !wateringCtrl.isActive();
+    _catchUpPending = gState.setup_done && !gState.suspended && !wateringCtrl.isActive();
     storage.loadLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
@@ -63,6 +63,12 @@ void Scheduler::update() {
         _catchUpPending = false;
         _prevLocalWallUnix = 0;
         clockChanged = true;
+    }
+
+    if (!gState.setup_done) {
+        _catchUpPending = false;
+        _prevLocalWallUnix = 0;
+        return;
     }
 
     if (!gState.rtc_valid)  return;
@@ -358,6 +364,10 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
         return true;
     }
     uint32_t current_unix = current_time.unix;
+    if (start_unix < 1577836800UL || start_unix > 4102444799UL) {
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_BACKWARD);
+        return true;
+    }
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) {
         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_MODE, (unsigned)gState.mode);
         return true;
@@ -464,10 +474,20 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
             for (uint8_t i = 0; i < sched.slot_count; i++) {
                 const ScheduleSlot& sl = sched.slots[i];
                 
-                // For today (dayOffset==0) skip slots already past
+                // For today (dayOffset==0) skip slots already past (or already triggered
+                // within the 2h DST fall-back duplicate window on the active mode).
                 if (dayOffset == 0) {
                     if (sl.hour < now.hour) continue;
                     if (sl.hour == now.hour && sl.minute <= now.min) continue;
+                    if (mode == gState.mode && now.unix >= 1577836800UL &&
+                        _lastTriggerUnix[i] > 0) {
+                        DateTime slotLocal(now.year, now.month, now.day, sl.hour, sl.minute, 0);
+                        uint32_t slotUtc = _resolveSlotUtc(slotLocal, now.unix);
+                        if (slotUtc >= _lastTriggerUnix[i] &&
+                            (slotUtc - _lastTriggerUnix[i]) < 7200UL) {
+                            continue;
+                        }
+                    }
                 }
                 uint16_t slotMins = (uint16_t)sl.hour * 60U + sl.minute;
                 if (!found || slotMins < bestMins) {

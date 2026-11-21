@@ -14,6 +14,7 @@ void setUp(void) {
     resetAllTestMocks();
     wateringCtrl.begin();
     gState.rtc_valid = true;
+    gState.setup_done = true;
 }
 
 void tearDown(void) {
@@ -924,6 +925,70 @@ void test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump(void) {
     wateringCtrl.stop();
 }
 
+void test_scheduler_setup_guard_dst_fallback_next_and_start_bounds(void) {
+    storage.begin();
+    gState.auto_dst = true;
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    // 1. Automatic scheduling and catch-up must stay inhibited while setup_done == false
+    gState.setup_done = false;
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler = Scheduler();
+    scheduler.begin();
+    TEST_ASSERT_FALSE(scheduler._catchUpPending);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // Even inside the 30-min catch-up window, setup_done == false must not fire
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 10, 0);
+    scheduler._catchUpPending = true;
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+
+    // Once setup completes and onModeChanged() runs, subsequent exact-minute slots fire normally
+    gState.setup_done = true;
+    scheduler.onModeChanged(false);
+    setSchedulerTestLocalNow(2026, 6, 15, 20, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // 2. computeNext() skips already-triggered October DST fall-back slot during the repeated hour
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slot_count = 1;
+    cs.slots[0] = { 1, 30 };
+    gState.mode = AppMode::PERSONALIZADO;
+
+    const uint32_t firstPassUtc = DateTime(2026, 10, 25, 0, 30, 0).unixtime(); // 01:30 WEST
+    setSchedulerTestUtcNow(firstPassUtc);
+    scheduler = Scheduler();
+    scheduler.begin();
+    scheduler.clearLastTriggers();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // After fall-back to 01:05 WET (01:05 UTC), 01:30 WET will be blocked -> next must advance to Oct 26
+    const uint32_t secondPassUtc = DateTime(2026, 10, 25, 1, 5, 0).unixtime();
+    setSchedulerTestUtcNow(secondPassUtc);
+    uint8_t nextH = 0, nextM = 0;
+    uint32_t nextDay = 0;
+    TEST_ASSERT_TRUE(scheduler.computeNext(AppMode::PERSONALIZADO, gState.now, nextH, nextM, &nextDay, false));
+    DateTime nextDt(nextDay * 86400UL);
+    TEST_ASSERT_EQUAL_UINT8(26, nextDt.day());
+    TEST_ASSERT_EQUAL_UINT8(1, nextH);
+    TEST_ASSERT_EQUAL_UINT8(30, nextM);
+
+    // 3. isCycleExpired() rejects pre-2020 and post-2099 start_unix safely (guards RTClib underflow)
+    setSchedulerTestLocalNow(2026, 6, 15, 10, 0, 0);
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(0UL, gState.now, 300));
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(1000UL, gState.now, 300));
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(4102444800UL, gState.now, 300));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -949,5 +1014,6 @@ int main(void) {
     RUN_TEST(test_scheduler_catchup_patterns_and_dense_slots);
     RUN_TEST(test_scheduler_non_manual_rtc_revisions_preserve_triggers);
     RUN_TEST(test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump);
+    RUN_TEST(test_scheduler_setup_guard_dst_fallback_next_and_start_bounds);
     return UNITY_END();
 }
