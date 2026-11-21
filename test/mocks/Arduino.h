@@ -32,6 +32,9 @@ typedef uint8_t byte;
 #ifndef IRAM_ATTR
 #define IRAM_ATTR
 #endif
+#ifndef pgm_read_byte_near
+#define pgm_read_byte_near(addr) (*(const uint8_t*)(addr))
+#endif
 
 #define HIGH 1
 #define LOW 0

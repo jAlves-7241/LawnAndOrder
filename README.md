@@ -64,6 +64,9 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 ├── platformio.ini       # Configuração do ambiente PlatformIO (board, libs, build flags)
 ├── wokwi.toml            # Configuração da simulação Wokwi
 ├── diagram.json           # Esquema de ligações para o simulador Wokwi
+├── .github/workflows/ci.yml # Pipeline CI (testes nativos multi-flag/fuso + builds ESP32)
+├── lib/
+│   └── LiquidCrystal_I2C/   # Driver LCD I2C vendored com fast-abort e rastreio de erros
 ├── src/
 │   ├── main.cpp            # Ponto de entrada: setup() e loop() principais
 │   ├── config.h            # Pinagem, constantes temporais e valores por defeito
@@ -89,6 +92,7 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 │       ├── ScreenCommon.h / .cpp             # Ecrãs Info / Confirm / Done
 │       ├── ScreenEditors.h / .cpp             # Seletores de duração, data e hora
 │       └── ScreenSetup.h / .cpp                # Assistente de configuração inicial
+└── test/                                       # Suite de testes nativos Unity e mocks hardware
 ```
 
 Para uma descrição detalhada de cada módulo, do fluxo de inicialização e do ciclo de execução principal, consulte **[src/README.md](src/README.md)**.
@@ -126,7 +130,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute fast unit suites (149 tests across 9 suites)
+# Execute fast unit suites (162 tests across 10 suites)
 pio test -e native
 
 # Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2)

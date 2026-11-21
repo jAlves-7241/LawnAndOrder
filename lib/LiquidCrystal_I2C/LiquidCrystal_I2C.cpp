@@ -81,6 +81,7 @@ void LiquidCrystal_I2C::init_priv(bool initWire)
 }
 
 void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
+	(void)cols;
 	if (lines > 1) {
 		_displayfunction |= LCD_2LINE;
 	}

@@ -10,9 +10,10 @@ public:
     using RxHandler = size_t (*)(uint8_t addr, uint8_t* rxBuf, size_t qty);
 
     std::vector<uint8_t> detectedAddresses;
+    uint32_t beginCalls = 0;
 
-    void begin() {}
-    void begin(int sda, int scl) { (void)sda; (void)scl; }
+    void begin() { beginCalls++; }
+    void begin(int sda, int scl) { (void)sda; (void)scl; beginCalls++; }
     void end() {}
     void setTimeOut(uint16_t ms) { (void)ms; }
 
@@ -69,6 +70,7 @@ public:
 
     void reset() {
         detectedAddresses.clear();
+        beginCalls = 0;
         _txBuf.clear();
         _rxBuf.clear();
         _rxPos = 0;

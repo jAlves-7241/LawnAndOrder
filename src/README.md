@@ -20,12 +20,12 @@ A separação por módulos é acompanhada por singletons e estado global partilh
 
 ## Inicialização (`setup()`)
 
-1. Comanda os relés para OFF e configura os GPIOs.
+1. Pré-carrega os níveis OFF nos registos GPIO (`gpio_set_level`) antes de configurar os pinos dos relés como `OUTPUT`, evitando pulsos espúrios no arranque sob ESP32 Arduino Core 3.x.
 2. Inicializa o watchdog com `WDT_TIMEOUT_S` (8 s por defeito) e o estado em RAM.
 3. Abre NVS e carrega configurações validadas.
 4. Monta LittleFS e carrega a cache do histórico.
 5. Recupera o barramento I²C, inicializa-o, faz um scan, inicia o LCD e o encoder.
-6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão e tenta recuperar um ciclo interrompido.
+6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão, carrega os marcadores DST persistidos (`scheduler.loadTriggers()`) e tenta recuperar um ciclo interrompido.
 7. Calcula o horário seguinte, inicia UI e terminal.
 
 `History::begin()` tenta montar o sistema de ficheiros com `LittleFS.begin(false)` (com retentativa antes de desistir). Se a montagem falhar, consulta `storage.hasHistoryData()` (`hblob` na NVS); se já existirem registos conhecidos, a formatação destrutiva é prevenida para salvaguardar o histórico. A formatação (`begin(true)`) só é executada quando não há dados históricos conhecidos em NVS. No arranque seguinte, valida também o tamanho do ficheiro contra o registado em `hblob` e reprocessa eventuais entradas pendentes de `/hist_pend.txt`. A configuração NVS permanece separada.
