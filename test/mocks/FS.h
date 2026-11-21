@@ -96,6 +96,7 @@ public:
 
     int read() {
         if (!isOpen || !contentPtr || readPos >= contentPtr->size()) return -1;
+        if (readFailPtr && *readFailPtr) return -1;
         return (unsigned char)(*contentPtr)[readPos++];
     }
 

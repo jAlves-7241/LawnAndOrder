@@ -711,6 +711,141 @@ void test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv(
     TEST_ASSERT_TRUE(History::_lineToEntry("2028-02-29T10:00,A,10,0,0,0", parsed));  // 2028 leap
 }
 
+void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback(void) {
+    // 1. [M-5] Partial write without newline is isolated before next valid record()
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    gState.rtc_valid = true;
+    TEST_ASSERT_TRUE(history.begin(true));
+
+    HistoryEntry e1 = { 2026, 9, 1, 7, 30, { 8, 6, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e1);
+    LittleFS.partialWriteFail = true;
+    HistoryEntry eFail = { 2026, 9, 2, 7, 30, { 9, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(eFail); // leaves unterminated partial fragment in /history.csv
+    LittleFS.partialWriteFail = false;
+
+    HistoryEntry e2 = { 2026, 9, 3, 8, 15, { 12, 4, 0, 0 }, WaterTrigger::CUSTOM, 0 };
+    history.record(e2);
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+
+    // Force full FS rebuild on fresh boot -> both e1 and e2 must survive cleanly!
+    Preferences::resetStorage();
+    storage.begin();
+    History rebuilt;
+    TEST_ASSERT_TRUE(rebuilt.begin(false));
+    HistoryEntry out[3] = {};
+    TEST_ASSERT_EQUAL_UINT8(2, rebuilt.readLast(3, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out[0].day);
+    TEST_ASSERT_EQUAL_UINT8(3, out[1].day);
+    TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, out[1].trigger);
+
+    // 2. [M-6] Pending replay skips duplicate when last line of HISTORY_FILE already matches
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    LittleFS.files[HISTORY_FILE] =
+        "2026-09-01T07:30,A,8,6,0,0\r\n"
+        "2026-09-03T08:15,C,12,4,0,0\r\n";
+    LittleFS.files["/hist_pend.txt"] = "2026-09-03T08:15,C,12,4,0,0\r\n";
+    History dedup;
+    TEST_ASSERT_TRUE(dedup.begin(false));
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_EQUAL_UINT16(2, dedup.entryCount());
+    // Ensure the matching line appears exactly once
+    const std::string& content = LittleFS.files[HISTORY_FILE];
+    size_t firstPos = content.find("2026-09-03T08:15,C,12,4,0,0");
+    TEST_ASSERT_TRUE(firstPos != std::string::npos);
+    TEST_ASSERT_TRUE(content.find("2026-09-03T08:15,C,12,4,0,0", firstPos + 1) == std::string::npos);
+
+    // 3. [M-7a] Corrupt-only file settles to _lineCount == 0 and avoids boot rebuild loop
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    LittleFS.files[HISTORY_FILE] = "CORRUPT_LINE_ONE\r\nCORRUPT_LINE_TWO\r\n";
+    History corruptBoot1;
+    TEST_ASSERT_TRUE(corruptBoot1.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(0, corruptBoot1.entryCount());
+    TEST_ASSERT_EQUAL_UINT8(0, corruptBoot1.readLast(3, out));
+
+    Serial.reset();
+    History corruptBoot2;
+    TEST_ASSERT_TRUE(corruptBoot2.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(0, corruptBoot2.entryCount());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_FS_REASON_REBUILD) == std::string::npos);
+
+    // 4. [M-7b] Serial export discards overlong >= LINE_BUF lines without emitting truncated data
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    std::string overlong(160, 'Z');
+    LittleFS.files[HISTORY_FILE] =
+        "2026-09-10T06:00,A,10,0,0,0\r\n" +
+        overlong + "\r\n" +
+        "2026-09-11T06:00,M,15,0,0,0\r\n";
+    History expHist;
+    TEST_ASSERT_TRUE(expHist.begin(false));
+    Serial.reset();
+    TEST_ASSERT_TRUE(expHist.startExport());
+    int safety = 100;
+    while (expHist.isExporting() && safety-- > 0) {
+        expHist.update();
+    }
+    TEST_ASSERT_EQUAL_UINT16(2, expHist.exportSent());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-10T06:00,A,10,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-11T06:00,M,15,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("ZZZZZZZZ") == std::string::npos);
+
+    // 5. [L-8] _populateCache() falls back to full scan when >512 bytes of tail corruption follow valid entries
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    std::string tailCorrupt =
+        "2026-09-01T06:00,A,10,0,0,0\r\n"
+        "2026-09-02T06:00,M,12,0,0,0\r\n"
+        "2026-09-03T06:00,C,14,0,0,0\r\n";
+    for (int i = 0; i < 40; i++) {
+        tailCorrupt += "INVALID_TAIL_GARBAGE_ROW\r\n"; // >1000 bytes (> tailSize 512)
+    }
+    LittleFS.files[HISTORY_FILE] = tailCorrupt;
+    History fallbackHist;
+    TEST_ASSERT_TRUE(fallbackHist.begin(false));
+    TEST_ASSERT_EQUAL_UINT8(3, fallbackHist.readLast(3, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out[0].day);
+    TEST_ASSERT_EQUAL_UINT8(2, out[1].day);
+    TEST_ASSERT_EQUAL_UINT8(3, out[2].day);
+
+    // 6. Rename-only failure during rotation preserves original file and appends pending entry cleanly
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    gState.rtc_valid = true;
+    TEST_ASSERT_TRUE(history.begin(true));
+    std::string fullFile;
+    fullFile.reserve(HISTORY_MAX_ENTRIES * 32);
+    for (int i = 0; i < HISTORY_MAX_ENTRIES; i++) {
+        fullFile.append("2026-06-01T08:00,A,10,0,0,0\r\n");
+    }
+    LittleFS.files[HISTORY_FILE] = std::move(fullFile);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    LittleFS.renameFail = true;
+
+    HistoryEntry eRen = { 2026, 9, 20, 9, 0, { 11, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(eRen);
+    safety = 500;
+    while (history._rotState != History::RotState::IDLE && safety-- > 0) {
+        history.update();
+    }
+    LittleFS.renameFail = false;
+    TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_tmp.csv"));
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_EQUAL_UINT16(HISTORY_MAX_ENTRIES + 1, history.entryCount());
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, out));
+    TEST_ASSERT_EQUAL_UINT8(20, out[0].day);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -734,5 +869,6 @@ int main(void) {
     RUN_TEST(test_history_periodic_remount_and_force_repair);
     RUN_TEST(test_history_remount_watering_guard_and_clear_edge_cases);
     RUN_TEST(test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv);
+    RUN_TEST(test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback);
     return UNITY_END();
 }

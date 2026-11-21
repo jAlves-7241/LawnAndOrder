@@ -51,6 +51,7 @@ bool History::begin(bool formatOnFail) {
     _rotState = RotState::IDLE;
     _exportState = ExportState::IDLE;
     _exportReadErr = false;
+    _exportLineOverflow = false;
     _pendingCacheSave = false;
     _rotWriteErr = false;
     _rotLineOverflow = false;
@@ -96,6 +97,7 @@ bool History::begin(bool formatOnFail) {
 
         // Replay any pending line persisted right before a mid-rotation power loss
         bool replayedPending = false;
+        bool pendingAlreadyPresent = false;
         File pendFile = LittleFS.open(HIST_PENDING_FILE, "r");
         if (pendFile) {
             char lineBuf[LINE_BUF];
@@ -107,18 +109,13 @@ bool History::begin(bool formatOnFail) {
                 if (strlen(p) == 0) return;
                 HistoryEntry tmp = {};
                 if (_lineToEntry(p, tmp)) {
-                    const uint32_t prevSize = _currentFileSize();
-                    const size_t expectedBytes = strlen(p) + 2U;
-                    File dst = LittleFS.open(HISTORY_FILE, "a");
-                    if (dst) {
-                        bool wroteOk = _writeCsvLine(dst, p);
-                        if (wroteOk) dst.flush();
-                        dst.close();
-                        if (wroteOk && _currentFileSize() >= prevSize + expectedBytes) {
-                            replayed++;
-                        } else {
-                            replayWriteFailed = true;
-                        }
+                    if (_lastNonEmptyLineEquals(p)) {
+                        // Already committed by rename() right before power loss; avoid duplicate
+                        pendingAlreadyPresent = true;
+                        return;
+                    }
+                    if (_appendCsvLine(p)) {
+                        replayed++;
                     } else {
                         replayWriteFailed = true;
                     }
@@ -160,9 +157,9 @@ bool History::begin(bool formatOnFail) {
             }
         }
 
-        // Tenta carregar da NVS primeiro (a menos que tenhamos recuperado pendentes)
+        // Tenta carregar da NVS primeiro (a menos que tenhamos recuperado/deduplicado pendentes)
         uint32_t expectedFileSize = 0;
-        bool nvsOk = !replayedPending &&
+        bool nvsOk = !replayedPending && !pendingAlreadyPresent &&
                      storage.loadHistoryCache(_cache, sizeof(_cache), _lineCount, &expectedFileSize);
         bool fsConsistent = false;
         File f = LittleFS.open(HISTORY_FILE, "r");
@@ -170,7 +167,7 @@ bool History::begin(bool formatOnFail) {
             uint32_t fsize = (uint32_t)f.size();
             f.close();
             if (_lineCount == 0) {
-                fsConsistent = (fsize == 0);
+                fsConsistent = (fsize == expectedFileSize);
             } else if (expectedFileSize > 0) {
                 fsConsistent = (fsize == expectedFileSize);
             } else {
@@ -213,6 +210,10 @@ bool History::begin(bool formatOnFail) {
             // Fallback (apenas se NVS estiver vazio ou desatualizado/corrompido)
             _lineCount = _countLines();
             _populateCache();
+            // If file holds only unparseable lines, settle to 0 so subsequent boots don't loop rebuilds
+            if (_cacheCount == 0 && _lineCount > 0) {
+                _lineCount = 0;
+            }
             // Salva na NVS para o proximo boot
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
             LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FS_LOAD, (int)_lineCount,
@@ -284,15 +285,8 @@ void History::_recordNow(const HistoryEntry& entry) {
     }
 
     // Caminho sincrono: salvar ficheiro + flush + ler tamanho ja persistido + NVS
-    const uint32_t prevSize = _currentFileSize();
-    const size_t expectedBytes = strlen(line) + 2U;
-    File f = LittleFS.open(HISTORY_FILE, "a");
-    if (!f) { LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR); return; }
-    bool writeOk = _writeCsvLine(f, line);
-    if (writeOk) f.flush();
-    f.close();
-    const uint32_t fsize = _currentFileSize();
-    if (!writeOk || fsize < prevSize + expectedBytes) {
+    uint32_t fsize = 0;
+    if (!_appendCsvLine(line, &fsize)) {
         LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
         return;
     }
@@ -350,6 +344,7 @@ bool History::clear(bool forceFormat) {
         if (_exportFile) _exportFile.close();
         _exportState = ExportState::IDLE;
         _exportReadErr = false;
+        _exportLineOverflow = false;
         _log_suspended = false;
         _log_suppressed_total = 0;
         _log_suppressed_warn_err = 0;
@@ -421,6 +416,110 @@ bool History::_writeCsvLine(File& f, const char* line) {
     if (!f || !line) return false;
     const size_t expected = strlen(line) + 2U; // line + "\r\n" from Print::println
     return f.println(line) == expected;
+}
+
+bool History::_appendCsvLine(const char* line, uint32_t* outNewSize) const {
+    if (!_ready || !line) return false;
+    const uint32_t prevSize = _currentFileSize();
+    bool needLeadingNewline = false;
+    if (prevSize > 0) {
+        File rf = LittleFS.open(HISTORY_FILE, "r");
+        if (rf) {
+            if (rf.seek(prevSize - 1, SeekSet)) {
+                int lastByte = rf.read();
+                if (lastByte >= 0 && lastByte != '\n') {
+                    needLeadingNewline = true;
+                }
+            }
+            rf.close();
+        }
+    }
+
+    File f = LittleFS.open(HISTORY_FILE, "a");
+    if (!f) return false;
+
+    size_t expectedBytes = strlen(line) + 2U;
+    bool writeOk = true;
+    if (needLeadingNewline) {
+        if (f.println("") != 2U) {
+            writeOk = false;
+        } else {
+            expectedBytes += 2U;
+        }
+    }
+    if (writeOk) {
+        writeOk = _writeCsvLine(f, line);
+    }
+    if (writeOk) f.flush();
+    f.close();
+
+    const uint32_t newSize = _currentFileSize();
+    if (outNewSize) *outNewSize = newSize;
+    return writeOk && (newSize >= prevSize + expectedBytes);
+}
+
+bool History::_lastNonEmptyLineEquals(const char* target) const {
+    if (!_ready || !target || target[0] == '\0') return false;
+    File f = LittleFS.open(HISTORY_FILE, "r");
+    if (!f) return false;
+
+    const uint32_t fsize = (uint32_t)f.size();
+    if (fsize == 0) {
+        f.close();
+        return false;
+    }
+
+    const uint32_t tailWindow = LINE_BUF * 2U;
+    if (fsize > tailWindow) {
+        f.seek(fsize - tailWindow, SeekSet);
+        while (f.available()) {
+            int c = f.read();
+            if (c < 0 || c == '\n') break;
+        }
+    }
+
+    char lastLine[LINE_BUF] = {};
+    char curLine[LINE_BUF] = {};
+    size_t curPos = 0;
+    bool overflow = false;
+    char chunk[128];
+
+    while (f.available()) {
+        esp_task_wdt_reset();
+        int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
+        if (bytesRead <= 0) break;
+        for (int i = 0; i < bytesRead; i++) {
+            char c = chunk[i];
+            if (c == '\n') {
+                if (overflow) {
+                    lastLine[0] = '\0';
+                } else {
+                    char* p = _trimLineBuffer(curLine, curPos);
+                    if (p[0] != '\0') {
+                        strlcpy(lastLine, p, sizeof(lastLine));
+                    }
+                }
+                curPos = 0;
+                overflow = false;
+            } else if (c != '\r') {
+                if (curPos < sizeof(curLine) - 1) {
+                    curLine[curPos++] = c;
+                } else {
+                    overflow = true;
+                }
+            }
+        }
+    }
+    if (overflow) {
+        lastLine[0] = '\0';
+    } else if (curPos > 0) {
+        char* p = _trimLineBuffer(curLine, curPos);
+        if (p[0] != '\0') {
+            strlcpy(lastLine, p, sizeof(lastLine));
+        }
+    }
+    f.close();
+    return strcmp(lastLine, target) == 0;
 }
 
 uint32_t History::_fileSize(const char* path) const {
@@ -556,60 +655,76 @@ void History::_populateCache() {
     if (!f) return;
 
     // Otimização O(1): se o ficheiro for longo, saltar para o fim
-    uint32_t fsize = f.size();
-    uint32_t tailSize = HISTORY_DISPLAY * LINE_BUF + 128;
-    if (fsize > tailSize) {
-        f.seek(fsize - tailSize, SeekSet);
-        // Descartar a primeira linha que possivelmente está cortada a meio
-        while (f.available()) {
-            if (f.read() == '\n') break;
+    const uint32_t fsize = (uint32_t)f.size();
+    const uint32_t tailSize = HISTORY_DISPLAY * LINE_BUF + 128;
+
+    auto scanFrom = [&](bool tailOnly) {
+        _cacheCount = 0;
+        for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = HistoryEntry{};
+
+        if (tailOnly && fsize > tailSize) {
+            f.seek(fsize - tailSize, SeekSet);
+            // Descartar a primeira linha que possivelmente está cortada a meio
+            while (f.available()) {
+                int c = f.read();
+                if (c < 0 || c == '\n') break;
+            }
+        } else {
+            f.seek(0, SeekSet);
         }
-    }
 
-    char chunk[256];
-    char line[LINE_BUF];
-    size_t linePos = 0;
-    bool lineOverflow = false;
+        char chunk[256];
+        char line[LINE_BUF];
+        size_t linePos = 0;
+        bool lineOverflow = false;
 
-    while (f.available()) {
-        esp_task_wdt_reset();
-        int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
-        if (bytesRead <= 0) break;
+        while (f.available()) {
+            esp_task_wdt_reset();
+            int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
+            if (bytesRead <= 0) break;
 
-        for (int i = 0; i < bytesRead; i++) {
-            char c = chunk[i];
-            if (c == '\n') {
-                if (lineOverflow) {
-                    linePos = 0;
-                    lineOverflow = false;
-                    continue;
-                }
-                char* p = _trimLineBuffer(line, linePos);
-                if (strlen(p) > 0) {
-                    HistoryEntry temp = {};
-                    if (_lineToEntry(p, temp)) {
-                        _pushCache(temp);
+            for (int i = 0; i < bytesRead; i++) {
+                char c = chunk[i];
+                if (c == '\n') {
+                    if (lineOverflow) {
+                        linePos = 0;
+                        lineOverflow = false;
+                        continue;
+                    }
+                    char* p = _trimLineBuffer(line, linePos);
+                    if (strlen(p) > 0) {
+                        HistoryEntry temp = {};
+                        if (_lineToEntry(p, temp)) {
+                            _pushCache(temp);
+                        }
+                    }
+                } else if (c != '\r') {
+                    if (linePos < sizeof(line) - 1) {
+                        line[linePos++] = c;
+                    } else {
+                        lineOverflow = true;
                     }
                 }
-            } else if (c != '\r') {
-                if (linePos < sizeof(line) - 1) {
-                    line[linePos++] = c;
-                } else {
-                    lineOverflow = true;
+            }
+        }
+
+        // Process final line if file does not end with '\n'
+        if (linePos > 0 && !lineOverflow) {
+            char* p = _trimLineBuffer(line, linePos);
+            if (strlen(p) > 0) {
+                HistoryEntry temp = {};
+                if (_lineToEntry(p, temp)) {
+                    _pushCache(temp);
                 }
             }
         }
-    }
+    };
 
-    // Process final line if file does not end with '\n'
-    if (linePos > 0 && !lineOverflow) {
-        char* p = _trimLineBuffer(line, linePos);
-        if (strlen(p) > 0) {
-            HistoryEntry temp = {};
-            if (_lineToEntry(p, temp)) {
-                _pushCache(temp);
-            }
-        }
+    const bool useTail = (fsize > tailSize);
+    scanFrom(useTail);
+    if (useTail && _cacheCount < HISTORY_DISPLAY) {
+        // Fallback: tail window held corrupt/overlong lines — rescan full file
+        scanFrom(false);
     }
 
     f.close();
@@ -630,20 +745,8 @@ void History::_rotateAndAppend(const char* newLine) {
     }
 
     auto fallbackAppend = [&]() {
-        const uint32_t prevSize = _currentFileSize();
-        const size_t expectedBytes = strlen(newLine) + 2U;
-        File f = LittleFS.open(HISTORY_FILE, "a");
-        bool wrote = false;
-        if (f) {
-            bool writeOk = _writeCsvLine(f, newLine);
-            if (writeOk) f.flush();
-            f.close();
-            if (writeOk && _currentFileSize() >= prevSize + expectedBytes) {
-                _lineCount++;
-                wrote = true;
-            }
-        }
-        if (wrote) {
+        if (_appendCsvLine(newLine)) {
+            _lineCount++;
             LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_ROT_OPEN_FAIL);
         } else {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
@@ -811,20 +914,15 @@ void History::update() {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_RENAME_FAIL);
             LittleFS.remove(HIST_TMP_FILE);
             _pendingCacheSave = false;
-            const uint32_t prevSize = _currentFileSize();
-            const size_t expectedBytes = strlen(_rotPendingLine) + 2U;
-            File f = LittleFS.open(HISTORY_FILE, "a");
-            if (f) {
-                bool writeOk = _writeCsvLine(f, _rotPendingLine);
-                if (writeOk) f.flush();
-                f.close();
-                if (writeOk && _currentFileSize() >= prevSize + expectedBytes) {
-                    LittleFS.remove(HIST_PENDING_FILE);
-                }
+            if (_appendCsvLine(_rotPendingLine)) {
+                LittleFS.remove(HIST_PENDING_FILE);
             }
             // Rebuild consistent state from the actual file
             _lineCount = _countLines();
             _populateCache();
+            if (_cacheCount == 0 && _lineCount > 0) {
+                _lineCount = 0;
+            }
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
         }
         _rotState = RotState::IDLE;
@@ -842,8 +940,36 @@ void History::update() {
             for (int i = 0; i < bytesRead; i++) {
                 char c = chunk[i];
                 if (c == '\n') {
+                    if (!_exportLineOverflow) {
+                        _exportLineBuf[_exportLinePos] = '\0';
+                        // Trim CR
+                        while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
+                            _exportLineBuf[--_exportLinePos] = '\0';
+                        }
+                        if (_exportLinePos > 0) {
+                            Serial.println(_exportLineBuf);
+                            _exportSent++;
+                        }
+                    }
+                    _exportLinePos = 0;
+                    _exportLineOverflow = false;
+                } else if (c != '\r') {
+                    if (_exportLinePos < sizeof(_exportLineBuf) - 1) {
+                        _exportLineBuf[_exportLinePos++] = c;
+                    } else {
+                        _exportLineOverflow = true;
+                    }
+                }
+            }
+        } else {
+            if (bytesRead < 0 || _exportFile.available() > 0) {
+                _exportReadErr = true;
+                _exportLinePos = 0; // discard incomplete partial line
+                _exportLineOverflow = false;
+            } else if (_exportLinePos > 0) {
+                if (!_exportLineOverflow) {
+                    // EOF — process last line if no trailing newline
                     _exportLineBuf[_exportLinePos] = '\0';
-                    // Trim CR
                     while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
                         _exportLineBuf[--_exportLinePos] = '\0';
                     }
@@ -851,26 +977,9 @@ void History::update() {
                         Serial.println(_exportLineBuf);
                         _exportSent++;
                     }
-                    _exportLinePos = 0;
-                } else if (_exportLinePos < sizeof(_exportLineBuf) - 1) {
-                    _exportLineBuf[_exportLinePos++] = c;
-                }
-            }
-        } else {
-            if (bytesRead < 0 || _exportFile.available() > 0) {
-                _exportReadErr = true;
-                _exportLinePos = 0; // discard incomplete partial line
-            } else if (_exportLinePos > 0) {
-                // EOF — process last line if no trailing newline
-                _exportLineBuf[_exportLinePos] = '\0';
-                while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
-                    _exportLineBuf[--_exportLinePos] = '\0';
-                }
-                if (_exportLinePos > 0) {
-                    Serial.println(_exportLineBuf);
-                    _exportSent++;
                 }
                 _exportLinePos = 0;
+                _exportLineOverflow = false;
             }
             _exportState = ExportState::FOOTER;
         }
@@ -935,6 +1044,7 @@ bool History::startExport(bool announce) {
     _exportTotal = _lineCount;
     _exportLinePos = 0;
     _exportReadErr = false;
+    _exportLineOverflow = false;
 
     if (announce) {
         Serial.println(TXT_LOG_START_EXPORT);

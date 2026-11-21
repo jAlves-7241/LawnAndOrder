@@ -14,6 +14,7 @@ public:
     bool readFail = false;
     bool formatFail = false;
     bool removeFail = false;
+    bool renameFail = false;
     bool bufferedSize = false;
 
     void reset() {
@@ -23,6 +24,7 @@ public:
         readFail = false;
         formatFail = false;
         removeFail = false;
+        renameFail = false;
         bufferedSize = false;
         files.clear();
     }
@@ -36,6 +38,7 @@ public:
                 partialWriteFail = false;
                 readFail = false;
                 removeFail = false;
+                renameFail = false;
                 return true;
             }
             return false;
@@ -51,6 +54,7 @@ public:
         partialWriteFail = false;
         readFail = false;
         removeFail = false;
+        renameFail = false;
         return true;
     }
 
@@ -84,7 +88,7 @@ public:
     }
 
     bool rename(const char* from, const char* to) {
-        if (!from || !to) return false;
+        if (!from || !to || renameFail) return false;
         auto it = files.find(from);
         if (it == files.end()) return false;
         files[to] = it->second;

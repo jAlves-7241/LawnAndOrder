@@ -79,11 +79,14 @@ private:
     char        _exportLineBuf[LINE_BUF] = {};
     size_t      _exportLinePos = 0;
     bool        _exportReadErr = false;
+    bool        _exportLineOverflow = false;
 
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
     static char* _trimLineBuffer(char* buf, size_t& pos);
     static bool _writeCsvLine(File& f, const char* line);
+    bool        _appendCsvLine(const char* line, uint32_t* outNewSize = nullptr) const;
+    bool        _lastNonEmptyLineEquals(const char* target) const;
     uint16_t    _countLines() const;
     uint32_t    _fileSize(const char* path) const;
     uint32_t    _currentFileSize() const;
