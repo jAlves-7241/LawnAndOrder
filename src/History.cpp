@@ -561,16 +561,29 @@ void History::_entryToLine(const HistoryEntry& e, char* buf, size_t len) {
 
 bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     if (!line) return false;
-    int yr, mo, dy, hh, mm;
-    char tc = 0;
-    int consumed = 0;
 
-    // "YYYY-MM-DDTHH:MM,C,d0,..."
-    if (sscanf(line, "%4d-%2d-%2dT%2d:%2d,%c%n",
-               &yr, &mo, &dy, &hh, &mm, &tc, &consumed) != 6) return false;
+    // Exact prefix: "YYYY-MM-DDTHH:MM,<trigger>," (19 chars) + at least 1 zone char
+    if (strlen(line) < 20) return false;
+    for (int i = 0; i < 16; i++) {
+        if (i == 4 || i == 7) {
+            if (line[i] != '-') return false;
+        } else if (i == 10) {
+            if (line[i] != 'T') return false;
+        } else if (i == 13) {
+            if (line[i] != ':') return false;
+        } else if (line[i] < '0' || line[i] > '9') {
+            return false;
+        }
+    }
+    if (line[16] != ',' || line[18] != ',') return false;
 
-    // Require comma delimiter right after trigger (rejects missing durations or garbage after trigger)
-    if (consumed <= 0 || line[consumed] != ',') return false;
+    int yr = (line[0] - '0') * 1000 + (line[1] - '0') * 100 +
+             (line[2] - '0') * 10   + (line[3] - '0');
+    int mo = (line[5] - '0') * 10   + (line[6] - '0');
+    int dy = (line[8] - '0') * 10   + (line[9] - '0');
+    int hh = (line[11] - '0') * 10  + (line[12] - '0');
+    int mm = (line[14] - '0') * 10  + (line[15] - '0');
+    char tc = line[17];
 
     // Rejeitar valores cronológicos impossíveis (incluindo dias por mês e ano bissexto)
     if (yr < 2020 || yr > 2099 || mo < 1 || mo > 12 ||
@@ -591,12 +604,21 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
         return false;
 
     // Parse zone durations - right after the second comma
-    const char* p = line + consumed + 1;
+    const char* p = line + 19;
+    if (*p == '\0') return false;
     for (int i = 0; i < NUM_ZONES; i++) {
         if (*p) {
+            if (*p != '-' && (*p < '0' || *p > '9')) return false;
             char* endp = nullptr;
             long val = strtol(p, &endp, 10);
-            if (endp == p || (*endp != ',' && *endp != '\0')) return false;
+            if (endp == p) return false;
+            if (i == NUM_ZONES - 1) {
+                if (*endp != '\0') return false;
+            } else if (*endp == ',') {
+                if (endp[1] == '\0') return false;
+            } else if (*endp != '\0') {
+                return false;
+            }
             if (val < 0) val = 0;
             if (val > 255) val = 255;
             out.zone_dur[i] = (uint8_t)val;
@@ -605,7 +627,7 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
             out.zone_dur[i] = 0;
         }
     }
-    return true;
+    return *p == '\0';
 }
 
 char* History::_trimLineBuffer(char* buf, size_t& pos) {
@@ -941,17 +963,15 @@ void History::update() {
                 char c = chunk[i];
                 if (c == '\n') {
                     if (!_exportLineOverflow) {
-                        _exportLineBuf[_exportLinePos] = '\0';
-                        // Trim CR
-                        while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
-                            _exportLineBuf[--_exportLinePos] = '\0';
-                        }
-                        if (_exportLinePos > 0) {
-                            Serial.println(_exportLineBuf);
+                        char* p = _trimLineBuffer(_exportLineBuf, _exportLinePos);
+                        HistoryEntry tmp = {};
+                        if (p[0] != '\0' && _lineToEntry(p, tmp)) {
+                            Serial.println(p);
                             _exportSent++;
                         }
+                    } else {
+                        _exportLinePos = 0;
                     }
-                    _exportLinePos = 0;
                     _exportLineOverflow = false;
                 } else if (c != '\r') {
                     if (_exportLinePos < sizeof(_exportLineBuf) - 1) {
@@ -969,16 +989,15 @@ void History::update() {
             } else if (_exportLinePos > 0) {
                 if (!_exportLineOverflow) {
                     // EOF — process last line if no trailing newline
-                    _exportLineBuf[_exportLinePos] = '\0';
-                    while (_exportLinePos > 0 && _exportLineBuf[_exportLinePos - 1] == '\r') {
-                        _exportLineBuf[--_exportLinePos] = '\0';
-                    }
-                    if (_exportLinePos > 0) {
-                        Serial.println(_exportLineBuf);
+                    char* p = _trimLineBuffer(_exportLineBuf, _exportLinePos);
+                    HistoryEntry tmp = {};
+                    if (p[0] != '\0' && _lineToEntry(p, tmp)) {
+                        Serial.println(p);
                         _exportSent++;
                     }
+                } else {
+                    _exportLinePos = 0;
                 }
-                _exportLinePos = 0;
                 _exportLineOverflow = false;
             }
             _exportState = ExportState::FOOTER;
@@ -1066,6 +1085,10 @@ bool History::startExport(bool announce) {
 
 bool History::isExporting() const {
     return _exportState != ExportState::IDLE;
+}
+
+bool History::isRotating() const {
+    return _rotState != RotState::IDLE;
 }
 
 uint8_t History::exportProgress() const {

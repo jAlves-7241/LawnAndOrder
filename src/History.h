@@ -35,6 +35,7 @@ public:
     // Serial export
     bool     startExport(bool announce = false);
     bool     isExporting() const;
+    bool     isRotating() const;
     uint8_t  exportProgress() const;
     uint16_t exportSent() const;
 

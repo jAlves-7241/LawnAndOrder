@@ -137,14 +137,16 @@ void test_history_rotation_triggered_at_capacity(void) {
     history.record(e);
 
     // Rotation state machine should be active
+    TEST_ASSERT_TRUE(history.isRotating());
     TEST_ASSERT_TRUE(history._rotState != History::RotState::IDLE);
 
     // Run update iterations until rotation completes
     int safetyLimit = 500;
-    while (history._rotState != History::RotState::IDLE && safetyLimit-- > 0) {
+    while (history.isRotating() && safetyLimit-- > 0) {
         history.update();
     }
 
+    TEST_ASSERT_FALSE(history.isRotating());
     TEST_ASSERT_EQUAL(History::RotState::IDLE, history._rotState);
     uint16_t expectedRemaining = HISTORY_MAX_ENTRIES - (HISTORY_MAX_ENTRIES / 10) + 1;
     TEST_ASSERT_EQUAL_UINT16(expectedRemaining, history.entryCount());
@@ -701,9 +703,19 @@ void test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv(
     TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-30T10:20,C,9,0,0,0") != std::string::npos);
     TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-07-01T11:00,A,5,0,0,0") != std::string::npos);
 
-    // 4. Stricter _lineToEntry() checks: missing zone comma, trigger garbage, non-numeric dur, invalid calendar day
+    // 4. Stricter _lineToEntry() checks: missing zone comma, trigger garbage, non-numeric dur, invalid calendar day,
+    //    empty zone section, trailing garbage/extra columns, and signed/spaced prefix fields
     HistoryEntry parsed = {};
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A,", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A,10,", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A,8,6,7,0,", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A,8,6,7,0,GARBAGE", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,A,8,6,7,0,99", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-+5-10T10:00,A,5,0,0,0", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry(" 2026-05-10T10:00,A,5,0,0,0", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-05-10T10:00,A,+5,0,0,0", parsed));
+    TEST_ASSERT_FALSE(History::_lineToEntry("2026-05-10T10:00,A, 5,0,0,0", parsed));
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,Mabc,10,0,0,0", parsed));
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,M,abc,0,0,0", parsed));
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-04-26T18:02,M,10x,0,0,0", parsed));
@@ -741,6 +753,19 @@ void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_ov
     TEST_ASSERT_EQUAL_UINT8(3, out[1].day);
     TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, out[1].trigger);
 
+    // Export of file with isolated partial-write fragment must skip corrupt line and emit only valid rows
+    Serial.reset();
+    TEST_ASSERT_TRUE(rebuilt.startExport());
+    int expSafety = 100;
+    while (rebuilt.isExporting() && expSafety-- > 0) {
+        rebuilt.update();
+    }
+    TEST_ASSERT_FALSE(rebuilt.isExporting());
+    TEST_ASSERT_EQUAL_UINT16(2, rebuilt.exportSent());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-01T07:30,A,8,6,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-03T08:15,C,12,4,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-02") == std::string::npos);
+
     // 2. [M-6] Pending replay skips duplicate when last line of HISTORY_FILE already matches
     Preferences::resetStorage();
     storage.begin();
@@ -775,7 +800,7 @@ void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_ov
     TEST_ASSERT_EQUAL_UINT16(0, corruptBoot2.entryCount());
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_FS_REASON_REBUILD) == std::string::npos);
 
-    // 4. [M-7b] Serial export discards overlong >= LINE_BUF lines without emitting truncated data
+    // 4. [M-7b] Serial export discards overlong >= LINE_BUF lines, short corrupt rows, and corrupt EOF tail
     Preferences::resetStorage();
     storage.begin();
     LittleFS.reset();
@@ -783,7 +808,9 @@ void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_ov
     LittleFS.files[HISTORY_FILE] =
         "2026-09-10T06:00,A,10,0,0,0\r\n" +
         overlong + "\r\n" +
-        "2026-09-11T06:00,M,15,0,0,0\r\n";
+        "CORRUPT_SHORT_ROW\r\n" +
+        "2026-09-11T06:00,M,15,0,0,0\r\n" +
+        "2026-09-12T06:00,A,5,0,0,0,EXTRA"; // unterminated corrupt EOF line
     History expHist;
     TEST_ASSERT_TRUE(expHist.begin(false));
     Serial.reset();
@@ -796,6 +823,8 @@ void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_ov
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-10T06:00,A,10,0,0,0") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-09-11T06:00,M,15,0,0,0") != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("ZZZZZZZZ") == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("CORRUPT_SHORT_ROW") == std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("EXTRA") == std::string::npos);
 
     // 5. [L-8] _populateCache() falls back to full scan when >512 bytes of tail corruption follow valid entries
     Preferences::resetStorage();
