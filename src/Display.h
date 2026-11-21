@@ -61,6 +61,8 @@ private:
     bool _hasRecoverAttempt = false;
     bool _inErrorCallback = false;
     bool _errorDeferred = false;
+    bool _backlightOffFailed = false;
+    bool _displayOffFailed = false;
     uint8_t _consecErrors = 0;
     uint8_t _recoverAttempts = 0;
     uint32_t _recoverExecSeq = 0;
@@ -78,6 +80,7 @@ private:
     uint32_t _lastAttemptMs = 0;
 
     bool _flushRow(uint8_t row);
-    bool _writeRow(uint8_t row, const char* text, bool* wroteFull = nullptr);
+    void _stageRow(uint8_t row, const char* text);
+    bool _writeRow(uint8_t row, const char* text, bool* wroteFull = nullptr, bool* didI2c = nullptr);
     void _invalidateShadow();  // force full redraw on next setRows()
 };

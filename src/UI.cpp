@@ -129,8 +129,11 @@ void UI::update() {
             _d.displayOff();
         }
     } else if (gState.backlight_timeout_ms == BACKLIGHT_TIMEOUT_NEVER) {
-        if (!_d.isDisplayOn()) _d.displayOn();
-        if (!_d.isBacklightOn()) _d.backlightOn();
+        if (!_d.isDisplayOn() || !_d.isBacklightOn()) {
+            _d.wake(_currentScreen != nullptr);
+            _lastActivity = millis();
+            if (_currentScreen) _currentScreen->render(*this);
+        }
     }
 
     if (_currentScreen == &_screenIdle && !_inSetup && !gState.watering.active &&

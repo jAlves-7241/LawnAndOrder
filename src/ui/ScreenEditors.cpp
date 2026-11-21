@@ -84,7 +84,13 @@ void ScreenDurPick::handleClick(UI& ui) {
 
     if (_durContext == DurContext::FREQ_DAYS) {
         ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        cs.interval_days = (_durValue > 0) ? _durValue : 1;
+        uint8_t newInterval = (_durValue > 0) ? _durValue : 1;
+        if (newInterval == cs.interval_days &&
+            (!gState.rtc_valid || gState.custom_ref_day != 0xFFFFFFFFUL)) {
+            ui.goMenu(_backMenu);
+            return;
+        }
+        cs.interval_days = newInterval;
         if (!gState.rtc_valid) { gState.custom_ref_day = 0xFFFFFFFFUL; } else {
             DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
             gState.custom_ref_day = localDate.unixtime() / 86400UL;

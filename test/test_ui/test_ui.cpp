@@ -1046,6 +1046,82 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     TEST_ASSERT_TRUE(ESP.rebooted);
 }
 
+void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void) {
+    // 1. Mid-frame I2C error during setRows() must still stage rows 1..3 so recovery renders a coherent frame
+    testDisp.setRows("Old0", "Old1", "Old2", "Old3");
+    TEST_ASSERT_EQUAL_STRING("Old0                ", testDisp._lcd.getRow(0));
+    TEST_ASSERT_EQUAL_STRING("Old3                ", testDisp._lcd.getRow(3));
+
+    testDisp._lcd.mockI2cError = 1;
+    testDisp.setRows("New0", "New1", "New2", "New3");
+    TEST_ASSERT_TRUE(testDisp.hasBusFault());
+
+    testDisp._lcd.mockI2cError = 0;
+    advanceMockMillis(1000UL);
+    testDisp.sync();
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    TEST_ASSERT_EQUAL_STRING("New0                ", testDisp._lcd.getRow(0));
+    TEST_ASSERT_EQUAL_STRING("New1                ", testDisp._lcd.getRow(1));
+    TEST_ASSERT_EQUAL_STRING("New2                ", testDisp._lcd.getRow(2));
+    TEST_ASSERT_EQUAL_STRING("New3                ", testDisp._lcd.getRow(3));
+
+    // 2. Switching to Setup Welcome while asleep + BACKLIGHT_TIMEOUT_NEVER wakes and renders new screen cleanly
+    gState.setup_done = true;
+    gState.backlight_timeout_ms = 60000UL;
+    testUi.begin();
+    testUi.goIdle();
+    testDisp.backlightOff();
+    testDisp.displayOff();
+    TEST_ASSERT_FALSE(testDisp.isDisplayOn());
+
+    gState.setup_done = false;
+    gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
+    testUi.syncSetupState(); // enters ScreenSetupWelcome while display is still OFF
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+
+    testUi.update();
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+    TEST_ASSERT_TRUE(testDisp.isBacklightOn());
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), TXT_WELCOME) != nullptr);
+
+    // 3. I2C error on backlightOff()/displayOff() keeps logical ON state, avoids retry storm, and recovers after bus clears
+    gState.setup_done = true;
+    gState.backlight_timeout_ms = 60000UL;
+    testUi.syncSetupState();
+    testDisp._lcd.mockI2cError = 1;
+    testDisp.backlightOff();
+    TEST_ASSERT_TRUE(testDisp.isBacklightOn());
+    TEST_ASSERT_TRUE(testDisp.hasBusFault());
+    testDisp.displayOff();
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+
+    // Bus clears -> sync() clears _busFault -> backlightOff() & displayOff() succeed cleanly
+    testDisp._lcd.mockI2cError = 0;
+    advanceMockMillis(1000UL);
+    testDisp.sync();
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    testDisp.backlightOff();
+    testDisp.displayOff();
+    TEST_ASSERT_FALSE(testDisp.isBacklightOn());
+    TEST_ASSERT_FALSE(testDisp.isDisplayOn());
+    testDisp.wake(true);
+
+    // 4. FREQ_DAYS with unchanged interval preserves existing custom_ref_day and scheduler trigger locks
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 10, 0, 0, 1, DateTime(2026, 6, 15, 9, 0, 0).unixtime() };
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.interval_days = 3;
+    const uint32_t origRefDay = 20000UL;
+    gState.custom_ref_day = origRefDay;
+    scheduler._lastTriggerUnix[0] = 1781500000UL;
+
+    testUi.getScreenDurPick().setup(3, DurContext::FREQ_DAYS, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_UINT32(origRefDay, gState.custom_ref_day);
+    TEST_ASSERT_EQUAL_UINT32(1781500000UL, scheduler._lastTriggerUnix[0]);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -1066,5 +1142,6 @@ int main(void) {
     RUN_TEST(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
     RUN_TEST(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
     RUN_TEST(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
+    RUN_TEST(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
     return UNITY_END();
 }

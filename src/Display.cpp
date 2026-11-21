@@ -37,6 +37,8 @@ void Display::begin() {
     _hasRecoverAttempt = false;
     _inErrorCallback = false;
     _errorDeferred = false;
+    _backlightOffFailed = false;
+    _displayOffFailed = false;
     _recoverCooldownMs = 10000UL;
     _commErrWarned = false;
     if (_busFault) {
@@ -94,6 +96,8 @@ void Display::recover(bool quiet, bool flushShadow) {
         _recoverAttempts = 0;
         _hasRecoverAttempt = false;
         _recoverCooldownMs = 10000UL;
+        _backlightOffFailed = false;
+        _displayOffFailed = false;
         if (!quiet) {
             LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
         }
@@ -116,6 +120,7 @@ bool Display::needsPeriodicRecover(uint32_t intervalMs) const {
 
 void Display::backlightOn() {
     if (_backlightOn) return;
+    _backlightOffFailed = false;
     _lcd.clearError();
     _lcd.backlight();
     _busFault = (_lcd.lastError() != 0);
@@ -125,15 +130,22 @@ void Display::backlightOn() {
 
 void Display::backlightOff() {
     if (!_backlightOn) return;
+    if (_backlightOffFailed && _busFault) return;
     _lcd.clearError();
     _lcd.noBacklight();
     _busFault = (_lcd.lastError() != 0);
-    if (_busFault) _invalidateShadow();
+    if (_busFault) {
+        _backlightOffFailed = true;
+        _invalidateShadow();
+        return;
+    }
+    _backlightOffFailed = false;
     _backlightOn = false;
 }
 
 void Display::displayOn() {
     if (_displayOn) return;
+    _displayOffFailed = false;
     _lcd.clearError();
     _lcd.display();
     _busFault = (_lcd.lastError() != 0);
@@ -144,11 +156,32 @@ void Display::displayOn() {
 
 void Display::displayOff() {
     if (!_displayOn) return;
+    if (_displayOffFailed && _busFault) return;
     _lcd.clearError();
     _lcd.noDisplay();
     _busFault = (_lcd.lastError() != 0);
-    if (_busFault) _invalidateShadow();
+    if (_busFault) {
+        _displayOffFailed = true;
+        _invalidateShadow();
+        return;
+    }
+    _displayOffFailed = false;
     _displayOn = false;
+}
+
+void Display::_stageRow(uint8_t row, const char* text) {
+    if (row >= LCD_ROWS) return;
+    if (!text) text = "";
+    char padded[LCD_COLS + 1];
+    size_t rawLen = strlen(text);
+    int len = (rawLen > LCD_COLS) ? LCD_COLS : (int)rawLen;
+    memcpy(padded, text, len);
+    memset(padded + len, ' ', LCD_COLS - len);
+    padded[LCD_COLS] = '\0';
+    if (memcmp(_shadow[row], padded, LCD_COLS) != 0) {
+        memcpy(_shadow[row], padded, LCD_COLS + 1);
+        _dirty[row] = true;
+    }
 }
 
 void Display::_invalidateShadow() {
@@ -176,27 +209,44 @@ void Display::sync() {
 
 void Display::setRows(const char* r0, const char* r1,
                       const char* r2, const char* r3) {
-    if (!_displayOn) return;
+    const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
+    if (!_displayOn) {
+        // Keep _shadow coherent while asleep without touching I2C
+        for (int r = 0; r < LCD_ROWS; r++) {
+            if (rows[r]) _stageRow((uint8_t)r, rows[r]);
+        }
+        return;
+    }
     _lastAttemptMs = millis();
     _lcd.clearError();
     bool frameError = false;
     bool wroteAny = false;
     bool fullRowWritten[LCD_ROWS] = { false, false, false, false };
-    const char* rows[LCD_ROWS] = { r0, r1, r2, r3 };
+    int failedRow = -1;
     for (int r = 0; r < LCD_ROWS; r++) {
         if (rows[r]) {
-            wroteAny = true;
-            if (!_writeRow(r, rows[r], &fullRowWritten[r])) {
+            bool rowDidI2c = false;
+            if (!_writeRow((uint8_t)r, rows[r], &fullRowWritten[r], &rowDidI2c)) {
                 frameError = true;
+                failedRow = r;
                 break;
             }
+            if (rowDidI2c) wroteAny = true;
         } else if (_dirty[r]) {
             wroteAny = true;
             if (!_flushRow((uint8_t)r)) {
                 frameError = true;
+                failedRow = r;
                 break;
             }
             fullRowWritten[r] = true;
+        }
+    }
+
+    if (frameError && failedRow >= 0) {
+        // Stage remaining non-null rows so subsequent sync()/recover() flushes a coherent frame
+        for (int r = failedRow + 1; r < LCD_ROWS; r++) {
+            if (rows[r]) _stageRow((uint8_t)r, rows[r]);
         }
     }
 
@@ -263,12 +313,15 @@ void Display::setRows(const char* r0, const char* r1,
         _hasRecoverAttempt = false;
         _recoverCooldownMs = 10000UL;
         _commErrWarned = false;
+        _backlightOffFailed = false;
+        _displayOffFailed = false;
     }
 }
 
 // Only send to LCD if the row content differs from shadow
-bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull) {
+bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull, bool* didI2c) {
     if (wroteFull) *wroteFull = false;
+    if (didI2c) *didI2c = false;
     if (row >= LCD_ROWS) return true;  // bounds guard
     if (!text) text = "";
     // Build padded version
@@ -281,6 +334,7 @@ bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull) {
 
     if (_dirty[row]) {
         memcpy(_shadow[row], padded, LCD_COLS + 1);
+        if (didI2c) *didI2c = true;
         if (!_flushRow(row)) {
             return false;
         }
@@ -305,6 +359,7 @@ bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull) {
     memcpy(_shadow[row] + diffStart, padded + diffStart, writeLen);
 
     // Mover o cursor e escrever apenas a fatia modificada!
+    if (didI2c) *didI2c = true;
     _lcd.setCursor(diffStart, row);
     char chunk[LCD_COLS + 1];
     memcpy(chunk, padded + diffStart, writeLen);

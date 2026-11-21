@@ -42,10 +42,34 @@ public:
     uint8_t lastError() const { return _i2cErr; }
     void clearError() { _i2cErr = 0; }
 
-    void backlight() { backlightState = true; }
-    void noBacklight() { backlightState = false; }
-    void display() { displayState = true; }
-    void noDisplay() { displayState = false; }
+    void backlight() {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            return;
+        }
+        backlightState = true;
+    }
+    void noBacklight() {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            return;
+        }
+        backlightState = false;
+    }
+    void display() {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            return;
+        }
+        displayState = true;
+    }
+    void noDisplay() {
+        if (mockI2cError != 0) {
+            _i2cErr = mockI2cError;
+            return;
+        }
+        displayState = false;
+    }
 
     void clear() {
         if (mockI2cError != 0) {
