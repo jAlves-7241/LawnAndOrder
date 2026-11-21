@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────
 class ScreenInfo : public UIScreen {
 public:
-    void setup(const char* l0, const char* l1, const char* l2, const char* l3, MenuID backMenu);
+    void setup(const char* l0, const char* l1, const char* l2, const char* l3,
+               MenuID backMenu, UIScreen* backScreen = nullptr);
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;
@@ -18,6 +19,7 @@ public:
 private:
     char _rows[4][LCD_COLS + 1] = {};
     MenuID _backMenu = MenuID::MAIN;
+    UIScreen* _backScreen = nullptr;
     uint32_t _enterMs = 0;
 };
 
@@ -38,6 +40,7 @@ private:
     MenuID _backMenu = MenuID::MAIN;
     char _tag[16] = {};
     bool _selectionOk = false;
+    uint32_t _enterMs = 0;
 };
 
 // ─────────────────────────────────────────────────────────

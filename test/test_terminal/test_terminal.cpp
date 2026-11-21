@@ -617,7 +617,7 @@ void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_OK) == std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("Unix") == std::string::npos);
 
-    // 2. Blocked export_history (while rotation is running) does NOT print TXT_LOG_START_EXPORT
+    // 2. Blocked export_history (while rotation is running or file missing) prints CLI feedback even if LOG_LEVEL==LVL_NONE
     history.clear();
     HistoryEntry e = { 2026, 6, 15, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(e);
@@ -627,10 +627,18 @@ void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     terminal.update();
     TEST_ASSERT_FALSE(history.isExporting());
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_START_EXPORT) == std::string::npos);
-#if LOG_LEVEL >= LVL_WARN
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NO_EXPORT_ROT) != std::string::npos);
-#endif
     history._rotState = History::RotState::IDLE;
+
+    // Missing history file with non-zero cached count prints export-open failure unconditionally
+    std::string savedHist = LittleFS.files[HISTORY_FILE];
+    LittleFS.remove(HISTORY_FILE);
+    Serial.reset();
+    Serial.feedInput("export_history\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_EXPORT_FAIL) != std::string::npos);
+    LittleFS.files[HISTORY_FILE] = savedHist;
 
     // 3. Pipelined "export_history\nstatus\n" in one batch drains trailing command so CSV stream stays uncorrupted
     Serial.reset();
@@ -822,6 +830,7 @@ void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_dat
     _ui_in_setup = false;
 
     // 4. status prints full YYYY-MM-DD HH:MM for next scheduled watering (multi-day custom mode)
+    gState.setup_done = true;
     gState.mode = AppMode::PERSONALIZADO;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.day_pattern = DayPattern::EVERY_X_DAYS;
@@ -836,6 +845,15 @@ void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_dat
     Serial.feedInput("status\r\n");
     terminal.update();
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-18 07:30") != std::string::npos);
+
+    // 4b. status reports setup standby instead of ACTIVE while initial setup wizard is incomplete
+    gState.setup_done = false;
+    Serial.reset();
+    Serial.feedInput("status\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_SETUP) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-18 07:30") == std::string::npos);
+    gState.setup_done = true;
 
     // 5. Expired clear_history confirmation appends blank line
     HistoryEntry he = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };

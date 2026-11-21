@@ -239,13 +239,17 @@ void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
     TEST_ASSERT_EQUAL(SetupStep::DATE_TIME, testUi.getSetupStep());
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDateEdit(), testUi._currentScreen);
 
-    // Advance again to Confirm(skip_clock), rotate to >OK, and click -> advances to SETUP_MODE
+    // Advance again to Confirm(skip_clock), verify 350ms bounce guard, then rotate to >OK and click -> SETUP_MODE
     simulateClick(testUi);
     simulateClick(testUi);
     simulateClick(testUi);
     simulateClick(testUi);
     simulateClick(testUi);
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenConfirm(), testUi._currentScreen);
+    advanceMockMillis(100);
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_FALSE(testUi.getScreenConfirm()._selectionOk);
+    advanceMockMillis(300);
     simulateRotate(testUi, 1);
     TEST_ASSERT_TRUE(testUi.getScreenConfirm()._selectionOk);
     simulateClick(testUi);
@@ -1141,6 +1145,120 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expectedDone) != nullptr);
 }
 
+void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) {
+    gState.setup_done = true;
+    rtclock = RTClock();
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    testUi.begin();
+
+    // 1. ScreenConfirm 350ms post-enter rotation bounce guard protects destructive confirmation
+    testUi.getScreenConfirm().setup("Erase ALL", "settings?", MenuID::DEF_AVANCADO, "reset");
+    testUi.changeScreen(&testUi.getScreenConfirm());
+    TEST_ASSERT_FALSE(testUi.getScreenConfirm()._selectionOk);
+    advanceMockMillis(200);
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_FALSE(testUi.getScreenConfirm()._selectionOk);
+    advanceMockMillis(200);
+    simulateRotate(testUi, 1);
+    TEST_ASSERT_TRUE(testUi.getScreenConfirm()._selectionOk);
+
+    // 2. In-place menu toggles (CUSTOM_ZONAS & toggle_dst) preserve cursor/scroll and copy action safely
+    gState.custom_sel[3] = false;
+    testUi.goMenu(MenuID::CUSTOM_ZONAS);
+    simulateRotate(testUi, 3); // highlight Z4 (scrolls _off to 1)
+    TEST_ASSERT_EQUAL_UINT8(3, testUi.getScreenMenu()._cur);
+    TEST_ASSERT_EQUAL_UINT8(1, testUi.getScreenMenu()._off);
+    simulateClick(testUi);     // toggles Z4 via ScreenMenu::handleClick()
+    TEST_ASSERT_TRUE(gState.custom_sel[3]);
+    TEST_ASSERT_EQUAL(MenuID::CUSTOM_ZONAS, testUi.getScreenMenu()._mid);
+    TEST_ASSERT_EQUAL_UINT8(3, testUi.getScreenMenu()._cur);
+    TEST_ASSERT_EQUAL_UINT8(1, testUi.getScreenMenu()._off);
+
+    testUi.goMenu(MenuID::DEF_AVANCADO);
+    bool foundDst = false;
+    uint8_t dstIdx = 0;
+    for (uint8_t i = 0; i < testUi.getScreenMenu()._itemCount; i++) {
+        if (strcmp(testUi.getScreenMenu()._items[i].action, "toggle_dst") == 0) {
+            dstIdx = i;
+            foundDst = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(foundDst);
+    bool prevDst = gState.auto_dst;
+    testUi.getScreenMenu()._cur = dstIdx;
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL(!prevDst, gState.auto_dst);
+    TEST_ASSERT_EQUAL(MenuID::DEF_AVANCADO, testUi.getScreenMenu()._mid);
+    TEST_ASSERT_EQUAL_UINT8(dstIdx, testUi.getScreenMenu()._cur);
+
+    // 3. ScreenTimeEdit distinguishes UTC range rejection from missing RTC (normal & setup flows)
+    gState.auto_dst = false;
+    testUi.setInSetup(false);
+    // Out-of-range cached year (or TZ-shifted UTC boundary) while hardware RTC is present
+#if TIMEZONE_OFFSET > 0
+    testUi.setDateCache(2020, 1, 1);
+    uint8_t badH = 0;
+#elif TIMEZONE_OFFSET < 0
+    testUi.setDateCache(2099, 12, 31);
+    uint8_t badH = 23;
+#else
+    testUi.setDateCache(2019, 12, 31);
+    uint8_t badH = 23;
+#endif
+    testUi.getScreenTimeEdit().setup(TimeEditContext::RTC, 0, MenuID::DEF);
+    testUi.getScreenTimeEdit()._teHour = badH;
+    testUi.getScreenTimeEdit()._teMin = 0;
+    testUi.getScreenTimeEdit()._teField = 1;
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    simulateClick(testUi);
+    TEST_ASSERT_TRUE(rtclock.isPresent());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[1], TXT_ERR_INVALID_DATE));
+    TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[2], TXT_ERR_DATE_RANGE));
+    TEST_ASSERT_NULL(strstr(testUi.getScreenInfo()._rows[0], TXT_ERR_NO_RTC));
+    simulateClick(testUi); // dismiss -> back to MenuID::DEF
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenMenu(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::DEF, testUi.getScreenMenu()._mid);
+
+    // Same range error during Setup Wizard shows ScreenInfo (NOT skip_clock) and returns to ScreenDateEdit
+    testUi.setInSetup(true);
+    testUi._setupStep = SetupStep::DATE_TIME;
+#if TIMEZONE_OFFSET > 0
+    testUi.setDateCache(2020, 1, 1);
+#elif TIMEZONE_OFFSET < 0
+    testUi.setDateCache(2099, 12, 31);
+#else
+    testUi.setDateCache(2019, 12, 31);
+#endif
+    testUi.getScreenTimeEdit().setup(TimeEditContext::RTC, 0, MenuID::MAIN);
+    testUi.getScreenTimeEdit()._teHour = badH;
+    testUi.getScreenTimeEdit()._teMin = 0;
+    testUi.getScreenTimeEdit()._teField = 1;
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[1], TXT_ERR_INVALID_DATE));
+    simulateClick(testUi); // dismiss -> returns to ScreenDateEdit
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDateEdit(), testUi._currentScreen);
+    testUi.setInSetup(false);
+
+    // 4. Schedule info screen uses "F:" frequency prefix (never duplicates "H:" on row 3)
+    gState.mode = AppMode::MEDIO;
+    testUi.dispatchAction("horarios");
+    TEST_ASSERT_EQUAL_CHAR('H', testUi.getScreenInfo()._rows[2][0]);
+    TEST_ASSERT_EQUAL_CHAR('F', testUi.getScreenInfo()._rows[3][0]);
+    TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[3], TXT_PROG_DAILY));
+
+    gState.mode = AppMode::PERSONALIZADO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.interval_days = 3;
+    testUi.dispatchAction("horarios");
+    TEST_ASSERT_EQUAL_CHAR('F', testUi.getScreenInfo()._rows[3][0]);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -1162,5 +1280,6 @@ int main(void) {
     RUN_TEST(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
     RUN_TEST(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
     RUN_TEST(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
+    RUN_TEST(test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels);
     return UNITY_END();
 }

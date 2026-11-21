@@ -6,13 +6,15 @@
 // ─────────────────────────────────────────────────────────
 // ScreenInfo
 // ─────────────────────────────────────────────────────────
-void ScreenInfo::setup(const char* l0, const char* l1, const char* l2, const char* l3, MenuID backMenu) {
+void ScreenInfo::setup(const char* l0, const char* l1, const char* l2, const char* l3,
+                       MenuID backMenu, UIScreen* backScreen) {
     char buf[LCD_COLS + 1];
     snprintf(_rows[0], sizeof(_rows[0]), "%s", Display::cx(buf, l0));
     snprintf(_rows[1], sizeof(_rows[1]), "%s", Display::fx(buf, l1));
     snprintf(_rows[2], sizeof(_rows[2]), "%s", Display::fx(buf, l2));
     snprintf(_rows[3], sizeof(_rows[3]), "%s", Display::fx(buf, l3));
     _backMenu = backMenu;
+    _backScreen = backScreen;
 }
 
 void ScreenInfo::onEnter(UI& ui) {
@@ -22,11 +24,13 @@ void ScreenInfo::onEnter(UI& ui) {
 
 void ScreenInfo::handleRotation(UI& ui, int8_t /*dir*/) {
     if (millis() - _enterMs < 350UL) return;
-    ui.goMenu(_backMenu);
+    if (_backScreen) ui.changeScreen(_backScreen);
+    else ui.goMenu(_backMenu);
 }
 
 void ScreenInfo::handleClick(UI& ui) {
-    ui.goMenu(_backMenu);
+    if (_backScreen) ui.changeScreen(_backScreen);
+    else ui.goMenu(_backMenu);
 }
 
 void ScreenInfo::render(UI& ui) {
@@ -48,10 +52,12 @@ void ScreenConfirm::setup(const char* l1, const char* l2, MenuID backMenu, const
 }
 
 void ScreenConfirm::onEnter(UI& ui) {
+    _enterMs = millis();
     render(ui);
 }
 
 void ScreenConfirm::handleRotation(UI& ui, int8_t /*dir*/) {
+    if (millis() - _enterMs < 350UL) return;
     _selectionOk = !_selectionOk;
     render(ui);
 }

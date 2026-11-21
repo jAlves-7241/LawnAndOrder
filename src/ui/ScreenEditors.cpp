@@ -352,7 +352,19 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         bool hwOk = rtclock.set(ui.getDateEditYear(), ui.getDateEditMonth(),
                     ui.getDateEditDay(), _teHour, _teMin, 0, false);
         if (!hwOk) {
-            if (ui.inSetup()) {
+            if (rtclock.isPresent()) {
+                // Hardware RTC is present; failure was UTC date/time range validation
+                if (ui.inSetup()) {
+                    ui.getScreenDateEdit().setup(MenuID::MAIN);
+                    ui.getScreenInfo().setup(TXT_ERR_TITLE, TXT_ERR_INVALID_DATE,
+                                             TXT_ERR_DATE_RANGE, "", MenuID::MAIN,
+                                             &ui.getScreenDateEdit());
+                } else {
+                    ui.getScreenInfo().setup(TXT_ERR_TITLE, TXT_ERR_INVALID_DATE,
+                                             TXT_ERR_DATE_RANGE, "", MenuID::DEF);
+                }
+                ui.changeScreen(&ui.getScreenInfo());
+            } else if (ui.inSetup()) {
                 ui.getScreenConfirm().setup(TXT_SETUP_NO_RTC, TXT_SETUP_SKIP_TIME,
                                             MenuID::SETUP_MODE, "skip_clock");
                 ui.changeScreen(&ui.getScreenConfirm());

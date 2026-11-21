@@ -657,6 +657,8 @@ void Terminal::_cmdStatus(char* /*args*/) {
         Serial.println(TXT_TERM_STAT_INACTIVE);
     } else if (!gState.rtc_valid) {
         Serial.println(TXT_TERM_STAT_AWAIT_RTC);
+    } else if (!gState.setup_done) {
+        Serial.println(TXT_TERM_STAT_SETUP);
     } else {
         uint8_t nextH = gState.next_hour;
         uint8_t nextM = gState.next_min;
@@ -817,7 +819,9 @@ void Terminal::_cmdExportHistory(char* /*args*/) {
         Serial.println(TXT_TERM_HIST_EMPTY);
         return;
     }
-    history.startExport(true);
+    if (!history.startExport(true)) {
+        Serial.println(history.isRotating() ? TXT_LOG_NO_EXPORT_ROT : TXT_LOG_HIST_EXPORT_FAIL);
+    }
 }
 
 void Terminal::_cmdClearHistory(char* args) {

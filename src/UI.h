@@ -26,7 +26,7 @@ public:
     // Navigation
     void changeScreen(UIScreen* screen);
     void goIdle();
-    void goMenu(MenuID mid);
+    void goMenu(MenuID mid, bool preserveCursor = false);
 
     // Setup logic
     bool inSetup() const { return _inSetup; }

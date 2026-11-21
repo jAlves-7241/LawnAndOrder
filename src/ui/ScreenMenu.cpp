@@ -3,13 +3,29 @@
 #include "../UI.h"
 #include <string.h>
 
-void ScreenMenu::setup(MenuID mid) {
+void ScreenMenu::setup(MenuID mid, bool preserveCursor) {
+    bool keepPos = preserveCursor && (mid == _mid);
     _mid = mid;
-    _cur = 0;
-    _off = 0;
+    if (!keepPos) {
+        _cur = 0;
+        _off = 0;
+    }
     _lastWateringActive = gState.watering.active;
     _lastSuspended = gState.suspended;
     MenuBuilder::build(mid, _items, _itemCount);
+    if (keepPos) {
+        if (_itemCount == 0) {
+            _cur = 0;
+            _off = 0;
+        } else {
+            if (_cur >= _itemCount) _cur = _itemCount - 1;
+            if (_itemCount <= MENU_VISIBLE) {
+                _off = 0;
+            } else if (_off > _itemCount - MENU_VISIBLE) {
+                _off = _itemCount - MENU_VISIBLE;
+            }
+        }
+    }
 }
 
 void ScreenMenu::onEnter(UI& ui) {
@@ -61,7 +77,9 @@ void ScreenMenu::handleRotation(UI& ui, int8_t dir) {
 
 void ScreenMenu::handleClick(UI& ui) {
     if (_itemCount == 0 || _cur >= _itemCount) return;
-    dispatch(ui, _items[_cur].action);
+    char actionCopy[sizeof(_items[0].action)];
+    strlcpy(actionCopy, _items[_cur].action, sizeof(actionCopy));
+    dispatch(ui, actionCopy);
 }
 
 void ScreenMenu::render(UI& ui) {

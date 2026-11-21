@@ -81,8 +81,8 @@ void UI::goIdle() {
     changeScreen(&_screenIdle);
 }
 
-void UI::goMenu(MenuID mid) {
-    _screenMenu.setup(mid);
+void UI::goMenu(MenuID mid, bool preserveCursor) {
+    _screenMenu.setup(mid, preserveCursor);
     changeScreen(&_screenMenu);
 }
 
@@ -340,7 +340,7 @@ void UI::dispatchAction(const char* action) {
         int zi = 0;
         if (parseStrictIndex(action + 3, 0, NUM_ZONES - 1, zi)) {
             gState.custom_sel[zi] = !gState.custom_sel[zi];
-            goMenu(MenuID::CUSTOM_ZONAS);
+            goMenu(MenuID::CUSTOM_ZONAS, true);
             return;
         }
         LOG_W(TXT_LOG_TAG_UI, TXT_LOG_UI_UNKNOWN_ACTION, action);
@@ -393,7 +393,7 @@ void UI::dispatchAction(const char* action) {
             rtclock.refreshLocalTime();
         }
         scheduler.onModeChanged(false);
-        goMenu(MenuID::DEF_AVANCADO);
+        goMenu(MenuID::DEF_AVANCADO, true);
         return;
     }
 

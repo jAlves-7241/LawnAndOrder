@@ -4,7 +4,7 @@
 
 class ScreenMenu : public UIScreen {
 public:
-    void setup(MenuID mid);
+    void setup(MenuID mid, bool preserveCursor = false);
 
     void onEnter(UI& ui) override;
     void update(UI& ui) override;
