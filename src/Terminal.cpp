@@ -741,17 +741,26 @@ void Terminal::_cmdSetTime(char *args) {
     }
 
     // Acertar a hora local (campos ja validados acima)
+    const uint32_t revBefore = rtclock.manualRevision();
     const bool hwSaved = rtclock.set((uint16_t)yr, (uint8_t)mo, (uint8_t)dy,
                                      (uint8_t)hh, (uint8_t)mm, (uint8_t)ss);
+    if (rtclock.manualRevision() == revBefore) {
+        Serial.printf(TXT_TERM_ERR_YEAR, DATE_YEAR_MIN, DATE_YEAR_MAX);
+        return;
+    }
 
     // Atualizar o scheduler e editores de relogio imediatamente (hardware ou fallback software)
     scheduler.onModeChanged(false);
     ui.refreshClockEditors();
 
     if (hwSaved) {
-        Serial.printf(TXT_TERM_TIME_SET, yr, mo, dy, hh, mm, ss);
+        Serial.printf(TXT_TERM_TIME_SET,
+                      (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
+                      (int)gState.now.hour, (int)gState.now.min,   (int)gState.now.sec);
     } else {
-        Serial.printf(TXT_TERM_TIME_SET_SW, yr, mo, dy, hh, mm, ss);
+        Serial.printf(TXT_TERM_TIME_SET_SW,
+                      (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
+                      (int)gState.now.hour, (int)gState.now.min,   (int)gState.now.sec);
     }
 }
 

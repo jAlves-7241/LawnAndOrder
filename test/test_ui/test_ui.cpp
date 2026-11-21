@@ -1120,6 +1120,25 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     simulateClick(testUi);
     TEST_ASSERT_EQUAL_UINT32(origRefDay, gState.custom_ref_day);
     TEST_ASSERT_EQUAL_UINT32(1781500000UL, scheduler._lastTriggerUnix[0]);
+
+    // 5. ScreenTimeEdit displays effective normalized local time on spring-forward DST gap
+    gState.auto_dst = true;
+    rtclock = RTClock();
+    rtclock.begin();
+    testUi.setInSetup(false);
+    const DateTime gapLocal(DateTime(2026, 3, 29, 1, 30, 0).unixtime() + (int32_t)TIMEZONE_OFFSET * 3600L);
+    const DateTime effLocal(gapLocal.unixtime() + 3600UL);
+    testUi.setDateCache(gapLocal.year(), gapLocal.month(), gapLocal.day());
+    testUi.getScreenTimeEdit().setup(TimeEditContext::RTC, 0, MenuID::DEF);
+    testUi.getScreenTimeEdit()._teHour = gapLocal.hour();
+    testUi.getScreenTimeEdit()._teMin = gapLocal.minute();
+    testUi.getScreenTimeEdit()._teField = 1;
+    testUi.changeScreen(&testUi.getScreenTimeEdit());
+    simulateClick(testUi);
+    char expectedDone[LCD_COLS + 1];
+    snprintf(expectedDone, sizeof(expectedDone), TXT_TIME_FMT, (int)effLocal.hour(), (int)effLocal.minute());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDone(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expectedDone) != nullptr);
 }
 
 int main(void) {

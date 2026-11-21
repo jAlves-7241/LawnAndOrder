@@ -40,6 +40,9 @@ bool RTClock::_ensureRtcDriver() {
 
 bool RTClock::begin() {
     const bool wasValid = gState.rtc_valid;
+    if (wasValid && _anchorUnix >= 1577836800UL && gState.now.unix == _lastKnownUnix) {
+        _incrementSoftwareClock();
+    }
     const SystemTime prevTime = gState.now;
     _consecErrors = 0;
 
@@ -225,6 +228,9 @@ void RTClock::update() {
                             LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
                             _batRecoveryWarned = true;
                         }
+                        if (_anchorUnix >= 1577836800UL && gState.now.unix == _lastKnownUnix) {
+                            _incrementSoftwareClock();
+                        }
                         DateTime restoredUtc = (gState.now.unix >= 1577836800UL)
                             ? DateTime(gState.now.unix)
                             : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
@@ -353,6 +359,9 @@ void RTClock::update() {
             if (!_batRecoveryWarned) {
                 LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
                 _batRecoveryWarned = true;
+            }
+            if (_anchorUnix >= 1577836800UL && gState.now.unix == _lastKnownUnix) {
+                _incrementSoftwareClock();
             }
             DateTime restoredUtc = (gState.now.unix >= 1577836800UL)
                 ? DateTime(gState.now.unix)

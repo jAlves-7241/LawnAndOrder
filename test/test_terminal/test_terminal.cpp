@@ -852,6 +852,49 @@ void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_dat
                      Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 }
 
+void test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection(void) {
+    rtclock = RTClock();
+    rtclock.begin();
+    gState.auto_dst = true;
+
+    // Spring-forward gap at 2026-03-29 01:30 UTC + TIMEZONE_OFFSET shifts forward by +1h
+    const DateTime gapLocal(DateTime(2026, 3, 29, 1, 30, 0).unixtime() + (int32_t)TIMEZONE_OFFSET * 3600L);
+    const DateTime effLocal(gapLocal.unixtime() + 3600UL);
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "set_time %04u-%02u-%02u %02u:%02u:00\r\n",
+             (unsigned)gapLocal.year(), (unsigned)gapLocal.month(), (unsigned)gapLocal.day(),
+             (unsigned)gapLocal.hour(), (unsigned)gapLocal.minute());
+    char expectedEff[32];
+    snprintf(expectedEff, sizeof(expectedEff), "%04u-%02u-%02u %02u:%02u:00",
+             (unsigned)effLocal.year(), (unsigned)effLocal.month(), (unsigned)effLocal.day(),
+             (unsigned)effLocal.hour(), (unsigned)effLocal.minute());
+
+    Serial.reset();
+    Serial.feedInput(cmd);
+    terminal.update();
+    TEST_ASSERT_EQUAL_UINT8(effLocal.hour(), gState.now.hour);
+    TEST_ASSERT_EQUAL_UINT8(effLocal.minute(), gState.now.min);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedEff) != std::string::npos);
+
+#if TIMEZONE_OFFSET != 0
+    // Boundary local time whose UTC conversion falls outside [2020..2099] must reject, not claim SW fallback
+    _ui_refreshed_clock = false;
+    uint32_t revBefore = rtclock.manualRevision();
+    Serial.reset();
+#if TIMEZONE_OFFSET > 0
+    Serial.feedInput("set_time 2020-01-01 00:00:00\r\n");
+#else
+    Serial.feedInput("set_time 2099-12-31 23:00:00\r\n");
+#endif
+    terminal.update();
+    TEST_ASSERT_EQUAL_UINT32(revBefore, rtclock.manualRevision());
+    TEST_ASSERT_FALSE(_ui_refreshed_clock);
+    char expectedErr[96];
+    snprintf(expectedErr, sizeof(expectedErr), TXT_TERM_ERR_YEAR, DATE_YEAR_MIN, DATE_YEAR_MAX);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedErr) != std::string::npos);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -879,5 +922,6 @@ int main(void) {
     RUN_TEST(test_terminal_status_reports_and_clears_rtc_battery_warning);
     RUN_TEST(test_terminal_clear_history_force_args_timeout_and_empty_repair);
     RUN_TEST(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
+    RUN_TEST(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
     return UNITY_END();
 }

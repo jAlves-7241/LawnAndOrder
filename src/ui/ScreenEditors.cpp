@@ -371,7 +371,7 @@ void ScreenTimeEdit::handleClick(UI& ui) {
         }
 
         char saved[LCD_COLS + 1];
-        snprintf(saved, sizeof(saved), TXT_TIME_FMT, _teHour, _teMin);
+        snprintf(saved, sizeof(saved), TXT_TIME_FMT, (int)gState.now.hour, (int)gState.now.min);
         ui.getScreenDone().setup(saved, TXT_RTC_UPDATED);
         ui.getScreenDone().setBackMenu(MenuID::DEF);
         ui.changeScreen(&ui.getScreenDone());

@@ -126,8 +126,9 @@ void test_rtclock_leap_year_dst_calculation(void) {
 
 void test_rtclock_year_end_rollover(void) {
     gState.auto_dst = false;
-    // Dec 31 23:59:59 UTC
-    DateTime endOfYearUtc(2026, 12, 31, 23, 59, 59);
+    // Dec 31 23:59:59 local (adjust UTC by -TIMEZONE_OFFSET so rollover works in any timezone)
+    DateTime endOfYearLocalTarget(2026, 12, 31, 23, 59, 59);
+    DateTime endOfYearUtc(endOfYearLocalTarget.unixtime() - (int32_t)TIMEZONE_OFFSET * 3600L);
     DateTime local = RTClock::utcToLocal(endOfYearUtc);
 
     TEST_ASSERT_EQUAL_UINT16(2026, local.year());
@@ -187,8 +188,9 @@ void test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour(void) {
     TEST_ASSERT_EQUAL_UINT8(0, summerBack.minute());
 
     // October fall-back ambiguous local hour: 2026-10-25 (last Sunday of Oct 2026)
-    // Local repeated hour is (01:00 + TIMEZONE_OFFSET)..(01:59 + TIMEZONE_OFFSET).
-    DateTime ambigLocal(2026, 10, 25, (uint8_t)(1 + TIMEZONE_OFFSET), 30, 0);
+    // Transition occurs at 01:00 UTC -> repeated local instant matches 01:30 UTC + TIMEZONE_OFFSET.
+    DateTime ambigStdUtc(2026, 10, 25, 1, 30, 0);
+    DateTime ambigLocal(ambigStdUtc.unixtime() + (int32_t)TIMEZONE_OFFSET * 3600L);
 
     // Before first occurrence (00:00 UTC): picks summer-time occurrence (00:30 UTC)
     DateTime beforeFirst(2026, 10, 25, 0, 0, 0);
@@ -360,7 +362,7 @@ void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
     rtclock._rtc.mockLostPower = false;
     TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
     uint32_t revBeforeJump = rtclock.revision();
-    rtclock._rtc.adjust(DateTime(2026, 6, 15, 10, 0, 0)); // +1h UTC jump vs 09:00 UTC
+    rtclock._rtc.adjust(DateTime(gState.now.unix + 3600UL)); // +1h UTC jump
     advanceMockMillis(31000);
     Serial.reset();
     rtclock.update();
@@ -630,8 +632,38 @@ void test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback(void) {
     TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
     gState.suspended = true;
     gState.suspended_until = gState.now.unix + 10UL * 86400UL;
-    TEST_ASSERT_TRUE(rtclock.set(2099, 12, 31, 23, 0, 0));
+    TEST_ASSERT_TRUE(rtclock.set(2099, 12, 30, 12, 0, 0));
     TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
+}
+
+void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
+    // 1. Periodic update() OSF restore preserves elapsed seconds since last SW tick
+    setMockMillis(1000);
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    const uint32_t baseUnix = gState.now.unix;
+
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(45000UL); // 45s elapsed without intermediate update()
+    rtclock.update();
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 45UL, gState.now.unix);
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 45UL, rtclock._rtc.now().unixtime());
+
+    // 2. Hotplug OSF restore also advances SW clock before writing back to DS3231
+    rtclock._found = false;
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(35000UL);
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock.isPresent());
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 80UL, gState.now.unix);
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 80UL, rtclock._rtc.now().unixtime());
+
+    // 3. Mid-run begin() (e.g. recoverI2C()) with OSF advances SW clock before restoring RTC
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(12000UL);
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 92UL, gState.now.unix);
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 92UL, rtclock._rtc.now().unixtime());
 }
 
 int main(void) {
@@ -653,5 +685,6 @@ int main(void) {
     RUN_TEST(test_rtclock_battery_low_latch_periodic_recheck_and_clear);
     RUN_TEST(test_rtclock_manual_revision_only_tracks_valid_sets);
     RUN_TEST(test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback);
+    RUN_TEST(test_rtclock_osf_recovery_advances_sw_clock_before_restore);
     return UNITY_END();
 }

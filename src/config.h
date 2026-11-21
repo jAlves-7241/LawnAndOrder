@@ -79,8 +79,12 @@
 #define ZONE4_DUR 0
 
 // ── RTC / Tempo ───────────────────────────────────────────
+#ifndef AUTO_DST_DEFAULT
 #define AUTO_DST_DEFAULT true // Ajuste automático de horário de verão (EU)
+#endif
+#ifndef TIMEZONE_OFFSET
 #define TIMEZONE_OFFSET 0     // Fuso horário base em horas (0 para Portugal/UK, 1 para Europa Central)
+#endif
 
 // ── History (LittleFS CSV) ────────────────────────────────
 #define HISTORY_FILE "/history.csv"
