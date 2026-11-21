@@ -32,6 +32,8 @@ Storage storage;
 
 // ─────────────────────────────────────────────────────────
 void Storage::begin() {
+    if (_ready) return;
+    prefs.end(); // Ensure a clean NVS handle if re-initializing after a reset
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
     if (!_ready) {
@@ -134,11 +136,16 @@ bool Storage::load() {
     if (!_ready) return false;
 
     AppConfigBlob blob = {};
-    size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
-    if (readBytes == 0) {
+    const size_t storedLen = prefs.getBytesLength(KEY_CFG);
+    if (storedLen == 0) {
         LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_EMPTY);
         return false;
     }
+    if (storedLen != sizeof(blob)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
+        return false;
+    }
+    size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
     if (readBytes != sizeof(blob)) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
         return false;
@@ -225,9 +232,14 @@ bool Storage::loadHistoryCache(void* dest, size_t size, uint16_t& lineCount, uin
     if (!_ready || !dest || size == 0 || size > HIST_CACHE_MAX_BYTES) return false;
 
     const size_t expectedLen = sizeof(HistoryNvsHeader) + size + sizeof(uint16_t);
+    const size_t storedLen = prefs.getBytesLength(KEY_HBLOB);
+    if (storedLen == 0) return false;
+    if (storedLen != expectedLen) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_HIST_INV);
+        return false;
+    }
     uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
-    size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, sizeof(buf));
-    if (readBytes == 0) return false;
+    size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, expectedLen);
     if (readBytes != expectedLen) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_HIST_INV);
         return false;
@@ -284,8 +296,12 @@ void Storage::saveHistoryCache(const void* src, size_t size, uint16_t lineCount,
 bool Storage::hasHistoryData() {
     if (!_ready) return false;
     uint8_t buf[sizeof(HistoryNvsHeader) + HIST_CACHE_MAX_BYTES + sizeof(uint16_t)];
+    const size_t storedLen = prefs.getBytesLength(KEY_HBLOB);
+    if (storedLen < sizeof(HistoryNvsHeader) + sizeof(uint16_t) || storedLen > sizeof(buf)) {
+        return false;
+    }
     size_t readBytes = prefs.getBytes(KEY_HBLOB, buf, sizeof(buf));
-    if (readBytes < sizeof(HistoryNvsHeader) + sizeof(uint16_t)) return false;
+    if (readBytes != storedLen) return false;
 
     HistoryNvsHeader hdr = {};
     memcpy(&hdr, buf, sizeof(hdr));
@@ -307,8 +323,13 @@ bool Storage::loadLastTriggers(uint32_t* out, size_t count) {
     if (!_ready) return false;
 
     SchedTriggersBlob blob = {};
+    const size_t storedLen = prefs.getBytesLength(KEY_SCHED_TR);
+    if (storedLen == 0) return false;
+    if (storedLen != sizeof(blob)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_TRIG_CORRUPT);
+        return false;
+    }
     size_t readBytes = prefs.getBytes(KEY_SCHED_TR, &blob, sizeof(blob));
-    if (readBytes == 0) return false;
     if (readBytes != sizeof(blob) || blob.version != NVS_VERSION ||
         blob.count != MAX_SLOTS_PER_MODE) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_TRIG_CORRUPT);
@@ -358,8 +379,13 @@ bool Storage::loadRecoveryState(RecoveryState& rs) {
                   "RecoveryState must have no padding before crc16");
     if (!_ready) return false;
     RecoveryState tmp = {};
+    const size_t storedLen = prefs.getBytesLength(KEY_RECV);
+    if (storedLen == 0) return false;
+    if (storedLen != sizeof(tmp)) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_SIZE);
+        return false;
+    }
     size_t readBytes = prefs.getBytes(KEY_RECV, &tmp, sizeof(tmp));
-    if (readBytes == 0) return false;
     if (readBytes != sizeof(tmp)) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_SIZE);
         return false;
@@ -536,8 +562,9 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
     } else {
         gState.backlight_timeout_ms = blob.backlight_timeout_ms;
     }
-    gState.suspended_until = blob.suspended_until;
-    gState.custom_ref_day = blob.custom_ref_day;
+    gState.suspended_until = (blob.suspended_until > 4102444799UL) ? 4102444799UL : blob.suspended_until;
+    gState.custom_ref_day = (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > 47482UL)
+                            ? 0xFFFFFFFFUL : blob.custom_ref_day;
     gState.auto_dst = !!blob.auto_dst;
     gState.setup_done = !!blob.setup_done;
     gState.suspended = (gState.suspended_until > 0);

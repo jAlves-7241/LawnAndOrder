@@ -790,6 +790,13 @@ void Terminal::_cmdImportConfig(char *args) {
         // Sucesso na importação - atualizar hora local (caso auto_dst tenha mudado) e agendamento
         if (gState.rtc_valid) {
             rtclock.refreshLocalTime();
+            if (gState.suspended && gState.suspended_until > 0 &&
+                gState.now.unix >= gState.suspended_until) {
+                gState.suspended = false;
+                gState.suspended_until = 0;
+                storage.save();
+                LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_EXP_CLR);
+            }
         }
         scheduler.onModeChanged();
         // Sincronizar UI com setup_done importado (sair do wizard ou iniciar se setup_done=false)

@@ -10,14 +10,19 @@
 class Preferences {
 public:
     static std::map<std::string, std::map<std::string, std::vector<uint8_t>>> _storage;
+    static bool beginFail;
+    static bool writeFail;
 
     static void resetStorage() {
         _storage.clear();
+        beginFail = false;
+        writeFail = false;
     }
 
     bool begin(const char* name, bool readOnly = false) {
         (void)readOnly;
-        _currentNs = name ? name : "";
+        if (!_currentNs.empty() || beginFail || !name || name[0] == '\0') return false;
+        _currentNs = name;
         return true;
     }
 
@@ -26,7 +31,7 @@ public:
     }
 
     bool clear() {
-        if (!_currentNs.empty()) {
+        if (!_currentNs.empty() && !writeFail) {
             _storage[_currentNs].clear();
             return true;
         }
@@ -34,21 +39,27 @@ public:
     }
 
     size_t putBytes(const char* key, const void* value, size_t len) {
-        if (_currentNs.empty() || !key || !value) return 0;
+        if (_currentNs.empty() || !key || !value || writeFail) return 0;
         const uint8_t* p = (const uint8_t*)value;
         _storage[_currentNs][key] = std::vector<uint8_t>(p, p + len);
         return len;
     }
 
-    size_t getBytes(const char* key, void* buf, size_t maxLen) {
-        if (_currentNs.empty() || !key || !buf) return 0;
+    size_t getBytesLength(const char* key) {
+        if (_currentNs.empty() || !key) return 0;
         auto nsIt = _storage.find(_currentNs);
         if (nsIt == _storage.end()) return 0;
         auto keyIt = nsIt->second.find(key);
         if (keyIt == nsIt->second.end()) return 0;
-        size_t toCopy = keyIt->second.size() < maxLen ? keyIt->second.size() : maxLen;
-        memcpy(buf, keyIt->second.data(), toCopy);
-        return toCopy;
+        return keyIt->second.size();
+    }
+
+    size_t getBytes(const char* key, void* buf, size_t maxLen) {
+        size_t len = getBytesLength(key);
+        if (!len || !buf || !maxLen) return len;
+        if (len > maxLen) return 0; // Matches real ESP32 Arduino Preferences::getBytes()
+        memcpy(buf, _storage[_currentNs][key].data(), len);
+        return len;
     }
 
     size_t putUShort(const char* key, uint16_t value) {
@@ -93,3 +104,5 @@ private:
 };
 
 inline std::map<std::string, std::map<std::string, std::vector<uint8_t>>> Preferences::_storage;
+inline bool Preferences::beginFail = false;
+inline bool Preferences::writeFail = false;

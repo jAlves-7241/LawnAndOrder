@@ -522,6 +522,82 @@ void test_storage_backlight_upper_bound_import_and_load(void) {
     TEST_ASSERT_EQUAL_UINT32(120000UL, gState.backlight_timeout_ms);
 }
 
+void test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp(void) {
+    // 1. Storage::begin() is idempotent (must not fail on repeat call when already _ready)
+    TEST_ASSERT_TRUE(storage._ready);
+    storage.begin();
+    TEST_ASSERT_TRUE(storage._ready);
+
+    // 2. Preferences::beginFail sets _ready = false cleanly
+    Storage failedStorage;
+    Preferences::beginFail = true;
+    Serial.reset();
+    failedStorage.begin();
+    TEST_ASSERT_FALSE(failedStorage._ready);
+    Preferences::beginFail = false;
+
+    // Re-open shared prefs handle after failedStorage.begin() called prefs.end()
+    storage._ready = false;
+    storage.begin();
+    TEST_ASSERT_TRUE(storage._ready);
+
+    // 3. Oversized NVS blobs (> sizeof(struct)) report size mismatch, NOT empty
+    uint8_t oversized[64];
+    memset(oversized, 0x5A, sizeof(oversized));
+
+    prefs.putBytes(KEY_CFG, oversized, sizeof(oversized));
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_EMPTY) == std::string::npos);
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_SIZE_MISMATCH) != std::string::npos);
+#endif
+
+    prefs.putBytes(KEY_RECV, oversized, sizeof(oversized));
+    RecoveryState rs = {};
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadRecoveryState(rs));
+#if LOG_LEVEL >= LVL_WARN
+    char expectedRecv[128];
+    snprintf(expectedRecv, sizeof(expectedRecv), TXT_LOG_NVS_RECV_CORRUPT, TXT_NVS_RSN_SIZE);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedRecv) != std::string::npos);
+#endif
+
+    prefs.putBytes(KEY_SCHED_TR, oversized, sizeof(oversized));
+    uint32_t tr[MAX_SLOTS_PER_MODE] = {};
+    Serial.reset();
+    TEST_ASSERT_FALSE(storage.loadLastTriggers(tr, MAX_SLOTS_PER_MODE));
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_TRIG_CORRUPT) != std::string::npos);
+#endif
+
+    // 4. NVS write failure during importConfigHex rolls back RAM state atomically
+    storage.clear();
+    gState.mode = AppMode::INTENSO;
+    char hexIntenso[sizeof(AppConfigBlob) * 2 + 1] = {};
+    storage.exportConfigHex(hexIntenso, sizeof(hexIntenso));
+
+    initAppState();
+    gState.mode = AppMode::FRACO;
+    Preferences::writeFail = true;
+    TEST_ASSERT_FALSE(storage.importConfigHex(hexIntenso));
+    TEST_ASSERT_EQUAL(AppMode::FRACO, gState.mode);
+    Preferences::writeFail = false;
+
+    // 5. NVS load() defensively clamps out-of-range suspended_until and custom_ref_day
+    gState.mode = AppMode::MEDIO;
+    gState.suspended = true;
+    gState.suspended_until = 0xFFFFFFFEUL;
+    gState.custom_ref_day = 99999UL;
+    TEST_ASSERT_TRUE(storage.save());
+
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_TRUE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_storage_export_hex_length_and_format);
@@ -542,5 +618,6 @@ int main(void) {
     RUN_TEST(test_storage_last_triggers_roundtrip);
     RUN_TEST(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);
     RUN_TEST(test_storage_backlight_upper_bound_import_and_load);
+    RUN_TEST(test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp);
     return UNITY_END();
 }

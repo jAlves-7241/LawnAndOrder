@@ -895,6 +895,56 @@ void test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection(vo
 #endif
 }
 
+void test_terminal_import_config_clears_expired_suspension_immediately(void) {
+    rtclock = RTClock();
+    rtclock.begin();
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    const uint32_t nowUnix = gState.now.unix;
+
+    // 1. Export config with an already-expired suspended_until timestamp
+    gState.setup_done = true;
+    gState.mode = AppMode::MEDIO;
+    gState.suspended = true;
+    gState.suspended_until = nowUnix - 3600UL;
+    char expiredHex[sizeof(AppConfigBlob) * 2 + 1] = {};
+    storage.exportConfigHex(expiredHex, sizeof(expiredHex));
+
+    // Import via terminal -> expired suspension must clear immediately in RAM and NVS
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    Serial.reset();
+    std::string cmd = std::string("import_config ") + expiredHex + "\r\n";
+    Serial.feedInput(cmd);
+    while (Serial.available() > 0) terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_IMP_OK) != std::string::npos);
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
+
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
+
+    // 2. Future suspended_until must remain active after import
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    gState.setup_done = true;
+    gState.mode = AppMode::MEDIO;
+    gState.suspended = true;
+    gState.suspended_until = gState.now.unix + 7200UL;
+    char futureHex[sizeof(AppConfigBlob) * 2 + 1] = {};
+    storage.exportConfigHex(futureHex, sizeof(futureHex));
+
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    Serial.reset();
+    cmd = std::string("import_config ") + futureHex + "\r\n";
+    Serial.feedInput(cmd);
+    while (Serial.available() > 0) terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_IMP_OK) != std::string::npos);
+    TEST_ASSERT_TRUE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(gState.now.unix + 7200UL, gState.suspended_until);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -923,5 +973,6 @@ int main(void) {
     RUN_TEST(test_terminal_clear_history_force_args_timeout_and_empty_repair);
     RUN_TEST(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
     RUN_TEST(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
+    RUN_TEST(test_terminal_import_config_clears_expired_suspension_immediately);
     return UNITY_END();
 }

@@ -39,6 +39,7 @@ typedef uint8_t byte;
 #define INPUT 0
 #define INPUT_PULLUP 2
 #define OUTPUT_OPEN_DRAIN 3
+#define PULLUP 0x04
 
 #define DEC 10
 #define HEX 16
@@ -260,6 +261,9 @@ public:
         return 2;
     }
 
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 2, 3)))
+#endif
     size_t printf(const char* format, ...) {
         char buf[512];
         va_list args;
