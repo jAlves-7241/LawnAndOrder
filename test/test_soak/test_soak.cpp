@@ -76,6 +76,7 @@ static void resetSystem() {
     scheduler = Scheduler();
     terminal = Terminal();
     display = Display();
+    encoder.~Encoder();
     new (&encoder) Encoder(PIN_CLK, PIN_DT, PIN_SW);
     ui.~UI();
     new (&ui) UI(display, encoder);
@@ -132,6 +133,7 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     scheduler = Scheduler();
     terminal = Terminal();
     display = Display();
+    encoder.~Encoder();
     new (&encoder) Encoder(PIN_CLK, PIN_DT, PIN_SW);
     ui.~UI();
     new (&ui) UI(display, encoder);

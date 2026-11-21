@@ -147,11 +147,24 @@ void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
     // Stuck button at boot (PIN_SW held LOW) logs TXT_LOG_BTN_STUCK_BOOT
     digitalWrite(PIN_SW, LOW);
     Serial.reset();
+    uint32_t usBeforeBegin = micros();
     encoder.begin();
     TEST_ASSERT_TRUE(encoder._btn_prev);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(50UL, micros() - usBeforeBegin); // pull-up settling delay
 #if LOG_LEVEL >= LVL_WARN
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_BTN_STUCK_BOOT) != std::string::npos);
 #endif
+
+    // Destructor clears _inst safely without leaving a dangling pointer; begin() re-binds active instance
+    {
+        Encoder tempEnc(PIN_CLK, PIN_DT, PIN_SW);
+        TEST_ASSERT_EQUAL_PTR(&tempEnc, Encoder::_inst);
+    }
+    TEST_ASSERT_NULL(Encoder::_inst);
+    Encoder::_isr(); // must be a safe no-op when _inst == nullptr
+    digitalWrite(PIN_SW, HIGH);
+    encoder.begin();
+    TEST_ASSERT_EQUAL_PTR(&encoder, Encoder::_inst);
 }
 
 int main(void) {

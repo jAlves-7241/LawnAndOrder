@@ -8,6 +8,7 @@
 class Encoder {
 public:
     Encoder(uint8_t pin_clk, uint8_t pin_dt, uint8_t pin_sw);
+    ~Encoder();
 
     void begin();
 

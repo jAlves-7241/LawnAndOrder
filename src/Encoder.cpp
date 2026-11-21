@@ -17,10 +17,20 @@ Encoder::Encoder(uint8_t pin_clk, uint8_t pin_dt, uint8_t pin_sw)
     _inst = this;
 }
 
+Encoder::~Encoder() {
+    detachInterrupt(digitalPinToInterrupt(_clk));
+    portENTER_CRITICAL(&mux);
+    if (_inst == this) {
+        _inst = nullptr;
+    }
+    portEXIT_CRITICAL(&mux);
+}
+
 void Encoder::begin() {
     pinMode(_clk, INPUT_PULLUP);
     pinMode(_dt,  INPUT_PULLUP);
     pinMode(_sw,  INPUT_PULLUP);
+    delayMicroseconds(50); // Allow internal pull-up to charge wire/RC capacitance before sampling
 
     _btn_prev = (digitalRead(_sw) == LOW);
     _last_reading = _btn_prev;
@@ -30,6 +40,7 @@ void Encoder::begin() {
     }
 
     portENTER_CRITICAL(&mux);
+    _inst = this;
     _delta = 0;
     _last_isr_us = 0;
     _has_last_isr = false;

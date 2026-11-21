@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <driver/gpio.h>
 #include <esp_task_wdt.h>
 #if __has_include(<esp_system.h>)
   #include <esp_system.h>
@@ -62,6 +63,8 @@ static void espErrDesc(esp_err_t err, char* buf, size_t len) {
 
 bool clearI2CBus() {
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
+    // Pre-load SCL HIGH before enabling open-drain output so GPIO.out=0 cannot emit a LOW glitch
+    gpio_set_level((gpio_num_t)PIN_SCL, 1);
     pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN | PULLUP); // Open-drain com pull-up evita curto e linha flutuante
     digitalWrite(PIN_SCL, HIGH);
 
@@ -131,11 +134,18 @@ void recoverI2C() {
 }
 
 void setup() {
-    // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else
-    digitalWrite(PIN_RELAY_1, RELAY_OFF); pinMode(PIN_RELAY_1, OUTPUT);
-    digitalWrite(PIN_RELAY_2, RELAY_OFF); pinMode(PIN_RELAY_2, OUTPUT);
-    digitalWrite(PIN_RELAY_3, RELAY_OFF); pinMode(PIN_RELAY_3, OUTPUT);
-    digitalWrite(PIN_RELAY_4, RELAY_OFF); pinMode(PIN_RELAY_4, OUTPUT);
+    // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else.
+    // On Arduino-ESP32 Core 3.x (periman), digitalWrite() before pinMode() is ignored,
+    // leaving GPIO.out at reset value 0 (LOW == RELAY_ON). Pre-load the hardware latch
+    // via gpio_set_level() before enabling OUTPUT, then re-assert with digitalWrite().
+    const uint8_t relayPins[NUM_ZONES] = {
+        PIN_RELAY_1, PIN_RELAY_2, PIN_RELAY_3, PIN_RELAY_4
+    };
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        gpio_set_level((gpio_num_t)relayPins[i], RELAY_OFF);
+        pinMode(relayPins[i], OUTPUT);
+        digitalWrite(relayPins[i], RELAY_OFF);
+    }
 
     Serial.begin(115200);
     Serial.println();
@@ -149,7 +159,7 @@ void setup() {
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
     esp_task_wdt_config_t wdt_config = {
         .timeout_ms = WDT_TIMEOUT_S * 1000,
-        .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+        .idle_core_mask = (1 << 0), // Watch Core 0 idle (Arduino-ESP32 default); Core 1 loopTask is watched via esp_task_wdt_add(NULL)
         .trigger_panic = true
     };
   #if LOG_LEVEL >= LVL_ERROR

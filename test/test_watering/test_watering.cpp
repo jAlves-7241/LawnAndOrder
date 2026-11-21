@@ -884,6 +884,32 @@ void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
 #endif
 }
 
+void test_watering_begin_core3_periman_glitch_free_relay_off(void) {
+    // Simulate ESP32 hardware reset state: GPIO.out == 0 (LOW == RELAY_ON) and Core 3.x periman active
+    memset(_mock_gpio, LOW, sizeof(_mock_gpio));
+    memset(_mock_gpio_configured, 0, sizeof(_mock_gpio_configured));
+    memset(_mock_gpio_glitch_low, 0, sizeof(_mock_gpio_glitch_low));
+    _mock_enforce_periman = true;
+
+    // Verify periman mock genuinely rejects digitalWrite() before pinMode()
+    digitalWrite(PIN_RELAY_1, RELAY_OFF);
+    TEST_ASSERT_EQUAL_UINT8(LOW, digitalRead(PIN_RELAY_1));
+
+    // WateringController::begin() must pre-load RELAY_OFF via gpio_set_level() before pinMode(OUTPUT)
+    // so no relay pin glitches LOW (RELAY_ON) during boot!
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+
+    const uint8_t pins[NUM_ZONES] = { PIN_RELAY_1, PIN_RELAY_2, PIN_RELAY_3, PIN_RELAY_4 };
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        TEST_ASSERT_TRUE(_mock_gpio_configured[pins[i]]);
+        TEST_ASSERT_EQUAL_UINT8(OUTPUT, _mock_gpio_mode[pins[i]]);
+        TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(pins[i]));
+        TEST_ASSERT_FALSE(_mock_gpio_glitch_low[pins[i]]);
+    }
+    _mock_enforce_periman = false;
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -905,5 +931,6 @@ int main(void) {
     RUN_TEST(test_watering_max_zone_cap_and_periodic_pin_refresh);
     RUN_TEST(test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log);
     RUN_TEST(test_watering_mid_cycle_rtc_set_and_aborted_recovery_history);
+    RUN_TEST(test_watering_begin_core3_periman_glitch_free_relay_off);
     return UNITY_END();
 }

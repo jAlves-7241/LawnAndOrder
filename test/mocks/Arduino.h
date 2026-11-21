@@ -53,6 +53,7 @@ extern uint32_t _mock_micros;
 inline uint32_t millis() { return _mock_millis; }
 inline uint32_t micros() { return _mock_micros; }
 inline void delay(uint32_t ms) { _mock_millis += ms; }
+inline void delayMicroseconds(unsigned int us) { _mock_micros += us; }
 inline void setMockMillis(uint32_t ms) { _mock_millis = ms; }
 inline void advanceMockMillis(uint32_t ms) { _mock_millis += ms; }
 inline void setMockMicros(uint32_t us) { _mock_micros = us; }
@@ -76,9 +77,27 @@ typedef int portMUX_TYPE;
 
 // Mock GPIO
 extern uint8_t _mock_gpio[64];
-inline void pinMode(uint8_t pin, uint8_t mode) { (void)pin; (void)mode; }
+extern uint8_t _mock_gpio_mode[64];
+extern bool    _mock_gpio_configured[64];
+extern bool    _mock_gpio_glitch_low[64];
+extern bool    _mock_enforce_periman;
+inline void pinMode(uint8_t pin, uint8_t mode) {
+    if (pin < 64) {
+        _mock_gpio_mode[pin] = mode;
+        _mock_gpio_configured[pin] = true;
+        if ((mode == OUTPUT || (mode & OUTPUT_OPEN_DRAIN) == OUTPUT_OPEN_DRAIN) &&
+            _mock_gpio[pin] == LOW) {
+            _mock_gpio_glitch_low[pin] = true;
+        }
+    }
+}
 inline void digitalWrite(uint8_t pin, uint8_t val) {
-    if (pin < 64) _mock_gpio[pin] = val;
+    if (pin < 64) {
+        if (_mock_enforce_periman && !_mock_gpio_configured[pin]) {
+            return; // Matches ESP32 Arduino Core 3.x perimanGetPinBus() guard
+        }
+        _mock_gpio[pin] = val;
+    }
 }
 inline int digitalRead(uint8_t pin) {
     return (pin < 64) ? _mock_gpio[pin] : 0;

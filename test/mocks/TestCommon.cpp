@@ -5,6 +5,10 @@
 uint32_t _mock_millis = 1000;
 uint32_t _mock_micros = 1000000;
 uint8_t _mock_gpio[64] = {};
+uint8_t _mock_gpio_mode[64] = {};
+bool    _mock_gpio_configured[64] = {};
+bool    _mock_gpio_glitch_low[64] = {};
+bool    _mock_enforce_periman = false;
 MockSerial Serial;
 MockLittleFS LittleFS;
 
@@ -20,6 +24,10 @@ void resetAllTestMocks() {
     _mock_millis = 1000;
     _mock_micros = 1000000;
     memset(_mock_gpio, HIGH, sizeof(_mock_gpio));
+    memset(_mock_gpio_mode, 0, sizeof(_mock_gpio_mode));
+    memset(_mock_gpio_configured, 0, sizeof(_mock_gpio_configured));
+    memset(_mock_gpio_glitch_low, 0, sizeof(_mock_gpio_glitch_low));
+    _mock_enforce_periman = false;
     Serial.reset();
     LittleFS.reset();
     Preferences::resetStorage();

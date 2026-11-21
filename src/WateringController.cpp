@@ -4,6 +4,7 @@
 #include "Storage.h"
 #include "RTClock.h"
 #include <string.h>
+#include <driver/gpio.h>
 #include <RTClib.h>
 #include "log.h"
 
@@ -31,7 +32,12 @@ WateringController::WateringController()
 }
 
 void WateringController::begin() {
-    // Pinos ja inicializados no main.cpp (Hardware Safety)
+    // Defense-in-depth hardware safety: guarantee all relay pins are OUTPUT and OFF
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gpio_set_level((gpio_num_t)_relayPins[i], RELAY_OFF);
+        pinMode(_relayPins[i], OUTPUT);
+        digitalWrite(_relayPins[i], RELAY_OFF);
+    }
     _queueLen = 0;
     _queuePos = 0;
     _active = false;
