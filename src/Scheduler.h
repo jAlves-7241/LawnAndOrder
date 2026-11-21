@@ -33,6 +33,9 @@ public:
     // Computes the first gState.next_hour/min.
     void begin();
 
+    // Load persisted DST fall-back trigger guards from NVS (safe to call before wateringCtrl.begin()).
+    void loadTriggers();
+
     // Call every loop(). Checks if a trigger is due and fires watering.
     void update();
 
@@ -74,6 +77,7 @@ private:
     uint32_t _lastClockRev;
     uint32_t _lastManualClockRev;
     bool _catchUpPending;
+    bool _triggersLoaded;
     uint32_t _prevLocalWallUnix;
 
     // UTC unix timestamp of the last successful auto-trigger for each slot (persisted to NVS).

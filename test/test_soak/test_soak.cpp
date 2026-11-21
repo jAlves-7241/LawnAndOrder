@@ -90,6 +90,7 @@ static void resetSystem() {
     encoder.begin();
     rtclock.setErrorCallback(soakRecoverI2C);
     rtclock.begin();
+    scheduler.loadTriggers();
     wateringCtrl.begin();
     scheduler.begin();
     ui.begin();
@@ -162,6 +163,7 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
         gState.suspended = false;
     }
 
+    scheduler.loadTriggers();
     wateringCtrl.begin();
     scheduler.begin();
     ui.begin();
@@ -1017,6 +1019,52 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         simulateReboot(rebootUtc);
         stepLoopOnce(1000);
         TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    }
+
+    // J. Blackout mid-cycle during October DST fall-back (1st 01:30 WEST) + reboot at 01:05 WET
+    //    must resume cleanly (not falsely abort due to unloaded sched_tr) and NOT double-water at 2nd 01:30 WET!
+    {
+        resetSystem();
+        setupCommonZones();
+        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+        cs.slot_count = 1;
+        cs.interval_days = 1;
+        cs.day_pattern = DayPattern::DAILY;
+        DateTime fallFirstSlotLocal = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+        cs.slots[0] = { fallFirstSlotLocal.hour(), fallFirstSlotLocal.minute() };
+        gState.mode = AppMode::PERSONALIZADO;
+        storage.save();
+
+        uint32_t utc = DateTime(2026, 10, 25, 0, 29, 59).unixtime();
+        simulateReboot(utc);
+        utc++;
+        rtclock._rtc.adjust(DateTime(utc));
+        stepLoopOnce(1000); // 1st occurrence fires -> persists sched_tr + RecoveryState
+        TEST_ASSERT_TRUE(wateringCtrl.isActive());
+        stepLoopOnce(RELAY_DEADTIME_MS + 5);
+
+        // Power loss 5 min in; power returns 35 min after start (01:05 UTC, 25 min before 2nd occurrence)
+        uint32_t resumeUtc = DateTime(2026, 10, 25, 1, 5, 0).unixtime();
+        simulateReboot(resumeUtc);
+        TEST_ASSERT_TRUE(wateringCtrl.isActive()); // Must resume!
+
+        // Drain resumed cycle before 01:30 UTC
+        uint32_t u = resumeUtc;
+        while (wateringCtrl.isActive()) {
+            uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting ? 20UL : 1000UL;
+            if (sMs == 1000UL) u++;
+            rtclock._rtc.adjust(DateTime(u));
+            stepLoopOnce(sMs);
+        }
+
+        // Advance across 2nd occurrence (01:30 UTC) -> MUST stay blocked by sched_tr!
+        uint32_t secondSlotUtc = DateTime(2026, 10, 25, 1, 30, 0).unixtime();
+        while (u <= secondSlotUtc + 60UL) {
+            u++;
+            rtclock._rtc.adjust(DateTime(u));
+            stepLoopOnce(1000UL);
+            TEST_ASSERT_FALSE(wateringCtrl.isActive());
+        }
     }
 }
 

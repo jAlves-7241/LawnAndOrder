@@ -11,9 +11,14 @@ Scheduler scheduler;
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
     : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0),
-      _lastManualClockRev(0), _catchUpPending(false), _prevLocalWallUnix(0)
+      _lastManualClockRev(0), _catchUpPending(false), _triggersLoaded(false), _prevLocalWallUnix(0)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+}
+
+void Scheduler::loadTriggers() {
+    storage.loadLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
+    _triggersLoaded = true;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -24,7 +29,7 @@ void Scheduler::begin() {
     _lastManualClockRev = rtclock.manualRevision();
     _prevLocalWallUnix = 0;
     _catchUpPending = gState.setup_done && !gState.suspended && !wateringCtrl.isActive();
-    storage.loadLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
+    loadTriggers();
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
     bool hasNext = computeNext(gState.mode, gState.now,
@@ -47,6 +52,7 @@ void Scheduler::begin() {
 
 void Scheduler::clearLastTriggers() {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
+    _triggersLoaded = true;
     storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
 }
 
@@ -386,6 +392,22 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
               (unsigned long)(max_allowed_duration / 60UL));
 #endif
         return true;
+    }
+
+    // Ensure persisted DST fall-back trigger guards are loaded even if called before begin()
+    if (!_triggersLoaded) {
+        bool hasAny = false;
+        for (uint8_t i = 0; i < MAX_SLOTS_PER_MODE; i++) {
+            if (_lastTriggerUnix[i] != 0) {
+                hasAny = true;
+                break;
+            }
+        }
+        if (!hasAny) {
+            loadTriggers();
+        } else {
+            _triggersLoaded = true;
+        }
     }
 
     // Overlap / Missed Cycle

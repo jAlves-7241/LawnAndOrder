@@ -90,11 +90,21 @@ bool RTClock::begin() {
 
         DateTime localDt = utcToLocal(dt);
         _copyToState(localDt);
-        gState.now.unix = dt.unixtime();
+        const uint32_t newUnix = dt.unixtime();
+        gState.now.unix = newUnix;
         _lastReadMs = millis();
         _anchorMs = _lastReadMs;
         _anchorUnix = gState.now.unix;
         _lastKnownUnix = gState.now.unix;
+        if (!wasValid) {
+            _revision++;
+        } else if (prevTime.unix >= 1577836800UL) {
+            int64_t drift = (int64_t)newUnix - (int64_t)prevTime.unix;
+            if (drift > 300 || drift < -300) {
+                _revision++;
+                LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_JUMP);
+            }
+        }
 
         LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_OK,
               (int)gState.now.year,  (int)gState.now.month,  (int)gState.now.day,

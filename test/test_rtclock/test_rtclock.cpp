@@ -664,6 +664,27 @@ void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
     TEST_ASSERT_TRUE(rtclock.begin());
     TEST_ASSERT_EQUAL_UINT32(baseUnix + 92UL, gState.now.unix);
     TEST_ASSERT_EQUAL_UINT32(baseUnix + 92UL, rtclock._rtc.now().unixtime());
+
+    // 4. Mid-run begin() during recoverI2C() bumps revision() on >300s jump or !wasValid->valid,
+    //    without touching manualRevision() or bumping on small (<300s) syncs
+    const uint32_t revSmall = rtclock.revision();
+    const uint32_t manSmall = rtclock.manualRevision();
+    rtclock._rtc.adjust(DateTime(gState.now.unix + 10UL));
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_EQUAL_UINT32(revSmall, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
+
+    rtclock._rtc.adjust(DateTime(gState.now.unix + 3600UL)); // +1h jump during I2C recovery
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_EQUAL_UINT32(revSmall + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
+
+    gState.rtc_valid = false;
+    const uint32_t revInvalid = rtclock.revision();
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_EQUAL_UINT32(revInvalid + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
 }
 
 int main(void) {

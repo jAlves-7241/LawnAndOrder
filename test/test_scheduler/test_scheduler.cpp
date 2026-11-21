@@ -1,14 +1,20 @@
 #include <unity.h>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
-#define private public
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
+
+#define private public
+#include "RTClock.h"
+#include "History.h"
+#include "WateringController.h"
+#include "Scheduler.h"
+#undef private
+
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
 #include "../../src/WateringController.cpp"
 #include "../../src/Scheduler.cpp"
-#undef private
 
 void setUp(void) {
     resetAllTestMocks();
@@ -498,20 +504,18 @@ void test_scheduler_catchup_grace_window_and_guards(void) {
     TEST_ASSERT_TRUE(wateringCtrl._active);
     wateringCtrl.stop();
 
-    // 6. DST spring-forward skipped hour (2026-03-29: 00:59:59 UTC/local -> 02:00:00 local)
-    //    catches up a custom slot scheduled at 01:30
+    // 6. DST spring-forward skipped hour (2026-03-29 01:00 UTC) catches up a skipped slot
     gState.auto_dst = true;
-    cs.slots[0] = { 1, 30 };
+    const DateTime springGapLocal(DateTime(2026, 3, 29, 1, 30, 0).unixtime() + (int32_t)TIMEZONE_OFFSET * 3600L);
+    cs.slots[0] = { springGapLocal.hour(), springGapLocal.minute() };
     scheduler.clearLastTriggers();
-    DateTime beforeDst(2026, 3, 29, 0, 59, 59); // 00:59:59 UTC == 00:59:59 local
-    gState.now = { 2026, 3, 29, 0, 59, 59, beforeDst.dayOfTheWeek(), beforeDst.unixtime() };
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 59, 59).unixtime());
     scheduler = Scheduler();
     scheduler.begin();
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
 
-    DateTime atDst(2026, 3, 29, 1, 0, 0); // 01:00 UTC == 02:00 local (skipped 01:xx)
-    gState.now = { 2026, 3, 29, 2, 0, 0, atDst.dayOfTheWeek(), atDst.unixtime() };
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 0, 0).unixtime());
     scheduler.update();
     TEST_ASSERT_TRUE(wateringCtrl._active);
     wateringCtrl.stop();
@@ -628,13 +632,14 @@ void test_scheduler_catchup_exact_boundaries_and_dst_fallback(void) {
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
 
-    // 6. DST fall-back (2026-10-25): missed 1st 01:15 (00:15 UTC) catches up inside 1st hour
-    //    at exact 1800s boundary (00:45:00 UTC), skips 1801s (00:45:01 UTC), and blocks 2nd 01:15
+    // 6. DST fall-back (2026-10-25): missed 1st repeated-hour slot (00:15 UTC) catches up inside 1st hour
+    //    at exact 1800s boundary (00:45:00 UTC), skips 1801s (00:45:01 UTC), and blocks 2nd pass (01:15 UTC)
     gState.auto_dst = true;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.slot_count = 1;
     cs.day_pattern = DayPattern::DAILY;
-    cs.slots[0] = { 1, 15 };
+    const DateTime fallSlot15Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 15, 0));
+    cs.slots[0] = { fallSlot15Local.hour(), fallSlot15Local.minute() };
     gState.mode = AppMode::PERSONALIZADO;
     scheduler.clearLastTriggers();
 
@@ -657,11 +662,12 @@ void test_scheduler_catchup_exact_boundaries_and_dst_fallback(void) {
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
 
-    // 7. DST spring-forward outage bounds (02:15 local catches up 01:30; 02:31 local does not)
-    //    and earlier 00:45 slot already run is NOT re-triggered at 02:00 jump
+    // 7. DST spring-forward outage bounds (+15m catches up skipped slot; +31m does not)
+    //    and earlier pre-transition slot already run is NOT re-triggered at the DST jump
     scheduler.clearLastTriggers();
-    cs.slots[0] = { 1, 30 };
-    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 15, 0).unixtime()); // 02:15 local
+    const DateTime springGap30Local(DateTime(2026, 3, 29, 1, 30, 0).unixtime() + (int32_t)TIMEZONE_OFFSET * 3600L);
+    cs.slots[0] = { springGap30Local.hour(), springGap30Local.minute() };
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 15, 0).unixtime());
     scheduler = Scheduler();
     scheduler.begin();
     scheduler.update();
@@ -669,14 +675,15 @@ void test_scheduler_catchup_exact_boundaries_and_dst_fallback(void) {
     wateringCtrl.stop();
 
     scheduler.clearLastTriggers();
-    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 31, 0).unixtime()); // 02:31 local (>1800s)
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 31, 0).unixtime()); // >1800s
     scheduler = Scheduler();
     scheduler.begin();
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
 
     scheduler.clearLastTriggers();
-    cs.slots[0] = { 0, 45 };
+    const DateTime preSpring45Local = RTClock::utcToLocal(DateTime(2026, 3, 29, 0, 45, 0));
+    cs.slots[0] = { preSpring45Local.hour(), preSpring45Local.minute() };
     setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 45, 0).unixtime());
     scheduler = Scheduler();
     scheduler.begin();
@@ -685,7 +692,7 @@ void test_scheduler_catchup_exact_boundaries_and_dst_fallback(void) {
     wateringCtrl.stop();
     setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 59, 59).unixtime());
     scheduler.update();
-    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 0, 0).unixtime()); // 02:00 local jump
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 1, 0, 0).unixtime());
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
 }
@@ -790,10 +797,11 @@ void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
     for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
 
     // 1. Forward RTC drift (>300s) after completed 08:00 slot must NOT wipe _lastTriggerUnix or catch-up double-run
+    const DateTime slot08Utc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0));
     rtclock = RTClock();
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockLostPower = false;
-    rtclock._rtc.adjust(DateTime(2026, 6, 15, 7, 0, 0)); // 08:00 WEST
+    rtclock._rtc.adjust(slot08Utc);
     rtclock.begin();
     scheduler = Scheduler();
     scheduler.begin();
@@ -803,9 +811,9 @@ void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
     TEST_ASSERT_TRUE(trig0 > 0UL);
     wateringCtrl.stop();
 
-    // Advance 5 min in software clock (08:05 WEST), then simulate RTC ahead by +6 min (08:11 WEST -> >300s drift)
+    // Advance 5 min in software clock (08:05 local), then simulate RTC ahead by +6 min (08:11 local -> >300s drift)
     advanceMockMillis(300000UL);
-    rtclock._rtc.adjust(DateTime(2026, 6, 15, 7, 11, 0)); // 08:11 WEST
+    rtclock._rtc.adjust(DateTime(slot08Utc.unixtime() + 11UL * 60UL));
     rtclock.update();
     TEST_ASSERT_EQUAL_UINT8(8, gState.now.hour);
     TEST_ASSERT_EQUAL_UINT8(11, gState.now.min);
@@ -817,13 +825,14 @@ void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.day_pattern = DayPattern::DAILY;
     cs.slot_count = 1;
-    cs.slots[0] = { 1, 15 };
+    const DateTime fallSlot15Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 15, 0));
+    cs.slots[0] = { fallSlot15Local.hour(), fallSlot15Local.minute() };
     gState.mode = AppMode::PERSONALIZADO;
 
     rtclock = RTClock();
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockLostPower = false;
-    rtclock._rtc.adjust(DateTime(2026, 10, 25, 0, 15, 0)); // 01:15 WEST (first pass)
+    rtclock._rtc.adjust(DateTime(2026, 10, 25, 0, 15, 0)); // 1st repeated-hour pass
     rtclock.begin();
     scheduler = Scheduler();
     scheduler.begin();
@@ -834,7 +843,7 @@ void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
     TEST_ASSERT_EQUAL_UINT32(DateTime(2026, 10, 25, 0, 15, 0).unixtime(), dstTrig);
     wateringCtrl.stop();
 
-    // Simulate RTC drop + hotplug OSF restore at 01:30 WEST (00:30 UTC) -> bumps revision(), not manualRevision()
+    // Simulate RTC drop + hotplug OSF restore at 00:30 UTC -> bumps revision(), not manualRevision()
     rtclock._found = false;
     rtclock._rtc.mockLostPower = true;
     advanceMockMillis(900000UL); // +15 min -> 00:30 UTC
@@ -842,18 +851,18 @@ void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
     scheduler.update();
     TEST_ASSERT_EQUAL_UINT32(dstTrig, scheduler._lastTriggerUnix[0]);
 
-    // 45 min later at 01:15 WET (01:15 UTC): repeated hour must STILL be blocked
+    // 45 min later at 01:15 UTC: repeated hour must STILL be blocked
     advanceMockMillis(2700000UL);
     rtclock._rtc.adjust(DateTime(2026, 10, 25, 1, 15, 0));
     rtclock.update();
-    TEST_ASSERT_EQUAL_UINT8(1, gState.now.hour);
-    TEST_ASSERT_EQUAL_UINT8(15, gState.now.min);
+    TEST_ASSERT_EQUAL_UINT8(fallSlot15Local.hour(), gState.now.hour);
+    TEST_ASSERT_EQUAL_UINT8(fallSlot15Local.minute(), gState.now.min);
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
 
     // 3. Cold-boot with absent RTC followed by hotplug must preserve persisted NVS sched_tr before catch-up
     gState.mode = AppMode::MEDIO;
-    uint32_t savedTr[MAX_SLOTS_PER_MODE] = { DateTime(2026, 6, 15, 7, 0, 0).unixtime(), 0, 0, 0 }; // 08:00 WEST already ran
+    uint32_t savedTr[MAX_SLOTS_PER_MODE] = { slot08Utc.unixtime(), 0, 0, 0 }; // 08:00 local already ran
     storage.saveLastTriggers(savedTr, MAX_SLOTS_PER_MODE);
 
     gState.rtc_valid = false;
@@ -863,10 +872,10 @@ void test_scheduler_non_manual_rtc_revisions_preserve_triggers(void) {
     scheduler = Scheduler();
     scheduler.begin(); // loads savedTr from NVS, _catchUpPending = true
 
-    // Hotplug RTC at 08:10 WEST (within 30-min catch-up window of 08:00)
+    // Hotplug RTC at 08:10 local (within 30-min catch-up window of 08:00)
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockLostPower = false;
-    rtclock._rtc.adjust(DateTime(2026, 6, 15, 7, 10, 0));
+    rtclock._rtc.adjust(DateTime(slot08Utc.unixtime() + 10UL * 60UL));
     advanceMockMillis(35000UL);
     rtclock.update();
     TEST_ASSERT_TRUE(gState.rtc_valid);
@@ -881,14 +890,15 @@ void test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump(void) {
     rtclock.begin();
     gState.auto_dst = true;
 
-    // 1. getNextCycleUnix() matches _tryCatchUp() spring-forward transition instant (01:00 UTC for skipped 01:45)
+    // 1. getNextCycleUnix() matches _tryCatchUp() spring-forward transition instant (01:00 UTC for skipped slot)
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.day_pattern = DayPattern::DAILY;
     cs.slot_count = 1;
-    cs.slots[0] = { 1, 45 };
+    const DateTime springGap45Local(DateTime(2026, 3, 29, 1, 45, 0).unixtime() + (int32_t)TIMEZONE_OFFSET * 3600L);
+    cs.slots[0] = { springGap45Local.hour(), springGap45Local.minute() };
     gState.mode = AppMode::PERSONALIZADO;
 
-    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 30, 0).unixtime()); // 00:30 WET before jump
+    setSchedulerTestUtcNow(DateTime(2026, 3, 29, 0, 30, 0).unixtime());
     uint32_t nextUnix = scheduler.getNextCycleUnix(gState.now);
     TEST_ASSERT_EQUAL_UINT32(DateTime(2026, 3, 29, 1, 0, 0).unixtime(), nextUnix);
 
@@ -911,7 +921,7 @@ void test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump(void) {
     rtclock = RTClock();
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockLostPower = false;
-    rtclock._rtc.adjust(DateTime(2026, 6, 15, 6, 0, 15)); // 07:00:15 WEST
+    rtclock._rtc.adjust(RTClock::localToUtc(DateTime(2026, 6, 15, 7, 0, 15)));
     rtclock.begin();
     scheduler = Scheduler();
     scheduler.begin();
@@ -922,6 +932,20 @@ void test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump(void) {
     rtclock.set(2026, 6, 15, 8, 0, 15);
     scheduler.update();
     TEST_ASSERT_TRUE(wateringCtrl._active);
+    wateringCtrl.stop();
+
+    // 4. Mid-run I2C recovery via rtclock.begin() jumping exactly +60 min (19:00:15 -> 20:00:15, same min)
+    //    must bump revision() and evaluate 20:00 immediately without clearing sched_tr
+    rtclock._rtc.adjust(RTClock::localToUtc(DateTime(2026, 6, 15, 19, 0, 15)));
+    rtclock.begin();
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl._active);
+    const uint32_t savedTrig = scheduler._lastTriggerUnix[0];
+    rtclock._rtc.adjust(RTClock::localToUtc(DateTime(2026, 6, 15, 20, 0, 15)));
+    rtclock.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl._active);
+    TEST_ASSERT_EQUAL_UINT32(savedTrig, scheduler._lastTriggerUnix[0]);
     wateringCtrl.stop();
 }
 
@@ -955,14 +979,16 @@ void test_scheduler_setup_guard_dst_fallback_next_and_start_bounds(void) {
     TEST_ASSERT_TRUE(wateringCtrl._active);
     wateringCtrl.stop();
 
-    // 2. computeNext() skips already-triggered October DST fall-back slot during the repeated hour
+    // 2. computeNext() skips already-triggered October DST fall-back slot during the repeated hour,
+    //    and isCycleExpired() honors persisted NVS sched_tr even when called before scheduler.begin()
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.day_pattern = DayPattern::DAILY;
     cs.slot_count = 1;
-    cs.slots[0] = { 1, 30 };
+    const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+    cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
     gState.mode = AppMode::PERSONALIZADO;
 
-    const uint32_t firstPassUtc = DateTime(2026, 10, 25, 0, 30, 0).unixtime(); // 01:30 WEST
+    const uint32_t firstPassUtc = DateTime(2026, 10, 25, 0, 30, 0).unixtime();
     setSchedulerTestUtcNow(firstPassUtc);
     scheduler = Scheduler();
     scheduler.begin();
@@ -971,16 +997,21 @@ void test_scheduler_setup_guard_dst_fallback_next_and_start_bounds(void) {
     TEST_ASSERT_TRUE(wateringCtrl._active);
     wateringCtrl.stop();
 
-    // After fall-back to 01:05 WET (01:05 UTC), 01:30 WET will be blocked -> next must advance to Oct 26
+    // After fall-back to 01:05 UTC, 2nd pass at 01:30 UTC will be blocked -> next must advance to next day
     const uint32_t secondPassUtc = DateTime(2026, 10, 25, 1, 5, 0).unixtime();
     setSchedulerTestUtcNow(secondPassUtc);
     uint8_t nextH = 0, nextM = 0;
     uint32_t nextDay = 0;
     TEST_ASSERT_TRUE(scheduler.computeNext(AppMode::PERSONALIZADO, gState.now, nextH, nextM, &nextDay, false));
+    const DateTime expectedNextDay(DateTime(fallSlot30Local.year(), fallSlot30Local.month(), fallSlot30Local.day(), 0, 0, 0).unixtime() + 86400UL);
     DateTime nextDt(nextDay * 86400UL);
-    TEST_ASSERT_EQUAL_UINT8(26, nextDt.day());
-    TEST_ASSERT_EQUAL_UINT8(1, nextH);
-    TEST_ASSERT_EQUAL_UINT8(30, nextM);
+    TEST_ASSERT_EQUAL_UINT8(expectedNextDay.day(), nextDt.day());
+    TEST_ASSERT_EQUAL_UINT8(fallSlot30Local.hour(), nextH);
+    TEST_ASSERT_EQUAL_UINT8(fallSlot30Local.minute(), nextM);
+
+    // Simulate cold reboot boot order: fresh Scheduler (before begin()) queried by wateringCtrl.begin()->isCycleExpired()
+    scheduler = Scheduler();
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(firstPassUtc, gState.now, 600));
 
     // 3. isCycleExpired() rejects pre-2020 and post-2099 start_unix safely (guards RTClib underflow)
     setSchedulerTestLocalNow(2026, 6, 15, 10, 0, 0);

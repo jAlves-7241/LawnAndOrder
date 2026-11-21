@@ -287,6 +287,7 @@ void setup() {
         gState.suspended = false;
     }
 
+    scheduler.loadTriggers(); // Load persisted DST fall-back guards before recovery checks next slot
     wateringCtrl.begin();
 
     scheduler.begin();    // computes next_hour/min from live RTC + current mode

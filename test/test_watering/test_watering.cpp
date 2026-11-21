@@ -784,10 +784,33 @@ void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
     TEST_ASSERT_FALSE(wateringCtrl.isActive());
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 
+    // 1b. Cycle started without valid RTC (default initAppState() 2026-01-01 placeholder unix)
+    //     interrupted after >2 min checkpoint MUST NOT persist recovery or emit phantom 2026-01-01 history on reboot
+    history.clear();
+    initAppState(); // gState.rtc_valid = false, gState.now.unix = 1767225600UL (2026-01-01)
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    advanceMockMillis(3UL * 60000UL); // past 2-min checkpoint
+    wateringCtrl.update();
+
+    // Simulate power loss + reboot with valid RTC months later (2026-11-21)
+    gState.rtc_valid = true;
+    DateTime bootUtc = RTClock::localToUtc(DateTime(2026, 11, 21, 15, 30, 0));
+    gState.now = { 2026, 11, 21, 15, 30, 0, 6, bootUtc.unixtime() };
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+
     // 2. Aborted valid blackout recovery (MAX_RECOVERY_RETRIES) logs already-watered partial minutes
     history.clear();
-    DateTime startUtc(2026, 6, 15, 7, 0, 0); // 08:00 WEST
     gState.auto_dst = true;
+    DateTime startUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)); // 08:00 local summer
     gState.mode = AppMode::MEDIO;
     gState.now = { 2026, 6, 15, 8, 15, 0, 1, startUtc.unixtime() + 900UL };
 

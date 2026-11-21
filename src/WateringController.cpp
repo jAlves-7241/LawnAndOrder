@@ -429,7 +429,7 @@ void WateringController::update() {
 
     uint32_t elapsed = nowMs - _zoneStartMs;
 
-    if (elapsed < effectiveDurationMs && _runTrigger != WaterTrigger::TEST) {
+    if (elapsed < effectiveDurationMs && _runTrigger != WaterTrigger::TEST && _cycleStartValid) {
         uint32_t totalZoneMin = effectiveDurationMs / 60000UL;
         uint32_t elapsedMin = elapsed / 60000UL;
         if (totalZoneMin > elapsedMin &&
@@ -607,6 +607,7 @@ void WateringController::_finishCycle() {
 
 void WateringController::_saveRecoveryState(bool active) {
     if (_runTrigger == WaterTrigger::TEST) return;
+    if (active && !_cycleStartValid) return;
     RecoveryState rs = {};
     rs.active = active;
     rs.retry_count = active ? _recoveryRetryCount : 0;
