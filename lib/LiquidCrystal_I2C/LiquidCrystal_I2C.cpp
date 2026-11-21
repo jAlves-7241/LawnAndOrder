@@ -7,7 +7,7 @@
 #include "Arduino.h"
 
 #define printIIC(args)	Wire.write(args)
-inline size_t LiquidCrystal_I2C::write(uint8_t value) {
+size_t LiquidCrystal_I2C::write(uint8_t value) {
 	if (_i2cErr != 0) return 0;
 	send(value, Rs);
 	return (_i2cErr == 0) ? 1 : 0;
@@ -17,7 +17,7 @@ inline size_t LiquidCrystal_I2C::write(uint8_t value) {
 #include "WProgram.h"
 
 #define printIIC(args)	Wire.send(args)
-inline void LiquidCrystal_I2C::write(uint8_t value) {
+void LiquidCrystal_I2C::write(uint8_t value) {
 	send(value, Rs);
 }
 
@@ -51,6 +51,10 @@ LiquidCrystal_I2C::LiquidCrystal_I2C(uint8_t lcd_Addr,uint8_t lcd_cols,uint8_t l
   _cols = lcd_cols;
   _rows = lcd_rows;
   _backlightval = LCD_NOBACKLIGHT;
+  _displayfunction = 0;
+  _displaycontrol = 0;
+  _displaymode = 0;
+  _numlines = 0;
 }
 
 void LiquidCrystal_I2C::oled_init(){
@@ -278,7 +282,7 @@ void LiquidCrystal_I2C::backlight(void) {
 
 /*********** mid level commands, for sending data/cmds */
 
-inline void LiquidCrystal_I2C::command(uint8_t value) {
+void LiquidCrystal_I2C::command(uint8_t value) {
 	send(value, 0);
 }
 

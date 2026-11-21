@@ -47,6 +47,11 @@ jobs:
           PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DLOG_LEVEL=LVL_NONE -DMENU_WRAP_AROUND=0"
         run: pio test -e native
 
+      - name: Run timezone-sensitive tests (TIMEZONE_OFFSET=+1)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=1"
+        run: pio test -e native -f test_rtclock -f test_terminal -f test_ui
+
       - name: Run soak & wraparound tests (only if unit tests pass)
         run: pio test -e native_soak
 

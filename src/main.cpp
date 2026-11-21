@@ -62,7 +62,7 @@ static void espErrDesc(esp_err_t err, char* buf, size_t len) {
 
 bool clearI2CBus() {
     pinMode(PIN_SDA, INPUT_PULLUP); // SDA como entrada com pull-up
-    pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN); // Open-drain evita curto push-pull no barramento
+    pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN | PULLUP); // Open-drain com pull-up evita curto e linha flutuante
     digitalWrite(PIN_SCL, HIGH);
 
     delayMicroseconds(25);
@@ -78,7 +78,7 @@ bool clearI2CBus() {
     // Generate STOP condition
     digitalWrite(PIN_SCL, LOW);
     delayMicroseconds(25);
-    pinMode(PIN_SDA, OUTPUT_OPEN_DRAIN);
+    pinMode(PIN_SDA, OUTPUT_OPEN_DRAIN | PULLUP);
     digitalWrite(PIN_SDA, LOW);
     delayMicroseconds(25);
     digitalWrite(PIN_SCL, HIGH);
