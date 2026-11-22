@@ -45,7 +45,7 @@ UI::UI(Display& disp, Encoder& enc)
     : _d(disp), _enc(enc),
       _currentScreen(nullptr),
       _inSetup(false), _setupStep(SetupStep::WELCOME),
-      _configChanged(false), _lastActivity(0),
+      _configChanged(false), _hasSaveRetry(false), _lastSaveRetryMs(0), _lastActivity(0),
       _dateYear(2026), _dateMonth(1), _dateDay(1)
 {
 }
@@ -75,8 +75,13 @@ void UI::changeScreen(UIScreen* screen) {
 
 void UI::goIdle() {
     if (_configChanged && !_inSetup) {
-        storage.save();
-        _configChanged = false;
+        _configChanged = !storage.save();
+        if (_configChanged) {
+            _hasSaveRetry = true;
+            _lastSaveRetryMs = millis();
+        } else {
+            _hasSaveRetry = false;
+        }
     }
     changeScreen(&_screenIdle);
 }
@@ -91,8 +96,12 @@ void UI::goMenu(MenuID mid, bool preserveCursor) {
 // ─────────────────────────────────────────────────────────
 void UI::update() {
     if (_currentScreen == &_screenIdle && _configChanged && !_inSetup) {
-        storage.save();
-        _configChanged = false;
+        uint32_t nowMs = millis();
+        if (!_hasSaveRetry || (nowMs - _lastSaveRetryMs) >= 5000UL) {
+            _configChanged = !storage.save();
+            _hasSaveRetry = _configChanged;
+            _lastSaveRetryMs = nowMs;
+        }
     }
 
     int8_t rot   = _enc.getRotation();
@@ -187,6 +196,7 @@ void UI::advanceSetup() {
             break;
 
         case SetupStep::COMPLETE:
+        default:
             break;
     }
 }
@@ -200,10 +210,15 @@ void UI::flagConfigChanged() {
         return;
     }
     _configChanged = !storage.save();
+    _hasSaveRetry = _configChanged;
+    if (_configChanged) {
+        _lastSaveRetryMs = millis();
+    }
 }
 
 void UI::syncSetupState() {
     _configChanged = false;
+    _hasSaveRetry = false;
     if (!gState.setup_done) {
         _startSetup();
     } else {
@@ -367,6 +382,12 @@ void UI::dispatchAction(const char* action) {
     }
 
     if (strncmp(action, "date_edit:", 10) == 0) {
+        if (!_inSetup && !rtclock.isPresent() && !rtclock.probe()) {
+            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_NOT_FOUND);
+            _screenInfo.setup(TXT_ERR_NO_RTC, TXT_MODULE_NOT, TXT_FOUND, "", MenuID::DEF);
+            changeScreen(&_screenInfo);
+            return;
+        }
         _screenDateEdit.setup(MenuID::DEF);
         changeScreen(&_screenDateEdit);
         return;

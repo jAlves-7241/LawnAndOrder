@@ -26,7 +26,7 @@ void ScreenSetupWelcome::handleClick(UI& ui) {
         LOG_I(TXT_LOG_TAG_UI, TXT_SETUP_DONE_LOG);
         ui.setInSetup(false);
         gState.setup_done = true;
-        storage.save();
+        ui.flagConfigChanged();
         scheduler.onModeChanged();
         ui.goIdle();
     } else {

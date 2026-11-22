@@ -21,7 +21,6 @@ public:
 
     // Accessors
     Display& getDisplay() { return _d; }
-    Encoder& getEncoder() { return _enc; }
     
     // Navigation
     void changeScreen(UIScreen* screen);
@@ -78,6 +77,8 @@ private:
     bool _inSetup;
     SetupStep _setupStep;
     bool _configChanged;
+    bool _hasSaveRetry;
+    uint32_t _lastSaveRetryMs;
     uint32_t _lastActivity;
 
     uint16_t _dateYear;

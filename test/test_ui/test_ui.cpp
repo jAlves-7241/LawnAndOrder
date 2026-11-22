@@ -1259,6 +1259,115 @@ void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) 
     TEST_ASSERT_EQUAL_CHAR('F', testUi.getScreenInfo()._rows[3][0]);
 }
 
+void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry(void) {
+    rtclock = RTClock();
+    rtclock.begin();
+    rtclock.set(2026, 6, 1, 9, 0, 0); // Monday June 1, 09:00
+    gState.setup_done = true;
+    gState.suspended = false;
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    testUi.begin();
+
+    // 1. Custom interval >= 7 days shows explicit date (11Jun) instead of ambiguous weekday
+    gState.mode = AppMode::PERSONALIZADO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.day_pattern = DayPattern::EVERY_X_DAYS;
+    cs.interval_days = 10;
+    cs.slot_count = 1;
+    cs.slots[0] = { 8, 0 };
+    DateTime monLocal(2026, 6, 1, 0, 0, 0);
+    gState.custom_ref_day = monLocal.unixtime() / 86400UL;
+    testUi.goIdle();
+    char expectedDate[21];
+    snprintf(expectedDate, sizeof(expectedDate), "11%s", TXT_MONTH_JUN);
+    TEST_ASSERT_NOT_NULL(strstr(testDisp._lcd.getRow(3), expectedDate));
+
+    // Interval 3 days (< 7) keeps friendly weekday name (Thursday)
+    cs.interval_days = 3;
+    testUi.goIdle();
+    TEST_ASSERT_NOT_NULL(strstr(testDisp._lcd.getRow(3), TXT_DOW_THU));
+
+    // 2. All zones disabled shows TXT_NO_ACTIVE_ZONES on ScreenIdle row 3 (live update too)
+    gState.zones[0].enabled = false;
+    gState.zones[0].duration_min = 0;
+    testUi.update();
+    TEST_ASSERT_NOT_NULL(strstr(testDisp._lcd.getRow(3), TXT_NO_ACTIVE_ZONES));
+
+    // Restore zone 1 for subsequent checks
+    gState.zones[0].enabled = true;
+    gState.zones[0].duration_min = 5;
+
+    // 3. DurContext::SUSPEND value 0 displays TXT_CANCEL and cancels cleanly without suspending
+    testUi.getScreenDurPick().setup(SUSPEND_DEFAULT_DAYS, DurContext::SUSPEND, 0, MenuID::PROG);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateRotate(testUi, -3); // 3 -> 0
+    TEST_ASSERT_NOT_NULL(strstr(testDisp._lcd.getRow(1), TXT_CANCEL));
+    simulateClick(testUi);
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenMenu(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::PROG, testUi.getScreenMenu()._mid);
+
+    // 4. Settings -> Date/Time fails fast when RTC is missing outside Setup Wizard
+    rtclock._found = false;
+    rtclock._rtc.mockPresent = false;
+    testUi.setInSetup(false);
+    testUi.dispatchAction("date_edit:rtc");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[0], TXT_ERR_NO_RTC));
+
+    // 5. MAIN menu live rebuild preserves cursor on selected action when stop_now inserts/removes
+    testUi.goMenu(MenuID::MAIN);
+    simulateRotate(testUi, 1); // highlight "Schedule" (go:prog) at index 1
+    TEST_ASSERT_EQUAL_STRING("go:prog", testUi.getScreenMenu()._items[testUi.getScreenMenu()._cur].action);
+    gState.watering.active = true;
+    testUi.update();
+    TEST_ASSERT_EQUAL_STRING("stop_now", testUi.getScreenMenu()._items[0].action);
+    TEST_ASSERT_EQUAL_STRING("go:prog", testUi.getScreenMenu()._items[testUi.getScreenMenu()._cur].action);
+    gState.watering.active = false;
+    testUi.update();
+    TEST_ASSERT_EQUAL_STRING("go:prog", testUi.getScreenMenu()._items[testUi.getScreenMenu()._cur].action);
+
+    // 6. SETUP_MODE includes Disabled (sel:3) option
+    testUi.goMenu(MenuID::SETUP_MODE);
+    bool foundDisabled = false;
+    for (uint8_t i = 0; i < testUi.getScreenMenu()._itemCount; i++) {
+        if (strcmp(testUi.getScreenMenu()._items[i].action, "sel:3") == 0) {
+            foundDisabled = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(foundDisabled);
+
+    // 7. Setup completion & UI::update() retry failed storage.save() cleanly on 5 s throttle
+    Preferences::writeFail = true;
+    gState.setup_done = false;
+    testUi.setInSetup(true);
+    testUi.getScreenSetupWelcome().setup(true);
+    testUi.changeScreen(&testUi.getScreenSetupWelcome());
+    simulateClick(testUi); // sets setup_done=true, save fails -> _configChanged stays true
+    TEST_ASSERT_TRUE(gState.setup_done);
+    TEST_ASSERT_TRUE(testUi._configChanged);
+
+    Preferences::writeFail = false;
+    advanceMockMillis(2000); // still within 5 s retry throttle
+    testUi.update();
+    TEST_ASSERT_TRUE(testUi._configChanged);
+    advanceMockMillis(3500); // >= 5 s -> retries and succeeds
+    testUi.update();
+    TEST_ASSERT_FALSE(testUi._configChanged);
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_TRUE(gState.setup_done);
+
+    // 8. Display::recover() while sleeping (_displayOn == false) never flips LCD displayState ON
+    testDisp.displayOff();
+    TEST_ASSERT_FALSE(testDisp._lcd.displayState);
+    testDisp.recover(true, false);
+    TEST_ASSERT_FALSE(testDisp._lcd.displayState);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -1281,5 +1390,6 @@ int main(void) {
     RUN_TEST(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
     RUN_TEST(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
     RUN_TEST(test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels);
+    RUN_TEST(test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry);
     return UNITY_END();
 }

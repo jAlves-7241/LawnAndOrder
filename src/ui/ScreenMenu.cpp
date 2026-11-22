@@ -35,6 +35,10 @@ void ScreenMenu::onEnter(UI& ui) {
 void ScreenMenu::update(UI& ui) {
     if ((_mid == MenuID::MAIN && _lastWateringActive != gState.watering.active) ||
         (_mid == MenuID::PROG && _lastSuspended != gState.suspended)) {
+        char prevAction[sizeof(_items[0].action)] = {};
+        if (_itemCount > 0 && _cur < _itemCount) {
+            strlcpy(prevAction, _items[_cur].action, sizeof(prevAction));
+        }
         _lastWateringActive = gState.watering.active;
         _lastSuspended = gState.suspended;
         MenuBuilder::build(_mid, _items, _itemCount);
@@ -42,7 +46,18 @@ void ScreenMenu::update(UI& ui) {
             _cur = 0;
             _off = 0;
         } else {
+            // Keep cursor anchored to the same menu action when dynamic items (e.g. "stop_now") appear/disappear
+            if (prevAction[0] != '\0') {
+                for (uint8_t i = 0; i < _itemCount; i++) {
+                    if (strcmp(_items[i].action, prevAction) == 0) {
+                        _cur = i;
+                        break;
+                    }
+                }
+            }
             if (_cur >= _itemCount) _cur = _itemCount - 1;
+            if (_cur < _off) _off = _cur;
+            if (_cur >= _off + MENU_VISIBLE) _off = _cur - MENU_VISIBLE + 1;
             if (_itemCount <= MENU_VISIBLE) {
                 _off = 0;
             } else if (_off > _itemCount - MENU_VISIBLE) {

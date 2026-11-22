@@ -215,6 +215,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         add_item(TXT_INTENSE,       "sel:0");
         add_item(TXT_MEDIUM,         "sel:1");
         add_item(TXT_WEAK,         "sel:2");
+        add_item(TXT_DISABLED,     "sel:3");
         add_item(TXT_CUSTOM, "sel:4");
         add_item(TXT_SKIP,      "setup_advance");
         add_item(TXT_BACK,     "setup_back");

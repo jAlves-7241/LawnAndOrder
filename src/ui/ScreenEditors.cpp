@@ -19,7 +19,7 @@ void ScreenDurPick::_getRange(DurContext ctx, int& vmin, int& vmax) {
     if (ctx == DurContext::CFG_ZONE) {
         vmin = 0; vmax = 20;
     } else if (ctx == DurContext::SUSPEND) {
-        vmin = 1; vmax = 15;
+        vmin = 0; vmax = 15;
     } else if (ctx == DurContext::FREQ_DAYS) {
         vmin = 1; vmax = 14;
     } else if (ctx == DurContext::NUM_CYCLES) {
@@ -129,6 +129,10 @@ void ScreenDurPick::handleClick(UI& ui) {
     }
 
     if (_durContext == DurContext::SUSPEND) {
+        if (_durValue == 0) {
+            ui.goMenu(_backMenu);
+            return;
+        }
         if (!gState.rtc_valid) {
             ui.getScreenInfo().setup(TXT_ERR_NO_RTC, TXT_NO_VALID_TIME, TXT_ERR_NOT_POSSIBLE, TXT_ERR_SUSPEND, MenuID::PROG);
             ui.changeScreen(&ui.getScreenInfo());
@@ -193,7 +197,9 @@ void ScreenDurPick::render(UI& ui) {
 
     char vstr[20];
     if (_durContext == DurContext::CFG_ZONE && _durValue == 0)
-        snprintf(vstr, sizeof(vstr), TXT_DEACTIVATED);
+        snprintf(vstr, sizeof(vstr), "%s", TXT_DEACTIVATED);
+    else if (_durContext == DurContext::SUSPEND && _durValue == 0)
+        snprintf(vstr, sizeof(vstr), "%s", TXT_CANCEL);
     else
         snprintf(vstr, sizeof(vstr), "%d %s", _durValue, unit);
 
