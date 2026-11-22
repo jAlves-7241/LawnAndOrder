@@ -295,7 +295,7 @@ public:
         if (len > 0) {
             size_t toAppend = ((size_t)len < sizeof(buf)) ? (size_t)len : sizeof(buf) - 1;
             outputBuffer.append(buf, toAppend);
-            return (size_t)len;
+            return toAppend;
         }
         return 0;
     }

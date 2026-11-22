@@ -36,38 +36,25 @@ UI ui(display, encoder);
 #include "../../src/ui/ScreenSetup.cpp"
 #include "../../src/UI.cpp"
 #include "../../src/Terminal.cpp"
+#include "../../src/SystemBoot.cpp"
 
 // ─────────────────────────────────────────────────────────
 // Simulation helpers
 // ─────────────────────────────────────────────────────────
 
-static uint32_t _soakLastRecoverMs = 0;
-static bool _soakHasRecovered = false;
+static I2CRecoveryState _soakI2cState = {};
 
 static void soakRecoverI2C() {
-    uint32_t now = millis();
-    if (_soakHasRecovered && (now - _soakLastRecoverMs) < 10000UL) {
-        display.onRecoveryThrottled();
-        return;
-    }
-    _soakHasRecovered = true;
-    _soakLastRecoverMs = now;
-    Wire.end();
-    Wire.begin(PIN_SDA, PIN_SCL);
-    rtclock.begin();
-    display.recover();
+    recoverI2CWith(display, rtclock, _soakI2cState);
 }
 
 static void resetSystem() {
     resetAllTestMocks();
-    _soakLastRecoverMs = 0;
-    _soakHasRecovered = false;
+    _soakI2cState = {};
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
-    for (uint8_t p : { PIN_RELAY_1, PIN_RELAY_2, PIN_RELAY_3, PIN_RELAY_4 }) {
-        digitalWrite(p, RELAY_OFF);
-    }
+    initRelayPinsSafe();
 
     rtclock = RTClock();
     storage = Storage();
@@ -102,15 +89,12 @@ static void resetSystem() {
 static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool rtcLostPower = false) {
     _mock_millis = 0;
     _mock_micros = 0;
-    _soakLastRecoverMs = 0;
-    _soakHasRecovered = false;
+    _soakI2cState = {};
     memset(_mock_gpio, HIGH, sizeof(_mock_gpio));
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
-    for (uint8_t p : { PIN_RELAY_1, PIN_RELAY_2, PIN_RELAY_3, PIN_RELAY_4 }) {
-        digitalWrite(p, RELAY_OFF);
-    }
+    initRelayPinsSafe();
     Serial.reset();
     Wire.reset();
     ESP.reset();
@@ -149,19 +133,7 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     rtclock.setErrorCallback(soakRecoverI2C);
     rtclock.begin();
 
-    if (gState.suspended_until > 0) {
-        if (!gState.rtc_valid) {
-            gState.suspended = true;
-        } else if (gState.now.unix >= gState.suspended_until) {
-            gState.suspended = false;
-            gState.suspended_until = 0;
-            storage.save();
-        } else {
-            gState.suspended = true;
-        }
-    } else {
-        gState.suspended = false;
-    }
+    evaluateBootSuspension();
 
     scheduler.loadTriggers();
     wateringCtrl.begin();
@@ -685,7 +657,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         storage.save();
     };
 
-    // A. October DST fall-back repeated 01:30 + reboot at 01:45 UTC (STD) must NOT double-water
+    // A. October DST fall-back repeated hour + reboot inside repeated hour must NOT double-water
     {
         resetSystem();
         setupCommonZones();
@@ -693,27 +665,28 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         cs.slot_count = 1;
         cs.interval_days = 1;
         cs.day_pattern = DayPattern::DAILY;
-        cs.slots[0] = { 1, 30 };
+        const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+        cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
         gState.mode = AppMode::PERSONALIZADO;
         storage.save();
 
-        // 2026-10-25 00:29:59 UTC == 01:29:59 local (DST)
+        // 2026-10-25 00:29:59 UTC == 1 second before 1st pass (DST) in any TIMEZONE_OFFSET
         uint32_t utc = DateTime(2026, 10, 25, 0, 29, 59).unixtime();
         simulateReboot(utc);
         utc++;
         rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(1000); // 01:30:00 local (DST) -> fires
+        stepLoopOnce(1000); // 1st pass (DST) -> fires
         TEST_ASSERT_TRUE(wateringCtrl.isActive());
         wateringCtrl.stop();
 
-        // Reboot inside repeated hour at 01:45:00 UTC (01:45:00 local STD, 15 min after 2nd 01:30)
+        // Reboot inside repeated hour at 01:45:00 UTC (15 min after 2nd pass STD)
         uint32_t rebootUtc = DateTime(2026, 10, 25, 1, 45, 0).unixtime();
         simulateReboot(rebootUtc);
         stepLoopOnce(1000);
         TEST_ASSERT_FALSE(wateringCtrl.isActive()); // blocked by persisted sched_tr!
     }
 
-    // B. Outage spanning 1st 01:30 (DST) and 2nd 01:30 (STD) -> reboot at 01:45 UTC catches up ONCE
+    // B. Outage spanning 1st pass (DST) and 2nd pass (STD) -> reboot at 01:45 UTC catches up ONCE
     {
         resetSystem();
         setupCommonZones();
@@ -721,7 +694,8 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
         cs.slot_count = 1;
         cs.interval_days = 1;
         cs.day_pattern = DayPattern::DAILY;
-        cs.slots[0] = { 1, 30 };
+        const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+        cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
         gState.mode = AppMode::PERSONALIZADO;
         storage.save();
 

@@ -95,38 +95,34 @@ private:
         return days * SECONDS_PER_DAY + (uint32_t)hh * 3600UL + (uint32_t)mm * 60UL + (uint32_t)ss;
     }
 
-    void _breakdown(uint32_t u) {
-        _ss = u % 60;
-        u /= 60;
-        _mm = u % 60;
-        u /= 60;
-        _hh = u % 24;
-        uint32_t days = u / 24;
-
-        uint16_t y = 1970;
-        while (true) {
-            uint16_t dy = _isLeapYear(y) ? 366 : 365;
-            if (days >= dy) {
-                days -= dy;
-                y++;
-            } else {
-                break;
-            }
+    void _breakdown(uint32_t t) {
+        // Match real Adafruit RTClib @ 2.1.4 (epoch 2000-01-01; timestamps < 2000 underflow uint32_t)
+        t -= SECONDS_FROM_1970_TO_2000;
+        _ss = (uint8_t)(t % 60UL);
+        t /= 60UL;
+        _mm = (uint8_t)(t % 60UL);
+        t /= 60UL;
+        _hh = (uint8_t)(t % 24UL);
+        uint16_t days = (uint16_t)(t / 24UL);
+        uint16_t yOff = 0;
+        uint8_t leap = 0;
+        for (yOff = 0;; ++yOff) {
+            leap = (yOff % 4U == 0U) ? 1 : 0;
+            if (days < 365U + leap) break;
+            days -= (uint16_t)(365U + leap);
         }
-        _y = y;
+        _y = (uint16_t)(2000U + yOff);
 
+        static const uint8_t dim[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
         uint8_t m = 1;
-        while (true) {
-            uint8_t dm = _daysInMonth(_y, m);
-            if (days >= dm) {
-                days -= dm;
-                m++;
-            } else {
-                break;
-            }
+        for (m = 1; m < 12; ++m) {
+            uint8_t dm = dim[m - 1];
+            if (leap && m == 2) ++dm;
+            if (days < dm) break;
+            days -= dm;
         }
         _m = m;
-        _d = (uint8_t)(days + 1);
+        _d = (uint8_t)(days + 1U);
     }
 };
 
