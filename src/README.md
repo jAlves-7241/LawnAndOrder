@@ -4,7 +4,7 @@ Este diretório contém o firmware do controlador ESP32. A execução é coopera
 
 ## Arquitetura
 
-- `main.cpp`: inicialização e ciclo principal; estabelece os níveis OFF dos relés no início do arranque.
+- `main.cpp`, `SystemBoot.h / .cpp`: inicialização, ciclo principal e utilitários testáveis de arranque seguro dos relés (`initRelayPinsSafe`), recuperação do barramento I²C (`clearI2CBus`, `recoverI2CWith`) e avaliação de suspensão no boot (`evaluateBootSuspension`).
 - `AppState.h / .cpp`: estruturas da aplicação e estado central `gState`.
 - `WateringController.h / .cpp`: fila de zonas, temporização, comutação dos relés e estado de recuperação persistente.
 - `Scheduler.h / .cpp`: cálculo limitado do próximo horário, tratamento de frequência personalizada e disparo de ciclos automáticos.

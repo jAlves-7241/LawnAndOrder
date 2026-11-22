@@ -23,7 +23,7 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 
 ## Decisões de projeto e limites operacionais
 
-- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila, a posição da zona, os minutos acumulados e o tempo restante da zona ativa em incrementos de `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar escritas na flash. Se faltar energia durante uma zona, ao reiniciar são executados apenas os minutos inteiros em falta (repetindo no máximo até ao intervalo do último checkpoint, <2 min). O contador `retry_count` só é limpo quando a zona conclui, limitando qualquer zona em falha periódica a `MAX_RECOVERY_RETRIES` (3) tentativas. Quando uma retoma válida é abortada (limite de tentativas, expiração ou suspensão), os minutos já regados antes da falha são registados no histórico antes de limpar o estado. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Para instalações em que qualquer repetição adicional não seja aceitável, usar um corte de água independente ou exigir confirmação manual após um blackout.
+- **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila, a posição da zona, os minutos acumulados e o tempo restante da zona ativa em incrementos de `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar escritas na flash. Se faltar energia durante uma zona, ao reiniciar são executados apenas os minutos inteiros em falta (repetindo no máximo até ao intervalo do último checkpoint, <2 min). O contador `retry_count` só é limpo quando a zona conclui, limitando qualquer zona em falha periódica a `MAX_RECOVERY_RETRIES` (3) tentativas. Quando uma retoma válida é abortada (limite de tentativas, expiração, suspensão ou ausência de RTC no arranque), os minutos já regados antes da falha são registados no histórico antes de limpar o estado. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Para instalações em que qualquer repetição adicional não seja aceitável, usar um corte de água independente ou exigir confirmação manual após um blackout.
 - **Hora de verão**: a proteção contra a hora repetida no fim do DST persiste os marcadores de último disparo em NVS (`sched_tr`, com CRC-16) para evitar ativações duplicadas mesmo após reinício dentro da janela de recuo (2 h), sendo limpa apenas ao alterar o modo ou acertar a hora manualmente (`manualRevision()`).
 - **RTC indisponível**: no assistente inicial, é possível confirmar que se pretende continuar sem RTC. A interface e a rega manual continuam disponíveis. Sem uma hora válida, rega agendada, suspensões temporizadas e validação da retoma após blackout ficam inibidas. No LCD, falhas de escrita no DS3231 não ativam silenciosamente o relógio por software; apenas `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot. Para operação automática persistente, defina/recupere o RTC.
 - **Histórico**: o arranque tenta montar LittleFS sem formatação (`begin(false)`, com retentativa) e consulta a cache NVS (`hblob`, com CRC-16 e verificação de tamanho). Se houver histórico conhecido em NVS, a formatação automática destrutiva é inibida para preservar os dados; registos adiados durante rotação são persistidos em `/hist_pend.txt` e reprocessados no arranque. As configurações NVS são armazenadas separadamente; exporte o histórico para cópia duradoura.
@@ -80,6 +80,7 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 │   ├── WateringController.h / .cpp # Controlo dos relés e da fila de rega
 │   ├── History.h / .cpp           # Histórico de regas em CSV (LittleFS)
 │   ├── Storage.h / .cpp            # Persistência de configurações em NVS Flash
+│   ├── SystemBoot.h / .cpp         # Arranque seguro dos relés, recuperação I2C e suspensão
 │   ├── Terminal.h / .cpp            # Terminal de comandos interativo via Serial
 │   ├── UI.h / .cpp                   # Gestor de interface e navegação entre ecrãs
 │   ├── README.md                      # Documentação detalhada do código fonte e da UI
@@ -130,7 +131,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute fast unit suites (162 tests across 10 suites)
+# Execute fast unit suites (171 tests across 11 suites)
 pio test -e native
 
 # Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2)

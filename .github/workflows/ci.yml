@@ -39,25 +39,47 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
 
-      - name: Run unit tests (default configuration)
+      - name: Run unit tests (default configuration + -Werror)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-Werror"
         run: pio test -e native
 
-      - name: Run unit tests (EN UI + PT Serial + LOG_LEVEL=LVL_NONE)
+      - name: Run unit tests with AddressSanitizer + UndefinedBehaviorSanitizer
         env:
-          PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DLOG_LEVEL=LVL_NONE -DMENU_WRAP_AROUND=0"
+          PLATFORMIO_BUILD_FLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -g -Werror"
         run: pio test -e native
+
+      - name: Run unit tests (EN UI + PT Serial + LOG_LEVEL=LVL_NONE + MENU_WRAP_AROUND=0)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DLOG_LEVEL=LVL_NONE -DMENU_WRAP_AROUND=0 -Werror"
+        run: pio test -e native
+
+      - name: Run unit tests (LOG_LEVEL=LVL_ERROR + AUTO_DST_DEFAULT=false)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DLOG_LEVEL=LVL_ERROR -DAUTO_DST_DEFAULT=false -Werror"
+        run: pio test -e native -f test_rtclock -f test_scheduler -f test_watering -f test_history -f test_terminal -f test_ui -f test_system
 
       - name: Run timezone-sensitive tests (TIMEZONE_OFFSET=+1)
         env:
-          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=1"
-        run: pio test -e native -f test_rtclock -f test_scheduler -f test_watering -f test_terminal -f test_ui
+          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=1 -Werror"
+        run: pio test -e native -f test_rtclock -f test_scheduler -f test_watering -f test_terminal -f test_ui -f test_system
 
       - name: Run timezone-sensitive tests (TIMEZONE_OFFSET=-1)
         env:
-          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=-1"
-        run: pio test -e native -f test_rtclock -f test_scheduler -f test_watering -f test_terminal -f test_ui
+          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=-1 -Werror"
+        run: pio test -e native -f test_rtclock -f test_scheduler -f test_watering -f test_terminal -f test_ui -f test_system
 
-      - name: Run soak & wraparound tests (only if unit tests pass)
+      - name: Run soak & wraparound tests (default TZ)
+        run: pio test -e native_soak
+
+      - name: Run soak & wraparound tests (TIMEZONE_OFFSET=+1)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=1"
+        run: pio test -e native_soak
+
+      - name: Run soak & wraparound tests (TIMEZONE_OFFSET=-1)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DTIMEZONE_OFFSET=-1"
         run: pio test -e native_soak
 
   build-esp32:
@@ -90,6 +112,11 @@ jobs:
       - name: Build firmware (alternate flags / EN UI + PT Serial + Debug)
         env:
           PLATFORMIO_BUILD_FLAGS: "-ULANG_UI_PT -DLANG_UI_EN -ULANG_SERIAL_EN -DLANG_SERIAL_PT -DLOG_LEVEL=LVL_DEBUG -DMENU_WRAP_AROUND=0"
+        run: pio run -e esp32dev
+
+      - name: Build firmware (LOG_LEVEL=LVL_WARN + AUTO_DST_DEFAULT=false)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DLOG_LEVEL=LVL_WARN -DAUTO_DST_DEFAULT=false"
         run: pio run -e esp32dev
 
       - name: Build firmware (LOG_LEVEL=LVL_NONE)
