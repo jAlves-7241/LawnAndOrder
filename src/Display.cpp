@@ -18,13 +18,10 @@ Display::Display()
 
 void Display::begin() {
     _lcd.clearError();
-    _lcd.init(false);
+    _lcd.init(false, true); // clears DDRAM and sets display ON without re-initing Wire
     _lcd.backlight();
-    _lcd.display();
     _backlightOn = true;
     _displayOn = true;
-    _lcd.clear();
-    if (_lcd.lastError() == 0) delay(10); // Aguardar que o comando de limpeza termine no hardware real
     memset(_shadow, ' ', sizeof(_shadow));
     for (int r = 0; r < LCD_ROWS; r++) _shadow[r][LCD_COLS] = '\0';
     _invalidateShadow();
@@ -57,21 +54,12 @@ uint32_t Display::_cooldownForAttempts(uint8_t attempts) {
 void Display::recover(bool quiet, bool flushShadow) {
     _recoverExecSeq++;
     _lcd.clearError();
-    _lcd.init(false);
+    _lcd.init(false, _displayOn); // clears DDRAM and applies _displayOn without flashing pixels
     if (_backlightOn) {
         _lcd.backlight();
     } else {
         _lcd.noBacklight();
     }
-    
-    if (_displayOn) {
-        _lcd.display();
-    } else {
-        _lcd.noDisplay();
-    }
-    
-    _lcd.clear();
-    if (_lcd.lastError() == 0) delay(10);
     _invalidateShadow();
     _busFault = (_lcd.lastError() != 0);
     _consecErrors = 0;

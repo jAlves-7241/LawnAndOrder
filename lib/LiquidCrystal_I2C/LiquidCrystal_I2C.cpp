@@ -59,28 +59,28 @@ LiquidCrystal_I2C::LiquidCrystal_I2C(uint8_t lcd_Addr,uint8_t lcd_cols,uint8_t l
 
 void LiquidCrystal_I2C::oled_init(){
   _oled = true;
-	init_priv(false);
+	init_priv(false, true);
 }
 
 void LiquidCrystal_I2C::init(){
-	init_priv(false);
+	init_priv(false, true);
 }
 
-void LiquidCrystal_I2C::init(bool initWire){
-	init_priv(initWire);
+void LiquidCrystal_I2C::init(bool initWire, bool displayOn){
+	init_priv(initWire, displayOn);
 }
 
-void LiquidCrystal_I2C::init_priv(bool initWire)
+void LiquidCrystal_I2C::init_priv(bool initWire, bool displayOn)
 {
 	if (initWire) {
 		Wire.begin();
 	}
 	_i2cErr = 0;
 	_displayfunction = LCD_4BITMODE | LCD_1LINE | LCD_5x8DOTS;
-	begin(_cols, _rows);  
+	begin(_cols, _rows, LCD_5x8DOTS, displayOn);  
 }
 
-void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
+void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize, bool displayOn) {
 	(void)cols;
 	if (lines > 1) {
 		_displayfunction |= LCD_2LINE;
@@ -139,9 +139,9 @@ void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize) {
 	command(LCD_FUNCTIONSET | _displayfunction);  
 	if (_i2cErr != 0) return;
 	
-	// turn the display on with no cursor or blinking default
-	_displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF;
-	display();
+	// configure display on/off state without flashing pixels on sleeping recoveries
+	_displaycontrol = (displayOn ? LCD_DISPLAYON : LCD_DISPLAYOFF) | LCD_CURSOROFF | LCD_BLINKOFF;
+	command(LCD_DISPLAYCONTROL | _displaycontrol);
 	if (_i2cErr != 0) return;
 	
 	// clear it off

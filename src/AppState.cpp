@@ -76,9 +76,12 @@ const char* serialTriggerName(WaterTrigger t) {
 }
 
 const char* i2cDeviceName(uint8_t addr) {
-    if (addr == LCD_ADDR || addr == 0x27 || addr == 0x3F) return TXT_I2C_DEV_LCD;
-    if (addr == 0x68)                                     return TXT_I2C_DEV_RTC;
-    if (addr >= 0x50 && addr <= 0x57)                     return TXT_I2C_DEV_EEPROM;
+#if LCD_ADDR != 0x27 && LCD_ADDR != 0x3F
+    if (addr == LCD_ADDR) return TXT_I2C_DEV_LCD;
+#endif
+    if (addr == 0x27 || addr == 0x3F) return TXT_I2C_DEV_LCD;
+    if (addr == 0x68)                 return TXT_I2C_DEV_RTC;
+    if (addr >= 0x50 && addr <= 0x57) return TXT_I2C_DEV_EEPROM;
     return TXT_I2C_DEV_UNKNOWN;
 }
 

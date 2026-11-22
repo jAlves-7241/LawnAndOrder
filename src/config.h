@@ -19,27 +19,51 @@
 #endif
 
 // ── LCD ───────────────────────────────────────────────────
+#ifndef PIN_SDA
 #define PIN_SDA 21
+#endif
+#ifndef PIN_SCL
 #define PIN_SCL 22
+#endif
+#ifndef LCD_ADDR
 #define LCD_ADDR 0x27
+#endif
 #define LCD_COLS 20
 #define LCD_ROWS 4
 
 // ── Encoder pins ──────────────────────────────────────────
+#ifndef PIN_CLK
 #define PIN_CLK 32
+#endif
+#ifndef PIN_DT
 #define PIN_DT 33
+#endif
+#ifndef PIN_SW
 #define PIN_SW 25
+#endif
 
 // ── Relay pins (active-LOW - relay board pulls IN to GND to close) ───────────
 // Adjust to your wiring. GPIO 26-27-18-13 are free on a standard DevKit
 // (GPIO 18 avoids GPIO 14's ROM-boot PWM burst and stays safe on PSRAM/WROVER boards;
 // external 10k pull-ups on active-LOW relay inputs are still recommended).
+#ifndef PIN_RELAY_1
 #define PIN_RELAY_1 26
+#endif
+#ifndef PIN_RELAY_2
 #define PIN_RELAY_2 27
+#endif
+#ifndef PIN_RELAY_3
 #define PIN_RELAY_3 18
+#endif
+#ifndef PIN_RELAY_4
 #define PIN_RELAY_4 13
+#endif
+#ifndef RELAY_ON
 #define RELAY_ON LOW // change to HIGH if your board is active-HIGH
+#endif
+#ifndef RELAY_OFF
 #define RELAY_OFF HIGH
+#endif
 
 // ── Schedule defaults - alter these to change the built-in mode timetables ───
 //

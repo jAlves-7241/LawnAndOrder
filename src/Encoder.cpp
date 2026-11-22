@@ -50,23 +50,27 @@ void Encoder::begin() {
 }
 
 void IRAM_ATTR Encoder::_isr() {
-    if (!_inst) return;
-
     portENTER_CRITICAL_ISR(&mux);
-    uint64_t now_us = esp_timer_get_time();
-    if (_inst->_has_last_isr && now_us >= _inst->_last_isr_us &&
-        (now_us - _inst->_last_isr_us) < 2000ULL) {
+    Encoder* inst = _inst;
+    if (!inst) {
         portEXIT_CRITICAL_ISR(&mux);
         return;
     }
-    _inst->_last_isr_us = now_us;
-    _inst->_has_last_isr = true;
 
-    int16_t d = (gpio_ll_get_level(&GPIO, (uint32_t)_inst->_dt) == 0) ? 1 : -1;
+    uint64_t now_us = (uint64_t)esp_timer_get_time();
+    if (inst->_has_last_isr && now_us >= inst->_last_isr_us &&
+        (now_us - inst->_last_isr_us) < 2000ULL) {
+        portEXIT_CRITICAL_ISR(&mux);
+        return;
+    }
+    inst->_last_isr_us = now_us;
+    inst->_has_last_isr = true;
+
+    int16_t d = (gpio_ll_get_level(&GPIO, (uint32_t)inst->_dt) == 0) ? 1 : -1;
     if (d > 0) {
-        if (_inst->_delta < 32000) _inst->_delta += d;
+        if (inst->_delta < 32000) inst->_delta += d;
     } else {
-        if (_inst->_delta > -32000) _inst->_delta += d;
+        if (inst->_delta > -32000) inst->_delta += d;
     }
     portEXIT_CRITICAL_ISR(&mux);
 }

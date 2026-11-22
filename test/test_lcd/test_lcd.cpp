@@ -253,6 +253,14 @@ void test_lcd_set_cursor_bounds_uninitialized_guard_and_create_char(void) {
     TEST_ASSERT_EQUAL_HEX8(LCD_SETCGRAMADDR | (2 << 3), progCgram[0].second);
     TEST_ASSERT_EQUAL_HEX8(0x01, progCgram[1].second);
     TEST_ASSERT_EQUAL_HEX8(0x02, progCgram[8].second);
+
+    // 4. init(false, false) keeps LCD_DISPLAYOFF during init (zero pixel flash on sleeping recovery)
+    gPcf.reset();
+    lcd.init(false, false);
+    TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+    auto sleepCmds = decodeBytesFrom(decodeLatchedNibbles(gPcf.rawBytes), 4);
+    TEST_ASSERT_EQUAL_UINT32(5, (uint32_t)sleepCmds.size());
+    TEST_ASSERT_EQUAL_HEX8(LCD_DISPLAYCONTROL | LCD_DISPLAYOFF | LCD_CURSOROFF | LCD_BLINKOFF, sleepCmds[1].second);
 }
 
 int main(void) {

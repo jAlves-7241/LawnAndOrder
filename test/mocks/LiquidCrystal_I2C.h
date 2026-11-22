@@ -29,20 +29,23 @@ public:
     }
 
     void init() {
-        init(false);
+        init(false, true);
     }
 
-    void init(bool initWire) {
+    void init(bool initWire, bool displayOn = true) {
         lastInstance = this;
         if (initWire) initWireCalls++;
         _i2cErr = mockI2cError;
-        displayState = true;
+        if (_i2cErr != 0) return;
+        displayState = displayOn;
+        clear();
     }
 
     uint8_t lastError() const { return _i2cErr; }
     void clearError() { _i2cErr = 0; }
 
     void backlight() {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             return;
@@ -50,6 +53,7 @@ public:
         backlightState = true;
     }
     void noBacklight() {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             return;
@@ -57,6 +61,7 @@ public:
         backlightState = false;
     }
     void display() {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             return;
@@ -64,6 +69,7 @@ public:
         displayState = true;
     }
     void noDisplay() {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             return;
@@ -72,6 +78,7 @@ public:
     }
 
     void clear() {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             return;
@@ -86,6 +93,7 @@ public:
     }
 
     void setCursor(uint8_t col, uint8_t row) {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             return;
@@ -95,6 +103,7 @@ public:
     }
 
     void print(const char* s) {
+        if (_i2cErr != 0) return;
         if (mockI2cError != 0) {
             _i2cErr = mockI2cError;
             printCalls++;
