@@ -685,6 +685,17 @@ void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
     TEST_ASSERT_TRUE(gState.rtc_valid);
     TEST_ASSERT_EQUAL_UINT32(revInvalid + 1, rtclock.revision());
     TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
+
+    // 5. Periodic update() applyUtc() also bumps revision() when transitioning !wasRtcValid -> valid
+    rtclock._found = true;
+    gState.rtc_valid = false;
+    rtclock._rtc.mockLostPower = false;
+    const uint32_t revBeforeUpdate = rtclock.revision();
+    advanceMockMillis(31000UL);
+    rtclock.update();
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_EQUAL_UINT32(revBeforeUpdate + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
 }
 
 int main(void) {

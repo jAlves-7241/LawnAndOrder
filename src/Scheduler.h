@@ -64,11 +64,13 @@ public:
     bool computeNext(AppMode mode, const SystemTime& now,
                             uint8_t& out_hour, uint8_t& out_min, uint32_t* out_day_1970 = nullptr, bool writeBack = true);
 
+    // Returns true if at least one zone is enabled with duration_min > 0.
+    static bool hasEnabledZones();
+
 private:
     // Returns true if the schedule is active on the given calendar day (since 1970).
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
     bool _tryCatchUp(const SystemTime& t);
-    static bool _hasEnabledZones();
     static uint32_t _resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc, bool* outDstSkipped = nullptr);
 
     // Last minute we checked - used to detect minute rollover.

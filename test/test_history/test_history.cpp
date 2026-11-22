@@ -875,6 +875,48 @@ void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_ov
     TEST_ASSERT_EQUAL_UINT8(20, out[0].day);
 }
 
+void test_history_clear_failure_preserves_pending_and_calendar_validation(void) {
+    // 1. Failed clear(false) during active rotation must NOT delete /hist_pend.txt before /history.csv is removed
+    history.clear();
+    HistoryEntry e1 = { 2026, 6, 1, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e1);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    HistoryEntry e2 = { 2026, 6, 2, 8, 0, { 7, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e2);
+    TEST_ASSERT_TRUE(history.isRotating());
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+
+    LittleFS.removeFail = true;
+    TEST_ASSERT_FALSE(history.clear(false));
+    LittleFS.removeFail = false;
+
+    // Pending journal and original file remain intact; RAM cache rebuilt coherently from disk
+    TEST_ASSERT_TRUE(LittleFS.exists(HISTORY_FILE));
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // Reboot replay recovers e2 from /hist_pend.txt with zero loss
+    history = History();
+    TEST_ASSERT_TRUE(history.begin());
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+    HistoryEntry latest[2] = {};
+    TEST_ASSERT_EQUAL_UINT8(2, history.readLast(2, latest));
+    TEST_ASSERT_EQUAL_UINT8(2, latest[1].day);
+
+    // 2. record(..., false) persists valid pre-blackout timestamp without live RTC,
+    //    while rejecting impossible calendar dates (e.g. Feb 30)
+    history.clear();
+    gState.rtc_valid = false;
+    HistoryEntry validHist = { 2026, 6, 15, 8, 0, { 8, 4, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(validHist, false);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    HistoryEntry badDate = { 2026, 2, 30, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(badDate, false);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_history_entry_to_line_format);
@@ -899,5 +941,6 @@ int main(void) {
     RUN_TEST(test_history_remount_watering_guard_and_clear_edge_cases);
     RUN_TEST(test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv);
     RUN_TEST(test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback);
+    RUN_TEST(test_history_clear_failure_preserves_pending_and_calendar_validation);
     return UNITY_END();
 }

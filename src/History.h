@@ -24,7 +24,7 @@ const size_t LINE_BUF = 128;
 class History {
 public:
     bool    begin(bool formatOnFail = true);
-    void    record(const HistoryEntry& entry);
+    void    record(const HistoryEntry& entry, bool requireLiveRtc = true);
     uint8_t readLast(uint8_t count, HistoryEntry out[]) const;
     bool     clear(bool forceFormat = false);
     bool     isReady() const;
@@ -36,7 +36,6 @@ public:
     bool     startExport(bool announce = false);
     bool     isExporting() const;
     bool     isRotating() const;
-    uint8_t  exportProgress() const;
     uint16_t exportSent() const;
 
 private:
@@ -64,10 +63,9 @@ private:
     // Cache for UI display
     HistoryEntry _cache[HISTORY_DISPLAY] = {};
     uint8_t      _cacheCount = 0;
-    
-    bool         _pendingCacheSave = false;   // NVS save diferido (rotação async)
-    
+
     HistoryEntry _deferredQueue[4] = {};
+    bool         _deferredRequireRtc[4] = { true, true, true, true };
     uint8_t      _defHead = 0;
     uint8_t      _defTail = 0;
 
@@ -76,7 +74,6 @@ private:
     ExportState _exportState = ExportState::IDLE;
     File        _exportFile;
     uint16_t    _exportSent = 0;
-    uint16_t    _exportTotal = 0;
     char        _exportLineBuf[LINE_BUF] = {};
     size_t      _exportLinePos = 0;
     bool        _exportReadErr = false;

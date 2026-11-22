@@ -96,7 +96,8 @@ void WateringController::begin() {
         }
 
         auto recordPartialRecovery = [](const RecoveryState& rec) {
-            if (!gState.rtc_valid) return;
+            // rec.start_unix_time was persisted only while _cycleStartValid == true;
+            // preserve genuine pre-blackout watering minutes even if RTC failed on reboot.
             if (rec.trigger == WaterTrigger::TEST) return;
             if (rec.start_unix_time < 1577836800UL || rec.start_unix_time > 4102444799UL) return;
             bool anyRun = false;
@@ -117,7 +118,7 @@ void WateringController::begin() {
             entry.min     = startDT.minute();
             entry.trigger = rec.trigger;
             memcpy(entry.zone_dur, rec.zone_dur_min, sizeof(entry.zone_dur));
-            history.record(entry);
+            history.record(entry, false);
         };
 
         if (rs.retry_count >= MAX_RECOVERY_RETRIES) {

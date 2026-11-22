@@ -29,7 +29,9 @@ void Scheduler::begin() {
     _lastManualClockRev = rtclock.manualRevision();
     _prevLocalWallUnix = 0;
     _catchUpPending = gState.setup_done && !gState.suspended && !wateringCtrl.isActive();
-    loadTriggers();
+    if (!_triggersLoaded) {
+        loadTriggers();
+    }
     if (!gState.rtc_valid) return;
     uint32_t old_ref = gState.custom_ref_day;
     bool hasNext = computeNext(gState.mode, gState.now,
@@ -147,7 +149,7 @@ void Scheduler::update() {
                                   (int)sched.slots[i].hour, (int)sched.slots[i].minute);
                             break;
                         }
-                        if (!_hasEnabledZones()) {
+                        if (!hasEnabledZones()) {
                             LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
                             break;
                         }
@@ -171,7 +173,7 @@ void Scheduler::update() {
     }
 }
 
-bool Scheduler::_hasEnabledZones() {
+bool Scheduler::hasEnabledZones() {
     for (int z = 0; z < NUM_ZONES; z++) {
         if (gState.zones[z].enabled && gState.zones[z].duration_min > 0) {
             return true;
@@ -410,9 +412,12 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
         }
     }
 
+    // If no zone is enabled, no automatic cycle can execute to collide with recovery
+    if (!hasEnabledZones()) {
+        return false;
+    }
+
     // Overlap / Missed Cycle
-    uint32_t next_cycle_unix = getNextCycleUnix(current_time);
-    
     // Check if there was a scheduled slot between start and now
     // Create a mock SystemTime at start_unix to find the very next slot
     DateTime localDT = rtclock.utcToLocal(DateTime(start_unix));
@@ -425,16 +430,55 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     startST.sec = localDT.second();
     startST.dow = localDT.dayOfTheWeek();
     startST.unix = start_unix;
-    
+
     uint32_t next_from_start = getNextCycleUnix(startST);
-    if (next_from_start != 0xFFFFFFFF && next_from_start <= current_unix) {
-         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_MISSED);
-         return true;
+    if (next_from_start != 0xFFFFFFFFUL && next_from_start <= current_unix) {
+        // Ignore scheduled slots that were suppressed by an active suspension
+        if (!(gState.suspended && gState.suspended_until > 0 &&
+              (uint64_t)next_from_start + 59ULL < (uint64_t)gState.suspended_until)) {
+            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_MISSED);
+            return true;
+        }
     }
-    
+
     // 3. Safety Gap
-    if (next_cycle_unix != 0xFFFFFFFF) {
-        uint64_t estimated_end = (uint64_t)current_unix + (uint64_t)remaining_duration_sec;
+    uint64_t estimated_end = (uint64_t)current_unix + (uint64_t)remaining_duration_sec;
+    if (gState.suspended && gState.suspended_until > 0 &&
+        (uint64_t)gState.suspended_until > estimated_end + (uint64_t)SAFETY_GAP_SEC + 59ULL) {
+        return false; // Suspension outlasts recovery + safety gap; no auto cycle can run
+    }
+
+    uint32_t next_cycle_unix = getNextCycleUnix(current_time);
+    if (gState.suspended && gState.suspended_until > 0) {
+        // Advance past any slots suppressed by the active suspension
+        uint8_t guard = 0;
+        while (next_cycle_unix != 0xFFFFFFFFUL &&
+               (uint64_t)next_cycle_unix + 59ULL < (uint64_t)gState.suspended_until &&
+               guard++ < (uint8_t)(MAX_SLOTS_PER_MODE * 2U)) {
+            DateTime stepLocal = RTClock::utcToLocal(DateTime(next_cycle_unix));
+            SystemTime stepST = {};
+            stepST.year = stepLocal.year();
+            stepST.month = stepLocal.month();
+            stepST.day = stepLocal.day();
+            stepST.hour = stepLocal.hour();
+            stepST.min = stepLocal.minute();
+            stepST.sec = stepLocal.second();
+            stepST.dow = stepLocal.dayOfTheWeek();
+            stepST.unix = next_cycle_unix;
+            uint32_t adv = getNextCycleUnix(stepST);
+            if (adv == 0xFFFFFFFFUL || adv <= next_cycle_unix) {
+                next_cycle_unix = 0xFFFFFFFFUL;
+                break;
+            }
+            next_cycle_unix = adv;
+        }
+        if (next_cycle_unix != 0xFFFFFFFFUL &&
+            (uint64_t)next_cycle_unix + 59ULL < (uint64_t)gState.suspended_until) {
+            next_cycle_unix = 0xFFFFFFFFUL;
+        }
+    }
+
+    if (next_cycle_unix != 0xFFFFFFFFUL) {
         if (estimated_end + (uint64_t)SAFETY_GAP_SEC > (uint64_t)next_cycle_unix) {
             LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_GAP,
                   (unsigned long)(SAFETY_GAP_SEC / 60UL));

@@ -14,8 +14,9 @@ static const char* HIST_TMP_FILE     = "/hist_tmp.csv";
 static const char* HIST_PENDING_FILE = "/hist_pend.txt";
 
 static bool _isValidCachedEntry(const HistoryEntry& e) {
-    if (e.year < 2020 || e.year > 2099) return false;
-    if (e.month < 1 || e.month > 12 || e.day < 1 || e.day > 31) return false;
+    if (e.year < DATE_YEAR_MIN || e.year > DATE_YEAR_MAX) return false;
+    uint8_t maxD = daysInMonth(e.year, e.month);
+    if (maxD == 0 || e.day < 1 || e.day > maxD) return false;
     if (e.hour > 23 || e.min > 59) return false;
     if (e.trigger != WaterTrigger::AUTO &&
         e.trigger != WaterTrigger::MANUAL &&
@@ -52,7 +53,6 @@ bool History::begin(bool formatOnFail) {
     _exportState = ExportState::IDLE;
     _exportReadErr = false;
     _exportLineOverflow = false;
-    _pendingCacheSave = false;
     _rotWriteErr = false;
     _rotLineOverflow = false;
     _rotCorruptLines = 0;
@@ -224,14 +224,17 @@ bool History::begin(bool formatOnFail) {
 }
 
 // ─────────────────────────────────────────────────────────
-void History::record(const HistoryEntry& entry) {
+void History::record(const HistoryEntry& entry, bool requireLiveRtc) {
     if (entry.trigger == WaterTrigger::TEST)  return;
     if (!_ready) {
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
         return;
     }
-    if (!gState.rtc_valid) {
+    if (requireLiveRtc && !gState.rtc_valid) {
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_SKIP_NO_RTC);
+        return;
+    }
+    if (!_isValidCachedEntry(entry)) {
         return;
     }
 
@@ -244,6 +247,7 @@ void History::record(const HistoryEntry& entry) {
         uint8_t nextHead = (_defHead + 1) % 4;
         if (nextHead != _defTail) {
             _deferredQueue[_defHead] = entry;
+            _deferredRequireRtc[_defHead] = requireLiveRtc;
             _defHead = nextHead;
         } else {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_Q_FULL);
@@ -275,7 +279,6 @@ void History::_recordNow(const HistoryEntry& entry) {
                   (unsigned)entry.year, (unsigned)entry.month, (unsigned)entry.day,
                   (unsigned)entry.hour, (unsigned)entry.min, zSummary);
             if (_rotState != RotState::IDLE) {
-                _pendingCacheSave = true;
                 LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_ROT_START, (unsigned)prevCount);
             } else {
                 storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
@@ -306,16 +309,18 @@ void History::_drainOneDeferred() {
     if (_defHead == _defTail) return;
 
     HistoryEntry e = _deferredQueue[_defTail];
+    bool requireLiveRtc = _deferredRequireRtc[_defTail];
     _defTail = (_defTail + 1) % 4;
     if (e.trigger == WaterTrigger::TEST) return;
     if (!_ready) {
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
         return;
     }
-    if (!gState.rtc_valid) {
+    if (requireLiveRtc && !gState.rtc_valid) {
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_SKIP_NO_RTC);
         return;
     }
+    if (!_isValidCachedEntry(e)) return;
     _recordNow(e);
 }
 
@@ -334,7 +339,8 @@ uint8_t History::readLast(uint8_t count, HistoryEntry out[]) const {
 
 bool History::clear(bool forceFormat) {
     // Close active rotation/export streams before unlinking or formatting FS
-    if (_rotState != RotState::IDLE) {
+    const bool wasRotating = (_rotState != RotState::IDLE);
+    if (wasRotating) {
         if (_rotSrc) _rotSrc.close();
         if (_rotDst) _rotDst.close();
         _rotState = RotState::IDLE;
@@ -365,17 +371,29 @@ bool History::clear(bool forceFormat) {
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
     } else {
         bool unlinkFailed = false;
+        bool historyRemoved = true;
         if (LittleFS.exists(HIST_TMP_FILE) && !LittleFS.remove(HIST_TMP_FILE)) {
-            unlinkFailed = true;
-        }
-        if (LittleFS.exists(HIST_PENDING_FILE) && !LittleFS.remove(HIST_PENDING_FILE)) {
             unlinkFailed = true;
         }
         if (LittleFS.exists(HISTORY_FILE) && !LittleFS.remove(HISTORY_FILE)) {
             unlinkFailed = true;
+            historyRemoved = false;
+        }
+        // Only unlink pending journal after HISTORY_FILE is confirmed gone so a failed
+        // non-forced clear never destroys a mid-rotation pending record.
+        if (historyRemoved && LittleFS.exists(HIST_PENDING_FILE) && !LittleFS.remove(HIST_PENDING_FILE)) {
+            unlinkFailed = true;
         }
         if (unlinkFailed) {
             if (!forceFormat) {
+                if (wasRotating) {
+                    _lineCount = _countLines();
+                    _populateCache();
+                    if (_cacheCount == 0 && _lineCount > 0) {
+                        _lineCount = 0;
+                    }
+                    storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
+                }
                 LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
                 return false;
             }
@@ -394,7 +412,6 @@ bool History::clear(bool forceFormat) {
 
     _lineCount = 0;
     _cacheCount = 0;
-    _pendingCacheSave = false;
     _rotCorruptLines = 0;
     _defHead = 0;
     _defTail = 0;
@@ -925,7 +942,6 @@ void History::update() {
 
             // Salvar NVS agora que _lineCount e correto E cache ja foi atualizado
             uint32_t fsize = _currentFileSize();
-            _pendingCacheSave = false;
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, fsize);
             if (_rotCorruptLines > 0) {
                 LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_ROT_CORRUPT_SUM,
@@ -935,7 +951,6 @@ void History::update() {
         } else {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_RENAME_FAIL);
             LittleFS.remove(HIST_TMP_FILE);
-            _pendingCacheSave = false;
             if (_appendCsvLine(_rotPendingLine)) {
                 LittleFS.remove(HIST_PENDING_FILE);
             }
@@ -1060,7 +1075,6 @@ bool History::startExport(bool announce) {
     }
 
     _exportSent = 0;
-    _exportTotal = _lineCount;
     _exportLinePos = 0;
     _exportReadErr = false;
     _exportLineOverflow = false;
@@ -1089,11 +1103,6 @@ bool History::isExporting() const {
 
 bool History::isRotating() const {
     return _rotState != RotState::IDLE;
-}
-
-uint8_t History::exportProgress() const {
-    if (_exportTotal == 0 || _exportSent >= _exportTotal) return 100;
-    return (uint8_t)(((uint32_t)_exportSent * 100UL) / _exportTotal);
 }
 
 uint16_t History::exportSent() const {

@@ -340,7 +340,9 @@ void RTClock::update() {
         }
 
         uint32_t newUnix = utcDt.unixtime();
-        if (wasRtcValid && !recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
+        if (!wasRtcValid) {
+            _revision++;
+        } else if (!recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
             uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
             uint32_t expectedUnix = _anchorUnix + elapsedSec;
             int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
@@ -514,11 +516,6 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     _revision++;
     _manualRevision++;
     return hwOk;
-}
-
-void RTClock::setTime(uint8_t hour, uint8_t minute) {
-    const SystemTime& t = gState.now;
-    set(t.year, t.month, t.day, hour, minute, 0);
 }
 
 void RTClock::_incrementSoftwareClock() {

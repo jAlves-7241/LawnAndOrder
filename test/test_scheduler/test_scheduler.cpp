@@ -1020,6 +1020,53 @@ void test_scheduler_setup_guard_dst_fallback_next_and_start_bounds(void) {
     TEST_ASSERT_TRUE(scheduler.isCycleExpired(4102444800UL, gState.now, 300));
 }
 
+void test_scheduler_cycle_expired_respects_suspension_and_zero_zones(void) {
+    storage.begin();
+    gState.auto_dst = true;
+    gState.setup_done = true;
+    gState.mode = AppMode::INTENSO; // 07:00, 13:00, 19:00
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    scheduler = Scheduler();
+
+    const uint32_t startUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 12, 45, 0)).unixtime();
+    setSchedulerTestLocalNow(2026, 6, 15, 12, 50, 0);
+
+    // 1. Without suspension, 13:00 auto slot is 10 min away (< 2h SAFETY_GAP_SEC) -> expired
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUtc, gState.now, 600));
+
+    // 2. With 5-day suspension active, 13:00 will NOT run -> manual recovery is NOT expired
+    gState.suspended = true;
+    gState.suspended_until = gState.now.unix + 5UL * 86400UL;
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUtc, gState.now, 600));
+
+    // 3. Even if blackout spanned 13:00 while suspended, 13:00 did not run -> still NOT expired
+    setSchedulerTestLocalNow(2026, 6, 15, 13, 5, 0);
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUtc, gState.now, 600));
+
+    // 4. Suspension expiring at 13:00:30 (same minute as 13:00 slot!) -> 13:00 WILL fire -> expired
+    setSchedulerTestLocalNow(2026, 6, 15, 12, 50, 0);
+    const uint32_t slot13Utc = RTClock::localToUtc(DateTime(2026, 6, 15, 13, 0, 0)).unixtime();
+    gState.suspended_until = slot13Utc + 30UL;
+    TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUtc, gState.now, 600));
+
+    // 5. Suspension expiring at 13:05 (past 13:00, next unsuspended slot is 19:00 > 12:50+10m+2h) -> NOT expired
+    gState.suspended_until = slot13Utc + 300UL;
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUtc, gState.now, 600));
+
+    // 6. When all zones are disabled, no auto cycle can execute -> NOT expired (e.g. CUSTOM manual recovery)
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = false;
+        gState.zones[i].duration_min = 0;
+    }
+    TEST_ASSERT_FALSE(Scheduler::hasEnabledZones());
+    TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUtc, gState.now, 600));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -1046,5 +1093,6 @@ int main(void) {
     RUN_TEST(test_scheduler_non_manual_rtc_revisions_preserve_triggers);
     RUN_TEST(test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump);
     RUN_TEST(test_scheduler_setup_guard_dst_fallback_next_and_start_bounds);
+    RUN_TEST(test_scheduler_cycle_expired_respects_suspension_and_zero_zones);
     return UNITY_END();
 }

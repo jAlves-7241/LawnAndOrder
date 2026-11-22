@@ -933,6 +933,76 @@ void test_watering_begin_core3_periman_glitch_free_relay_off(void) {
     _mock_enforce_periman = false;
 }
 
+void test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history(void) {
+    // 1. MANUAL cycle interrupted near an INTENSO slot MUST resume while automatic watering is suspended
+    history.clear();
+    gState.auto_dst = true;
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.mode = AppMode::INTENSO; // 07:00, 13:00, 19:00
+    gState.zones[0] = { "Z1", true, 10 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+
+    const uint32_t startUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 12, 45, 0)).unixtime();
+    const uint32_t bootUtc  = startUtc + 300UL; // 12:50 (10 min before suspended 13:00 slot)
+    gState.now = { 2026, 6, 15, 12, 50, 0, 1, bootUtc };
+    gState.suspended = true;
+    gState.suspended_until = bootUtc + 5UL * 86400UL;
+
+    RecoveryState rs = {};
+    rs.version = NVS_VERSION;
+    rs.active = true;
+    rs.start_unix_time = startUtc;
+    rs.queuePos = 0;
+    rs.queueLen = 1;
+    rs.queue[0] = { 0, 6UL * 60000UL };
+    rs.zone_dur_min[0] = 4;
+    rs.trigger = WaterTrigger::MANUAL;
+    rs.retry_count = 0;
+    storage.saveRecoveryState(rs);
+
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    wateringCtrl.stop();
+
+    // 2. Valid pre-blackout partial watering minutes MUST be preserved in history even if RTC fails on reboot
+    history.clear();
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    gState.rtc_valid = false; // e.g., dead DS3231 battery revealed by the blackout!
+    gState.now = { 2026, 1, 1, 0, 0, 0, 4, 1767225600UL };
+
+    RecoveryState deadRtcRs = {};
+    deadRtcRs.version = NVS_VERSION;
+    deadRtcRs.active = true;
+    deadRtcRs.start_unix_time = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
+    deadRtcRs.queuePos = 1;
+    deadRtcRs.queueLen = 2;
+    deadRtcRs.queue[0] = { 0, 8UL * 60000UL };
+    deadRtcRs.queue[1] = { 1, 2UL * 60000UL };
+    deadRtcRs.zone_dur_min[0] = 8;
+    deadRtcRs.zone_dur_min[1] = 4;
+    deadRtcRs.trigger = WaterTrigger::AUTO;
+    deadRtcRs.retry_count = 0;
+    storage.saveRecoveryState(deadRtcRs);
+
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive()); // safely declines to resume without live RTC
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    HistoryEntry partial[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, partial));
+    TEST_ASSERT_EQUAL_UINT16(2026, partial[0].year);
+    TEST_ASSERT_EQUAL_UINT8(6, partial[0].month);
+    TEST_ASSERT_EQUAL_UINT8(15, partial[0].day);
+    TEST_ASSERT_EQUAL_UINT8(8, partial[0].hour);
+    TEST_ASSERT_EQUAL_UINT8(0, partial[0].min);
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, partial[0].trigger);
+    TEST_ASSERT_EQUAL_UINT8(8, partial[0].zone_dur[0]);
+    TEST_ASSERT_EQUAL_UINT8(4, partial[0].zone_dur[1]);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -955,5 +1025,6 @@ int main(void) {
     RUN_TEST(test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log);
     RUN_TEST(test_watering_mid_cycle_rtc_set_and_aborted_recovery_history);
     RUN_TEST(test_watering_begin_core3_periman_glitch_free_relay_off);
+    RUN_TEST(test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history);
     return UNITY_END();
 }
