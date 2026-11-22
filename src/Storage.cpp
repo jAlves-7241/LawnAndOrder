@@ -505,6 +505,13 @@ bool Storage::importConfigHex(const char* hexIn) {
         return false;
     }
 
+    if (gState.rtc_valid && gState.suspended && gState.suspended_until > 0 &&
+        gState.now.unix >= gState.suspended_until) {
+        gState.suspended = false;
+        gState.suspended_until = 0;
+        LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_EXP_CLR);
+    }
+
     if (!save()) {
         gState = previousState;
         MODE_SCHEDULES[customMode] = previousCustomSchedule;

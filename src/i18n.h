@@ -525,6 +525,7 @@
 #define TXT_TERM_STAT_INACTIVE "  Watering State: INACTIVE (Disabled)"
 #define TXT_TERM_STAT_AWAIT_RTC "  Watering State: STANDBY (waiting for valid clock time to schedule)"
 #define TXT_TERM_STAT_SETUP "  Watering State: STANDBY (initial setup in progress)"
+#define TXT_TERM_STAT_NO_ZONES "  Watering State: STANDBY (no active zones)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
   "  Watering State: ACTIVE (Next watering scheduled for %04d-%02d-%02d %02d:%02d)\r\n"
 #define TXT_TERM_STAT_ZONES "  Watering Zones:"
@@ -872,6 +873,7 @@
 #define TXT_TERM_STAT_INACTIVE "  Estado Rega: INATIVA (Desativada)"
 #define TXT_TERM_STAT_AWAIT_RTC "  Estado Rega: EM ESPERA (a aguardar hora valida para agendar)"
 #define TXT_TERM_STAT_SETUP "  Estado Rega: EM ESPERA (configuracao inicial em curso)"
+#define TXT_TERM_STAT_NO_ZONES "  Estado Rega: EM ESPERA (nenhuma zona ativa)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
   "  Estado Rega: ATIVA (Proxima rega agendada para %04d-%02d-%02d %02d:%02d)\r\n"
 #define TXT_TERM_STAT_ZONES "  Zonas de Rega:"

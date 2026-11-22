@@ -7,6 +7,7 @@
 #define private public
 #include "RTClock.h"
 #include "History.h"
+#include "Terminal.h"
 #undef private
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
@@ -39,10 +40,6 @@ public:
     void refreshClockEditors() { _ui_refreshed_clock = true; }
 };
 UI ui;
-
-#define private public
-#include "Terminal.h"
-#undef private
 
 #include "../../src/Terminal.cpp"
 
@@ -963,6 +960,43 @@ void test_terminal_import_config_clears_expired_suspension_immediately(void) {
     TEST_ASSERT_EQUAL_UINT32(gState.now.unix + 7200UL, gState.suspended_until);
 }
 
+void test_terminal_ansi_control_abort_and_zero_zones_status(void) {
+    // 1. Incomplete CSI (ESC [) followed by Enter or Ctrl+C must abort ANSI state and execute control key
+    Serial.reset();
+    Serial.feedInput("help\033[\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+
+    Serial.reset();
+    Serial.feedInput("abc\033[\x03help\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+
+    // 1b. ECMA-48 non-alpha CSI final bytes (0x40..0x7E, e.g. '@' = 0x40) must terminate cleanly without swallowing the next char
+    Serial.reset();
+    Serial.feedInput("\033[@help\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+
+    // 2. status must report TXT_TERM_STAT_NO_ZONES instead of ACTIVE when all zones are disabled
+    gState.rtc_valid = true;
+    gState.setup_done = true;
+    gState.suspended = false;
+    gState.mode = AppMode::MEDIO;
+    gState.now = { 2026, 6, 15, 10, 0, 0, 1, DateTime(2026, 6, 15, 9, 0, 0).unixtime() };
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = false;
+        gState.zones[i].duration_min = 0;
+    }
+    Serial.reset();
+    Serial.feedInput("status\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_NO_ZONES) != std::string::npos);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -992,5 +1026,6 @@ int main(void) {
     RUN_TEST(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
     RUN_TEST(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
     RUN_TEST(test_terminal_import_config_clears_expired_suspension_immediately);
+    RUN_TEST(test_terminal_ansi_control_abort_and_zero_zones_status);
     return UNITY_END();
 }

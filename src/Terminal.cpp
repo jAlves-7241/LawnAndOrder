@@ -271,6 +271,14 @@ bool Terminal::_feedAnsi(char c) {
 
     if (!_in_ansi) return false;
 
+    // Abort incomplete/malformed ANSI sequences on C0 control chars or DEL
+    // so Enter, Backspace, Ctrl+C, and Ctrl+U are never swallowed.
+    if ((unsigned char)c < 32 || (unsigned char)c == 127) {
+        _in_ansi = false;
+        _ansi_bytes = 0;
+        return false;
+    }
+
     // Accumulate bytes
     if (_ansi_bytes < sizeof(_ansi_buf)) {
         _ansi_buf[_ansi_bytes] = c;
@@ -293,8 +301,8 @@ bool Terminal::_feedAnsi(char c) {
             is_terminator = true;
         }
     } else {
-        // CSI / SS3 sequences terminate on an alpha character or '~'
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '~') {
+        // CSI / SS3 sequences terminate on ECMA-48 final bytes (0x40..0x7E)
+        if ((unsigned char)c >= 0x40 && (unsigned char)c <= 0x7E) {
             is_terminator = true;
         }
     }
@@ -344,6 +352,8 @@ void Terminal::_handleAnsiSequence() {
             case 'F': // End
                 _moveCursorToEnd();
                 return;
+            default:
+                break;
             }
         }
 
@@ -359,6 +369,8 @@ void Terminal::_handleAnsiSequence() {
             case '8': // End (rxvt)
                 _moveCursorToEnd();
                 return;
+            default:
+                break;
             }
         }
     }
@@ -373,6 +385,8 @@ void Terminal::_handleAnsiSequence() {
         case 'F': // End
             _moveCursorToEnd();
             return;
+        default:
+            break;
         }
     }
 
@@ -659,6 +673,8 @@ void Terminal::_cmdStatus(char* /*args*/) {
         Serial.println(TXT_TERM_STAT_AWAIT_RTC);
     } else if (!gState.setup_done) {
         Serial.println(TXT_TERM_STAT_SETUP);
+    } else if (!Scheduler::hasEnabledZones()) {
+        Serial.println(TXT_TERM_STAT_NO_ZONES);
     } else {
         uint8_t nextH = gState.next_hour;
         uint8_t nextM = gState.next_min;
@@ -792,13 +808,6 @@ void Terminal::_cmdImportConfig(char *args) {
         // Sucesso na importação - atualizar hora local (caso auto_dst tenha mudado) e agendamento
         if (gState.rtc_valid) {
             rtclock.refreshLocalTime();
-            if (gState.suspended && gState.suspended_until > 0 &&
-                gState.now.unix >= gState.suspended_until) {
-                gState.suspended = false;
-                gState.suspended_until = 0;
-                storage.save();
-                LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_EXP_CLR);
-            }
         }
         scheduler.onModeChanged();
         // Sincronizar UI com setup_done importado (sair do wizard ou iniciar se setup_done=false)
