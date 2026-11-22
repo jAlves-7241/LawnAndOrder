@@ -162,11 +162,11 @@ void initAppState() {
     const char*   names[NUM_ZONES]   = { ZONE1_NAME, ZONE2_NAME, ZONE3_NAME, ZONE4_NAME };
     const uint8_t durs[NUM_ZONES]    = { ZONE1_DUR, ZONE2_DUR, ZONE3_DUR, ZONE4_DUR };
 
-    for (int i = 0; i < NUM_ZONES; i++) {
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
         if (names[i] != nullptr) {
             strncpy(gState.zones[i].name, names[i], sizeof(gState.zones[i].name) - 1);
         } else {
-            snprintf(gState.zones[i].name, sizeof(gState.zones[i].name), TXT_ZONE_PREFIX, i + 1);
+            snprintf(gState.zones[i].name, sizeof(gState.zones[i].name), TXT_ZONE_PREFIX, (int)(i + 1));
         }
         gState.zones[i].name[sizeof(gState.zones[i].name) - 1] = '\0';
         gState.zones[i].enabled      = (durs[i] > 0);

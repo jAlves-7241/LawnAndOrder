@@ -67,10 +67,11 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         add_item(lbuf, "dur_pick:freq");
         snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
         add_item(lbuf, "dur_pick:cycles");
-        for (int i = 0; i < cs.slot_count; i++) {
-            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, i + 1, cs.slots[i].hour, cs.slots[i].minute);
+        uint8_t slotCount = (cs.slot_count <= MAX_SLOTS_PER_MODE) ? cs.slot_count : MAX_SLOTS_PER_MODE;
+        for (uint8_t i = 0; i < slotCount; i++) {
+            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, (int)(i + 1), cs.slots[i].hour, cs.slots[i].minute);
             char act[16];
-            snprintf(act, sizeof(act), "time_edit:c%d", i);
+            snprintf(act, sizeof(act), "time_edit:c%u", (unsigned)i);
             add_item(lbuf, act);
         }
         add_item(TXT_FINISH_BACK, "go:prog");
@@ -83,10 +84,11 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         add_item(lbuf, "dur_pick:freq");
         snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
         add_item(lbuf, "dur_pick:cycles");
-        for (int i = 0; i < cs.slot_count; i++) {
-            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, i + 1, cs.slots[i].hour, cs.slots[i].minute);
+        uint8_t slotCount = (cs.slot_count <= MAX_SLOTS_PER_MODE) ? cs.slot_count : MAX_SLOTS_PER_MODE;
+        for (uint8_t i = 0; i < slotCount; i++) {
+            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, (int)(i + 1), cs.slots[i].hour, cs.slots[i].minute);
             char act[16];
-            snprintf(act, sizeof(act), "time_edit:c%d", i);
+            snprintf(act, sizeof(act), "time_edit:c%u", (unsigned)i);
             add_item(lbuf, act);
         }
         add_item(TXT_MB_ADVANCE, "setup_advance");
@@ -104,24 +106,24 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::CFG_ZONAS:
-        for (int i = 0; i < NUM_ZONES; i++) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled && z.duration_min > 0)
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, i+1, z.name);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, (int)(i + 1), z.name);
             else
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, i+1, z.name);
-            char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, (int)(i + 1), z.name);
+            char act[12]; snprintf(act, sizeof(act), "cfgz:%u", (unsigned)i);
             add_item(lbuf, act);
         }
         add_item(TXT_BACK, "go:prog");
         break;
 
     case MenuID::CUSTOM_ZONAS:
-        for (int i = 0; i < NUM_ZONES; i++) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++) {
             snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_CUSTOM,
                      gState.custom_sel[i] ? "[X]" : "[ ]",
-                     i+1, gState.zones[i].name);
-            char act[8]; snprintf(act, sizeof(act), "cz:%d", i);
+                     (int)(i + 1), gState.zones[i].name);
+            char act[8]; snprintf(act, sizeof(act), "cz:%u", (unsigned)i);
             add_item(lbuf, act);
         }
         add_item(TXT_SET_DURATION, "dur_pick:custom");
@@ -195,16 +197,15 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         snprintf(lbuf, sizeof(lbuf), TXT_TEST_ALL_FMT, (int)ZONE_TEST_DURATION_S);
         snprintf(actAll, sizeof(actAll), TXT_ACT_CONFIRM_TEST_ALL, (int)ZONE_TEST_DURATION_S);
         add_item(lbuf, actAll);
-        for (int i = 0; i < NUM_ZONES; i++) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++) {
             char safe_name[16];
-            strncpy(safe_name, gState.zones[i].name, sizeof(safe_name));
-            safe_name[sizeof(safe_name)-1] = '\0';
+            strlcpy(safe_name, gState.zones[i].name, sizeof(safe_name));
             for (int k = 0; safe_name[k]; k++) if (safe_name[k] == '|') safe_name[k] = '/';
-            snprintf(lbuf, sizeof(lbuf), TXT_TEST_ZONE_ITEM_FMT, i+1, safe_name, (int)ZONE_TEST_DURATION_S);
+            snprintf(lbuf, sizeof(lbuf), TXT_TEST_ZONE_ITEM_FMT, (int)(i + 1), safe_name, (int)ZONE_TEST_DURATION_S);
             char act[80];
             snprintf(act, sizeof(act),
                      TXT_ACT_CONFIRM_TEST_ZONE,
-                     i+1, safe_name, (int)ZONE_TEST_DURATION_S, i);
+                     (int)(i + 1), safe_name, (int)ZONE_TEST_DURATION_S, (int)i);
             add_item(lbuf, act);
         }
         add_item(TXT_BACK, "go:def");
@@ -222,13 +223,13 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::SETUP_ZONES:
-        for (int i = 0; i < NUM_ZONES; i++) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++) {
             Zone& z = gState.zones[i];
             if (z.enabled && z.duration_min > 0)
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, i+1, z.name);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, (int)(i + 1), z.name);
             else
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, i+1, z.name);
-            char act[12]; snprintf(act, sizeof(act), "cfgz:%d", i);
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, (int)(i + 1), z.name);
+            char act[12]; snprintf(act, sizeof(act), "cfgz:%u", (unsigned)i);
             add_item(lbuf, act);
         }
         add_item(TXT_FINISH,  "setup_advance");
@@ -306,7 +307,8 @@ void MenuBuilder::modeHours(uint8_t m, char* dest, size_t maxLen) {
     }
 
     size_t pos = 0;
-    for (uint8_t i = 0; i < sched.slot_count && pos < maxLen - 1; i++) {
+    uint8_t slotCount = (sched.slot_count <= MAX_SLOTS_PER_MODE) ? sched.slot_count : MAX_SLOTS_PER_MODE;
+    for (uint8_t i = 0; i < slotCount && pos < maxLen - 1; i++) {
         if (i > 0) {
             int n = snprintf(dest + pos, maxLen - pos, "+");
             if (n > 0) pos += ((size_t)n < maxLen - pos) ? n : (maxLen - pos - 1);
