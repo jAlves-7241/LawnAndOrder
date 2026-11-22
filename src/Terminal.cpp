@@ -590,7 +590,8 @@ void Terminal::_processCommand(char *cmd) {
     // Lookup in command table
     for (uint8_t i = 0; i < CMD_COUNT; i++) {
         if (strcasecmp(trimmed, CMD_TABLE[i].name) == 0) {
-            (this->*CMD_TABLE[i].handler)(args);
+            auto handler = CMD_TABLE[i].handler;
+            (this->*handler)(args);
             if (!_pendingClearHistory && !history.isExporting()) {
                 Serial.println();
             }

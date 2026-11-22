@@ -136,7 +136,7 @@ void test_scheduler_cycle_expired_check(void) {
     uint32_t startUnix = 1781500000UL;
 
     // Current time is 15 hours after start (> 8h max allowed duration) -> expired!
-    SystemTime current = { 2026, 6, 15, 15, 0, 0, 1, startUnix + 15 * 3600UL };
+    SystemTime current = { 2026, 6, 15, 15, 0, 0, 1, (uint32_t)(startUnix + 15UL * 3600UL) };
     bool expired = scheduler.isCycleExpired(startUnix, current, 600);
     TEST_ASSERT_TRUE(expired);
 
@@ -292,7 +292,7 @@ void test_scheduler_dst_fallback_duplicate_block(void) {
 
     // If autumn DST causes hour 8 to repeat 1 hour later (unix + 3600),
     // update() should detect (t.unix - _lastTriggerUnix[0]) < 7200 and block auto-start
-    gState.now = { 2026, 10, 25, 8, 0, 1, 0, t1 + 3600UL };
+    gState.now = { 2026, 10, 25, 8, 0, 1, 0, (uint32_t)(t1 + 3600UL) };
     scheduler._lastMin = 0xFF;
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
@@ -341,7 +341,7 @@ void test_scheduler_on_watering_done_does_not_skip_adjacent_minute_slot(void) {
 void test_scheduler_cycle_expired_bounds_and_overflow_safety(void) {
     gState.mode = AppMode::MEDIO;
     uint32_t startUnix = 1781500000UL;
-    SystemTime current = { 2026, 6, 15, 8, 5, 0, 1, startUnix + 300UL };
+    SystemTime current = { 2026, 6, 15, 8, 5, 0, 1, (uint32_t)(startUnix + 300UL) };
 
     // 0s remaining duration is invalid -> treated as expired
     TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, current, 0));
@@ -369,7 +369,7 @@ void test_scheduler_last_triggers_persist_across_reboot(void) {
     // Simulate reboot 1 hour later during DST fall-back repeated hour
     scheduler = Scheduler();
     scheduler.begin();
-    gState.now = { 2026, 10, 25, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0, 0, t1 + 3600UL };
+    gState.now = { 2026, 10, 25, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0, 0, (uint32_t)(t1 + 3600UL) };
     scheduler._lastMin = 0xFF;
     scheduler.update();
     TEST_ASSERT_FALSE(wateringCtrl._active);
@@ -400,11 +400,11 @@ void test_scheduler_recovery_max_age_2h(void) {
     gState.mode = AppMode::DESATIVADO;
     uint32_t startUnix = 1781500000UL;
 
-    SystemTime atLimit = { 2026, 6, 15, 11, 0, 0, 1, startUnix + RECOVERY_MAX_AGE_S };
+    SystemTime atLimit = { 2026, 6, 15, 11, 0, 0, 1, (uint32_t)(startUnix + RECOVERY_MAX_AGE_S) };
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUnix, atLimit, 3600));
 
     // Exact +1 s boundary (7201 s) expires and logs ceiling 121 min
-    SystemTime overLimitBy1s = { 2026, 6, 15, 11, 0, 1, 1, startUnix + RECOVERY_MAX_AGE_S + 1 };
+    SystemTime overLimitBy1s = { 2026, 6, 15, 11, 0, 1, 1, (uint32_t)(startUnix + RECOVERY_MAX_AGE_S + 1UL) };
     Serial.reset();
     TEST_ASSERT_TRUE(scheduler.isCycleExpired(startUnix, overLimitBy1s, 3600));
 #if LOG_LEVEL >= LVL_WARN

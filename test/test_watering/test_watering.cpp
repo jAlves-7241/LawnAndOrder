@@ -812,7 +812,7 @@ void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
     gState.auto_dst = true;
     DateTime startUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)); // 08:00 local summer
     gState.mode = AppMode::MEDIO;
-    gState.now = { 2026, 6, 15, 8, 15, 0, 1, startUtc.unixtime() + 900UL };
+    gState.now = { 2026, 6, 15, 8, 15, 0, 1, (uint32_t)(startUtc.unixtime() + 900UL) };
 
     RecoveryState rs = {};
     rs.version = NVS_VERSION;
@@ -846,7 +846,7 @@ void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
     // 3. Aborted expired cycle also logs partial minutes, while corrupt recovery must NOT log
     history.clear();
     rs.retry_count = 0;
-    gState.now = { 2026, 6, 15, 11, 0, 0, 1, startUtc.unixtime() + 10800UL }; // 3h > 2h max age
+    gState.now = { 2026, 6, 15, 11, 0, 0, 1, (uint32_t)(startUtc.unixtime() + 10800UL) }; // 3h > 2h max age
     storage.saveRecoveryState(rs);
     wateringCtrl = WateringController();
     wateringCtrl.begin();
@@ -864,7 +864,7 @@ void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
 
     // 4. Single-zone recovery completion logs TXT_LOG_REC_STABLE, and early stop on resumed zone logs cumulative min
     gState.mode = AppMode::DESATIVADO;
-    gState.now = { 2026, 6, 15, 8, 10, 0, 1, startUtc.unixtime() + 600UL };
+    gState.now = { 2026, 6, 15, 8, 10, 0, 1, (uint32_t)(startUtc.unixtime() + 600UL) };
     RecoveryState srs = {};
     srs.version = NVS_VERSION;
     srs.active = true;
