@@ -4,10 +4,7 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-// Expose private static methods for white-box unit testing without altering production files
-#define private public
 #include "RTClock.h"
-#undef private
 
 #include "../../src/RTClock.cpp"
 
@@ -18,7 +15,8 @@ void setUp(void) {
 
 void tearDown(void) {}
 
-void test_eu_dst_winter_and_summer_months(void) {
+struct UnitTestAccess {
+static void test_eu_dst_winter_and_summer_months(void) {
     // January - definitely no DST
     DateTime winter(2026, 1, 15, 12, 0, 0);
     TEST_ASSERT_FALSE(RTClock::_isEU_DST(winter));
@@ -40,7 +38,7 @@ void test_eu_dst_winter_and_summer_months(void) {
     TEST_ASSERT_FALSE(RTClock::_isEU_DST(dec));
 }
 
-void test_eu_dst_march_transition_boundary(void) {
+static void test_eu_dst_march_transition_boundary(void) {
     // In 2026, March 31 is Tuesday. Last Sunday is March 29.
     // Transition happens at 01:00 UTC.
     
@@ -65,7 +63,7 @@ void test_eu_dst_march_transition_boundary(void) {
     TEST_ASSERT_TRUE(RTClock::_isEU_DST(dayAfter));
 }
 
-void test_eu_dst_october_transition_boundary(void) {
+static void test_eu_dst_october_transition_boundary(void) {
     // In 2026, October 31 is Saturday. Last Sunday is October 25.
     // Transition ends at 01:00 UTC.
     
@@ -86,7 +84,7 @@ void test_eu_dst_october_transition_boundary(void) {
     TEST_ASSERT_FALSE(RTClock::_isEU_DST(dayAfter));
 }
 
-void test_utc_to_local_conversion(void) {
+static void test_utc_to_local_conversion(void) {
     gState.auto_dst = true;
 
     // Winter: UTC 10:00 -> Local 10:00 + TIMEZONE_OFFSET (0 for PT) = 10:00
@@ -107,7 +105,7 @@ void test_utc_to_local_conversion(void) {
     TEST_ASSERT_EQUAL_UINT8(10 + TIMEZONE_OFFSET, summerLocalNoDst.hour());
 }
 
-void test_rtclock_leap_year_dst_calculation(void) {
+static void test_rtclock_leap_year_dst_calculation(void) {
     // 2028 is a leap year.
     // In March 2028, March 31 is Friday -> Last Sunday is March 26.
     DateTime march26_before(2028, 3, 26, 0, 59, 59);
@@ -124,7 +122,7 @@ void test_rtclock_leap_year_dst_calculation(void) {
     TEST_ASSERT_FALSE(RTClock::_isEU_DST(oct29_after));
 }
 
-void test_rtclock_year_end_rollover(void) {
+static void test_rtclock_year_end_rollover(void) {
     gState.auto_dst = false;
     // Dec 31 23:59:59 local (adjust UTC by -TIMEZONE_OFFSET so rollover works in any timezone)
     DateTime endOfYearLocalTarget(2026, 12, 31, 23, 59, 59);
@@ -149,7 +147,7 @@ void test_rtclock_year_end_rollover(void) {
     TEST_ASSERT_EQUAL_UINT8(0, newYearLocal.second());
 }
 
-void test_rtclock_throttle_after_internal_set(void) {
+static void test_rtclock_throttle_after_internal_set(void) {
     rtclock.begin();
     gState.rtc_valid = true;
     setMockMillis(100000);
@@ -170,7 +168,7 @@ void test_rtclock_throttle_after_internal_set(void) {
     TEST_ASSERT_EQUAL_UINT32(millis(), rtclock._lastReadMs);
 }
 
-void test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour(void) {
+static void test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour(void) {
     gState.auto_dst = true;
 
     // Winter round-trip: 2026-01-15 08:00 local -> UTC -> local
@@ -205,7 +203,7 @@ void test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour(void) {
     TEST_ASSERT_EQUAL_UINT8(30, secondUtc.minute());
 }
 
-void test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power(void) {
+static void test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power(void) {
     TEST_ASSERT_TRUE(rtclock.begin());
     rtclock.set(2026, 6, 15, 14, 30, 0);
     TEST_ASSERT_TRUE(gState.rtc_valid);
@@ -223,7 +221,7 @@ void test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power(void) {
     TEST_ASSERT_FALSE(rtclock._rtc.mockLostPower);
 }
 
-void test_rtclock_refresh_local_time_on_dst_toggle(void) {
+static void test_rtclock_refresh_local_time_on_dst_toggle(void) {
     gState.auto_dst = true;
     rtclock.begin();
     // Summer local 11:00 (with DST+1 in UTC+0 -> 10:00 UTC)
@@ -236,7 +234,7 @@ void test_rtclock_refresh_local_time_on_dst_toggle(void) {
     TEST_ASSERT_EQUAL_UINT8(10, gState.now.hour);
 }
 
-void test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set(void) {
+static void test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set(void) {
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockLostPower = true;
     gState.rtc_valid = false;
@@ -259,7 +257,7 @@ void test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set(void)
     TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
 }
 
-void test_rtclock_hotplug_validates_reading_and_tracks_revision(void) {
+static void test_rtclock_hotplug_validates_reading_and_tracks_revision(void) {
     rtclock._rtc.mockPresent = false;
     TEST_ASSERT_FALSE(rtclock.begin());
     TEST_ASSERT_FALSE(gState.rtc_valid);
@@ -282,7 +280,7 @@ void test_rtclock_hotplug_validates_reading_and_tracks_revision(void) {
     TEST_ASSERT_EQUAL_UINT32(rev + 1, rtclock.revision());
 }
 
-void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
+static void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
     TEST_ASSERT_TRUE(rtclock.begin());
     Serial.reset();
     TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 12, 0, 0));
@@ -372,12 +370,12 @@ void test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs(void) {
 #endif
 }
 
-static uint8_t _mockRtcErrCbCalls = 0;
+inline static uint8_t _mockRtcErrCbCalls = 0;
 static void _mockRtcErrCb() {
     _mockRtcErrCbCalls++;
 }
 
-void test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard(void) {
+static void test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard(void) {
     TEST_ASSERT_TRUE(rtclock.begin());
     TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
     uint32_t revBefore = rtclock.revision();
@@ -429,7 +427,7 @@ void test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard
     rtclock.setErrorCallback(nullptr);
 }
 
-void test_rtclock_battery_low_latch_periodic_recheck_and_clear(void) {
+static void test_rtclock_battery_low_latch_periodic_recheck_and_clear(void) {
     // 1. Cold boot with OSF active sets isBatteryLow() immediately; 30 s check keeps it while OSF stays set
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockLostPower = true;
@@ -491,7 +489,7 @@ void test_rtclock_battery_low_latch_periodic_recheck_and_clear(void) {
 #endif
 }
 
-void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
+static void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
     TEST_ASSERT_EQUAL_UINT32(0, rtclock.manualRevision());
     TEST_ASSERT_TRUE(rtclock.begin());
     TEST_ASSERT_EQUAL_UINT32(0, rtclock.manualRevision());
@@ -540,7 +538,7 @@ void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
     TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
 }
 
-void test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback(void) {
+static void test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback(void) {
     // 1. Successful set() updates _lastReadMs to millis() (no redundant poll on next loop)
     setMockMillis(50000);
     TEST_ASSERT_TRUE(rtclock.begin());
@@ -636,7 +634,7 @@ void test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback(void) {
     TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
 }
 
-void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
+static void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
     // 1. Periodic update() OSF restore preserves elapsed seconds since last SW tick
     setMockMillis(1000);
     TEST_ASSERT_TRUE(rtclock.begin());
@@ -698,25 +696,27 @@ void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
     TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
 }
 
+};
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_eu_dst_winter_and_summer_months);
-    RUN_TEST(test_eu_dst_march_transition_boundary);
-    RUN_TEST(test_eu_dst_october_transition_boundary);
-    RUN_TEST(test_utc_to_local_conversion);
-    RUN_TEST(test_rtclock_leap_year_dst_calculation);
-    RUN_TEST(test_rtclock_year_end_rollover);
-    RUN_TEST(test_rtclock_throttle_after_internal_set);
-    RUN_TEST(test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour);
-    RUN_TEST(test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power);
-    RUN_TEST(test_rtclock_refresh_local_time_on_dst_toggle);
-    RUN_TEST(test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set);
-    RUN_TEST(test_rtclock_hotplug_validates_reading_and_tracks_revision);
-    RUN_TEST(test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs);
-    RUN_TEST(test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard);
-    RUN_TEST(test_rtclock_battery_low_latch_periodic_recheck_and_clear);
-    RUN_TEST(test_rtclock_manual_revision_only_tracks_valid_sets);
-    RUN_TEST(test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback);
-    RUN_TEST(test_rtclock_osf_recovery_advances_sw_clock_before_restore);
+    RUN_UT(test_eu_dst_winter_and_summer_months);
+    RUN_UT(test_eu_dst_march_transition_boundary);
+    RUN_UT(test_eu_dst_october_transition_boundary);
+    RUN_UT(test_utc_to_local_conversion);
+    RUN_UT(test_rtclock_leap_year_dst_calculation);
+    RUN_UT(test_rtclock_year_end_rollover);
+    RUN_UT(test_rtclock_throttle_after_internal_set);
+    RUN_UT(test_rtclock_local_to_utc_roundtrip_and_ambiguous_hour);
+    RUN_UT(test_rtclock_midrun_begin_preserves_ram_and_restores_lost_power);
+    RUN_UT(test_rtclock_refresh_local_time_on_dst_toggle);
+    RUN_UT(test_rtclock_initial_lost_power_preserves_osf_and_rejects_invalid_set);
+    RUN_UT(test_rtclock_hotplug_validates_reading_and_tracks_revision);
+    RUN_UT(test_rtclock_battery_warning_dedup_export_deferral_and_hotplug_logs);
+    RUN_UT(test_rtclock_i2c_read_fail_blocks_spurious_adjust_and_hotplug_corrupt_guard);
+    RUN_UT(test_rtclock_battery_low_latch_periodic_recheck_and_clear);
+    RUN_UT(test_rtclock_manual_revision_only_tracks_valid_sets);
+    RUN_UT(test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback);
+    RUN_UT(test_rtclock_osf_recovery_advances_sw_clock_before_restore);
     return UNITY_END();
 }

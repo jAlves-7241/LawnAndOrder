@@ -4,11 +4,9 @@
 #include "../../test/mocks/TestCommon.cpp"
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
-#define private public
 #include "RTClock.h"
 #include "History.h"
 #include "Terminal.h"
-#undef private
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
 #include "../../src/WateringController.cpp"
@@ -58,7 +56,8 @@ void setUp(void) {
 
 void tearDown(void) {}
 
-void test_terminal_help_command(void) {
+struct UnitTestAccess {
+static void test_terminal_help_command(void) {
     Serial.feedInput("help\r\n");
     terminal.update();
 
@@ -75,7 +74,7 @@ void test_terminal_help_command(void) {
                      Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 }
 
-void test_terminal_status_command(void) {
+static void test_terminal_status_command(void) {
     gState.mode = AppMode::MEDIO;
     gState.now = { 2026, 6, 15, 10, 0, 0, 1, 1781500000UL };
 
@@ -88,7 +87,7 @@ void test_terminal_status_command(void) {
                      Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 }
 
-void test_terminal_set_time_command(void) {
+static void test_terminal_set_time_command(void) {
     Serial.feedInput("set_time 2026-07-20 15:45:00\r\n");
     terminal.update();
 
@@ -100,7 +99,7 @@ void test_terminal_set_time_command(void) {
     TEST_ASSERT_TRUE(gState.rtc_valid);
 }
 
-void test_terminal_clear_history_confirmation_flow(void) {
+static void test_terminal_clear_history_confirmation_flow(void) {
     // Clearing when already empty reports empty immediately without prompting or failing
     history.clear();
     Serial.reset();
@@ -127,7 +126,7 @@ void test_terminal_clear_history_confirmation_flow(void) {
     TEST_ASSERT_TRUE(_ui_went_idle);
 }
 
-void test_terminal_clear_history_cancellation(void) {
+static void test_terminal_clear_history_cancellation(void) {
     HistoryEntry e = { 2026, 6, 1, 8, 0, { 10, 10, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(e);
 
@@ -141,7 +140,7 @@ void test_terminal_clear_history_cancellation(void) {
     TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
 }
 
-void test_terminal_ansi_arrow_keys_filtered(void) {
+static void test_terminal_ansi_arrow_keys_filtered(void) {
     Serial.feedInput("s\033[Atatus\r\n");
     terminal.update();
 
@@ -149,7 +148,7 @@ void test_terminal_ansi_arrow_keys_filtered(void) {
                      Serial.outputBuffer.find("ESTADO") != std::string::npos);
 }
 
-void test_terminal_buffer_overflow_protection(void) {
+static void test_terminal_buffer_overflow_protection(void) {
     std::string longInput(270, 'x');
     longInput += "\r\n";
     Serial.feedInput(longInput);
@@ -167,13 +166,13 @@ void test_terminal_buffer_overflow_protection(void) {
                      Serial.outputBuffer.find("demasiado longo") != std::string::npos);
 }
 
-void test_terminal_reboot_command(void) {
+static void test_terminal_reboot_command(void) {
     Serial.feedInput("reboot\r\n");
     terminal.update();
     TEST_ASSERT_TRUE(ESP.rebooted);
 }
 
-void test_terminal_i2c_scan_command(void) {
+static void test_terminal_i2c_scan_command(void) {
     Wire.detectedAddresses.push_back(0x27);
     Wire.detectedAddresses.push_back(0x68);
 
@@ -184,7 +183,7 @@ void test_terminal_i2c_scan_command(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("0x68") != std::string::npos);
 }
 
-void test_terminal_export_and_import_config_commands(void) {
+static void test_terminal_export_and_import_config_commands(void) {
     Serial.reset();
     _ui_went_idle = false;
     _ui_in_setup = false;
@@ -225,7 +224,7 @@ void test_terminal_export_and_import_config_commands(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_ERR_IMP_BLOB) != std::string::npos);
 }
 
-void test_terminal_export_history_command(void) {
+static void test_terminal_export_history_command(void) {
     history.clear();
     Serial.reset();
 
@@ -251,7 +250,7 @@ void test_terminal_export_history_command(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-01T08:00,A,10,10,0,0") != std::string::npos);
 }
 
-void test_terminal_unknown_and_case_insensitive_commands(void) {
+static void test_terminal_unknown_and_case_insensitive_commands(void) {
     Serial.reset();
 
     // Unknown command
@@ -274,7 +273,7 @@ void test_terminal_unknown_and_case_insensitive_commands(void) {
     // Must not crash
 }
 
-void test_terminal_stop_command(void) {
+static void test_terminal_stop_command(void) {
     Serial.reset();
     Serial.feedInput("stop\r\n");
     terminal.update();
@@ -297,7 +296,7 @@ void test_terminal_stop_command(void) {
                      Serial.outputBuffer.find("parada") != std::string::npos);
 }
 
-void test_terminal_set_time_rejects_trailing_garbage_and_plus_sign(void) {
+static void test_terminal_set_time_rejects_trailing_garbage_and_plus_sign(void) {
     rtclock = RTClock();
     gState.rtc_valid = false;
 
@@ -320,7 +319,7 @@ void test_terminal_set_time_rejects_trailing_garbage_and_plus_sign(void) {
     TEST_ASSERT_FALSE(gState.rtc_valid);
 }
 
-void test_terminal_status_truthful_when_rtc_invalid(void) {
+static void test_terminal_status_truthful_when_rtc_invalid(void) {
     gState.rtc_valid = false;
     gState.mode = AppMode::MEDIO;
     gState.suspended = true;
@@ -343,7 +342,7 @@ void test_terminal_status_truthful_when_rtc_invalid(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_AWAIT_RTC) != std::string::npos);
 }
 
-void test_terminal_reboot_deenergizes_active_relays_preserving_recovery(void) {
+static void test_terminal_reboot_deenergizes_active_relays_preserving_recovery(void) {
     wateringCtrl.begin();
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
@@ -364,7 +363,7 @@ void test_terminal_reboot_deenergizes_active_relays_preserving_recovery(void) {
     TEST_ASSERT_TRUE(rs.active);
 }
 
-void test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow(void) {
+static void test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow(void) {
     HistoryEntry e = { 2026, 6, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(e);
     TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
@@ -399,7 +398,7 @@ void test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("status") != std::string::npos);
 }
 
-void test_terminal_import_active_guard_setup_sync_and_set_time_strict(void) {
+static void test_terminal_import_active_guard_setup_sync_and_set_time_strict(void) {
     // 1. Export a setup_done=false config, then import while inSetup is true
     gState.setup_done = false;
     char hexSetupFalse[sizeof(AppConfigBlob) * 2 + 1] = {};
@@ -461,7 +460,7 @@ void test_terminal_import_active_guard_setup_sync_and_set_time_strict(void) {
     TEST_ASSERT_TRUE(_ui_refreshed_clock);
 }
 
-void test_terminal_midline_batch_coalesces_tail_redraw(void) {
+static void test_terminal_midline_batch_coalesces_tail_redraw(void) {
     Serial.reset();
     // Feed "ab", move cursor Left twice to index 0, then insert "XYZ" in one batch
     Serial.feedInput("ab\033[D\033[DXYZ");
@@ -481,7 +480,7 @@ void test_terminal_midline_batch_coalesces_tail_redraw(void) {
     TEST_ASSERT_EQUAL_UINT32(1, countK);
 }
 
-void test_logging_standardized_format_and_seconds_precision(void) {
+static void test_logging_standardized_format_and_seconds_precision(void) {
     // 1. Pre-RTC uptime format: second precision only (no milliseconds)
     gState.rtc_valid = false;
     advanceMockMillis(5123);
@@ -539,7 +538,7 @@ void test_logging_standardized_format_and_seconds_precision(void) {
     TEST_ASSERT_EQUAL_STRING("...", Serial.outputBuffer.substr(eol - 3, 3).c_str());
 }
 
-void test_logging_export_suppression_summary_and_human_modes(void) {
+static void test_logging_export_suppression_summary_and_human_modes(void) {
     // Human-readable mode names (never raw enum integers)
     TEST_ASSERT_EQUAL_STRING(TXT_TERM_MODE_DISABLED, serialModeName(AppMode::DESATIVADO));
     TEST_ASSERT_EQUAL_STRING(TXT_TERM_MODE_CUSTOM, serialModeName(AppMode::PERSONALIZADO));
@@ -600,7 +599,7 @@ void test_logging_export_suppression_summary_and_human_modes(void) {
 #endif
 }
 
-void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
+static void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     // 1. Software clock (rtc_valid == true, mockPresent == false) reports TXT_TERM_STAT_RTC_SW and omits Unix Time
     rtclock._found = false;
     rtclock._rtc.mockPresent = false;
@@ -678,7 +677,7 @@ void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
 }
 
-void test_terminal_status_reports_and_clears_rtc_battery_warning(void) {
+static void test_terminal_status_reports_and_clears_rtc_battery_warning(void) {
     rtclock = RTClock();
     rtclock.begin();
     rtclock.set(2026, 6, 15, 12, 0, 0);
@@ -712,7 +711,7 @@ void test_terminal_status_reports_and_clears_rtc_battery_warning(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_RTC_BAT) == std::string::npos);
 }
 
-void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
+static void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
     // 1. Unrecognized arguments are rejected without entering confirmation prompt
     Serial.reset();
     Serial.feedInput("clear_history -f\n");
@@ -796,7 +795,7 @@ void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
 }
 
-void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date(void) {
+static void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date(void) {
     // 1. export_history on unmounted FS reports unavailable (not "History is empty.")
     HistoryEntry seed = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
     history.record(seed);
@@ -879,7 +878,7 @@ void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_dat
                      Serial.outputBuffer.substr(Serial.outputBuffer.size() - 4) == "\r\n\r\n");
 }
 
-void test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection(void) {
+static void test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection(void) {
     rtclock = RTClock();
     rtclock.begin();
     gState.auto_dst = true;
@@ -922,7 +921,7 @@ void test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection(vo
 #endif
 }
 
-void test_terminal_import_config_clears_expired_suspension_immediately(void) {
+static void test_terminal_import_config_clears_expired_suspension_immediately(void) {
     rtclock = RTClock();
     rtclock.begin();
     TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
@@ -972,7 +971,7 @@ void test_terminal_import_config_clears_expired_suspension_immediately(void) {
     TEST_ASSERT_EQUAL_UINT32(gState.now.unix + 7200UL, gState.suspended_until);
 }
 
-void test_terminal_ansi_control_abort_and_zero_zones_status(void) {
+static void test_terminal_ansi_control_abort_and_zero_zones_status(void) {
     // 1. Incomplete CSI (ESC [) followed by Enter or Ctrl+C must abort ANSI state and execute control key
     Serial.reset();
     Serial.feedInput("help\033[\r");
@@ -1009,7 +1008,7 @@ void test_terminal_ansi_control_abort_and_zero_zones_status(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_NO_ZONES) != std::string::npos);
 }
 
-void test_terminal_lone_esc_preserves_next_char(void) {
+static void test_terminal_lone_esc_preserves_next_char(void) {
     // 1. Lone ESC followed immediately by a printable non-CSI/SS3 char must not swallow it
     Serial.reset();
     Serial.feedInput("\033help\r");
@@ -1039,7 +1038,7 @@ void test_terminal_lone_esc_preserves_next_char(void) {
     TEST_ASSERT_EQUAL_MEMORY("abc", terminal._buffer, 3);
 }
 
-void test_terminal_status_reports_config_lost_and_skipped_slot(void) {
+static void test_terminal_status_reports_config_lost_and_skipped_slot(void) {
     // 1. Trigger a real MANUAL collision at 08:00 via public APIs
     gState.rtc_valid = true;
     gState.setup_done = true;
@@ -1074,37 +1073,39 @@ void test_terminal_status_reports_config_lost_and_skipped_slot(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedSkip) != std::string::npos);
 }
 
+};
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_terminal_help_command);
-    RUN_TEST(test_terminal_status_command);
-    RUN_TEST(test_terminal_stop_command);
-    RUN_TEST(test_terminal_set_time_command);
-    RUN_TEST(test_terminal_clear_history_confirmation_flow);
-    RUN_TEST(test_terminal_clear_history_cancellation);
-    RUN_TEST(test_terminal_ansi_arrow_keys_filtered);
-    RUN_TEST(test_terminal_buffer_overflow_protection);
-    RUN_TEST(test_terminal_reboot_command);
-    RUN_TEST(test_terminal_i2c_scan_command);
-    RUN_TEST(test_terminal_export_and_import_config_commands);
-    RUN_TEST(test_terminal_export_history_command);
-    RUN_TEST(test_terminal_unknown_and_case_insensitive_commands);
-    RUN_TEST(test_terminal_set_time_rejects_trailing_garbage_and_plus_sign);
-    RUN_TEST(test_terminal_status_truthful_when_rtc_invalid);
-    RUN_TEST(test_terminal_reboot_deenergizes_active_relays_preserving_recovery);
-    RUN_TEST(test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow);
-    RUN_TEST(test_terminal_import_active_guard_setup_sync_and_set_time_strict);
-    RUN_TEST(test_terminal_midline_batch_coalesces_tail_redraw);
-    RUN_TEST(test_logging_standardized_format_and_seconds_precision);
-    RUN_TEST(test_logging_export_suppression_summary_and_human_modes);
-    RUN_TEST(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
-    RUN_TEST(test_terminal_status_reports_and_clears_rtc_battery_warning);
-    RUN_TEST(test_terminal_clear_history_force_args_timeout_and_empty_repair);
-    RUN_TEST(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
-    RUN_TEST(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
-    RUN_TEST(test_terminal_import_config_clears_expired_suspension_immediately);
-    RUN_TEST(test_terminal_ansi_control_abort_and_zero_zones_status);
-    RUN_TEST(test_terminal_lone_esc_preserves_next_char);
-    RUN_TEST(test_terminal_status_reports_config_lost_and_skipped_slot);
+    RUN_UT(test_terminal_help_command);
+    RUN_UT(test_terminal_status_command);
+    RUN_UT(test_terminal_stop_command);
+    RUN_UT(test_terminal_set_time_command);
+    RUN_UT(test_terminal_clear_history_confirmation_flow);
+    RUN_UT(test_terminal_clear_history_cancellation);
+    RUN_UT(test_terminal_ansi_arrow_keys_filtered);
+    RUN_UT(test_terminal_buffer_overflow_protection);
+    RUN_UT(test_terminal_reboot_command);
+    RUN_UT(test_terminal_i2c_scan_command);
+    RUN_UT(test_terminal_export_and_import_config_commands);
+    RUN_UT(test_terminal_export_history_command);
+    RUN_UT(test_terminal_unknown_and_case_insensitive_commands);
+    RUN_UT(test_terminal_set_time_rejects_trailing_garbage_and_plus_sign);
+    RUN_UT(test_terminal_status_truthful_when_rtc_invalid);
+    RUN_UT(test_terminal_reboot_deenergizes_active_relays_preserving_recovery);
+    RUN_UT(test_terminal_pending_clear_expires_and_ctrl_c_clears_overflow);
+    RUN_UT(test_terminal_import_active_guard_setup_sync_and_set_time_strict);
+    RUN_UT(test_terminal_midline_batch_coalesces_tail_redraw);
+    RUN_UT(test_logging_standardized_format_and_seconds_precision);
+    RUN_UT(test_logging_export_suppression_summary_and_human_modes);
+    RUN_UT(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
+    RUN_UT(test_terminal_status_reports_and_clears_rtc_battery_warning);
+    RUN_UT(test_terminal_clear_history_force_args_timeout_and_empty_repair);
+    RUN_UT(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
+    RUN_UT(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
+    RUN_UT(test_terminal_import_config_clears_expired_suspension_immediately);
+    RUN_UT(test_terminal_ansi_control_abort_and_zero_zones_status);
+    RUN_UT(test_terminal_lone_esc_preserves_next_char);
+    RUN_UT(test_terminal_status_reports_config_lost_and_skipped_slot);
     return UNITY_END();
 }

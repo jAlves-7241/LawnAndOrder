@@ -7,7 +7,6 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-#define private public
 #include "RTClock.h"
 #include "History.h"
 #include "WateringController.h"
@@ -16,7 +15,6 @@
 #include "Encoder.h"
 #include "UI.h"
 #include "Terminal.h"
-#undef private
 
 Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
@@ -48,6 +46,7 @@ static void soakRecoverI2C() {
     recoverI2CWith(display, rtclock, _soakI2cState);
 }
 
+struct UnitTestAccess {
 static void resetSystem() {
     resetAllTestMocks();
     _soakI2cState = {};
@@ -147,18 +146,10 @@ static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t s
     }
 }
 
-void setUp(void) {
-    resetSystem();
-}
-
-void tearDown(void) {
-    wateringCtrl.stop();
-}
-
 // ─────────────────────────────────────────────────────────
 // 1. Exhaustive 32-bit millis() wraparound across all modules
 // ─────────────────────────────────────────────────────────
-void test_wraparound_49_day_millis_all_subsystems(void) {
+static void test_wraparound_49_day_millis_all_subsystems(void) {
     gState.setup_done = true;
     gState.backlight_timeout_ms = 120000UL;
     gState.zones[0] = { "Z1", true, 1 };
@@ -414,7 +405,7 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
 //    leap day, DST fall-back & spring-forward, 10x millis() wrap,
 //    and LittleFS history rotation > 1500 entries)
 // ─────────────────────────────────────────────────────────
-void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
+static void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
     gState.setup_done = true;
     gState.auto_dst = true;
     gState.zones[0] = { "Z1", true, 5 };
@@ -609,7 +600,7 @@ void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
 // ─────────────────────────────────────────────────────────
 // 3. Exhaustive double-watering & edge-case matrix
 // ─────────────────────────────────────────────────────────
-void test_soak_double_watering_and_edge_case_matrix(void) {
+static void test_soak_double_watering_and_edge_case_matrix(void) {
     // Common zone setup: 3 zones x 6 min
     auto setupCommonZones = []() {
         gState.setup_done = true;
@@ -1011,7 +1002,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 //    (random power outages, RTC drops/corrupt reads/OSF,
 //     LCD faults under Always-On, user menu/terminal inputs)
 // ─────────────────────────────────────────────────────────
-void test_soak_120_days_chaotic_blackouts_and_faults(void) {
+static void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     gState.setup_done = true;
     gState.auto_dst = true;
     gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
@@ -1147,11 +1138,21 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     TEST_ASSERT_LESS_OR_EQUAL_UINT16(HISTORY_MAX_ENTRIES, history.entryCount());
 }
 
+};
+
+void setUp(void) {
+    UnitTestAccess::resetSystem();
+}
+
+void tearDown(void) {
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_wraparound_49_day_millis_all_subsystems);
-    RUN_TEST(test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations);
-    RUN_TEST(test_soak_double_watering_and_edge_case_matrix);
-    RUN_TEST(test_soak_120_days_chaotic_blackouts_and_faults);
+    RUN_UT(test_wraparound_49_day_millis_all_subsystems);
+    RUN_UT(test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations);
+    RUN_UT(test_soak_double_watering_and_edge_case_matrix);
+    RUN_UT(test_soak_120_days_chaotic_blackouts_and_faults);
     return UNITY_END();
 }

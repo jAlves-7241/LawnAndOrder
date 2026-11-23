@@ -5,14 +5,12 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-#define private public
 #include "RTClock.h"
 #include "Display.h"
 #include "Encoder.h"
 #include "WateringController.h"
 #include "Scheduler.h"
 #include "UI.h"
-#undef private
 
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
@@ -32,6 +30,7 @@ static Display testDisp;
 static Encoder testEnc(PIN_CLK, PIN_DT, PIN_SW);
 static UI      testUi(testDisp, testEnc);
 
+struct UnitTestAccess {
 static void simulateClick(UI& u) {
     digitalWrite(PIN_SW, LOW);
     u.update();
@@ -48,27 +47,7 @@ static void simulateRotate(UI& u, int8_t steps) {
     u.update();
 }
 
-void setUp(void) {
-    resetAllTestMocks();
-    rtclock = RTClock();
-    storage.begin();
-    history.begin();
-    wateringCtrl.begin();
-    digitalWrite(PIN_CLK, HIGH);
-    digitalWrite(PIN_DT, HIGH);
-    digitalWrite(PIN_SW, HIGH);
-    testDisp = Display();
-    testDisp.begin();
-    testEnc.begin();
-    testUi.~UI();
-    new (&testUi) UI(testDisp, testEnc);
-}
-
-void tearDown(void) {
-    wateringCtrl.stop();
-}
-
-void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
+static void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
     testDisp.setRows("Row0", "Row1", "Row2", "Row3");
     TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
     TEST_ASSERT_EQUAL_STRING("Row1                ", testDisp._lcd.getRow(1));
@@ -107,7 +86,7 @@ void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
     TEST_ASSERT_EQUAL_STRING("Tick3               ", testDisp._lcd.getRow(3));
 }
 
-void test_display_formatting_helpers_and_null_safety(void) {
+static void test_display_formatting_helpers_and_null_safety(void) {
     char buf[21] = {};
 
     TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::fx(buf, "Hello")));
@@ -131,7 +110,7 @@ void test_display_formatting_helpers_and_null_safety(void) {
     TEST_ASSERT_TRUE(strstr(buf, "100%") != nullptr);
 }
 
-void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
+static void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
     gState.setup_done = true;
     gState.rtc_valid = true;
     testUi.begin();
@@ -150,7 +129,7 @@ void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
     TEST_ASSERT_TRUE(strstr(testUi.getScreenMenu()._items[0].action, "stop_now") == nullptr);
 }
 
-void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
+static void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
     gState.rtc_valid = true;
     history.clear();
     strncpy(gState.zones[0].name, "Front|Lawn", sizeof(gState.zones[0].name));
@@ -174,7 +153,7 @@ void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
     TEST_ASSERT_TRUE(strstr(items[1].action, "Front/Lawn") != nullptr);
 }
 
-void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
+static void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
     gState.setup_done = false;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -217,7 +196,7 @@ void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
 }
 
-void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
+static void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
     rtclock._rtc.mockPresent = false;
     gState.rtc_valid = false;
     gState.setup_done = false;
@@ -258,7 +237,7 @@ void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
     TEST_ASSERT_EQUAL(MenuID::SETUP_MODE, testUi.getScreenMenu()._mid);
 }
 
-void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
+static void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
     gState.setup_done = true;
     testUi.begin();
 
@@ -278,7 +257,7 @@ void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
     TEST_ASSERT_EQUAL(MenuID::MAIN, testUi.getScreenMenu()._mid);
 }
 
-void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) {
+static void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) {
     gState.setup_done = true;
     gState.auto_dst = true;
     rtclock.begin();
@@ -328,7 +307,7 @@ void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) 
     TEST_ASSERT_TRUE(ESP.rebooted);
 }
 
-void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
+static void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
     gState.setup_done = true;
     gState.rtc_valid = true;
     gState.zones[0] = { "Zone 1", true, 1 };
@@ -360,12 +339,12 @@ void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
     TEST_ASSERT_TRUE(testDisp.isDisplayOn());
 }
 
-static uint8_t _i2cRecoverCallbackCalls = 0;
+inline static uint8_t _i2cRecoverCallbackCalls = 0;
 static void _mockI2cRecoverCb() {
     _i2cRecoverCallbackCalls++;
 }
 
-void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
+static void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
     _i2cRecoverCallbackCalls = 0;
     testDisp.setErrorCallback(_mockI2cRecoverCb);
 
@@ -420,7 +399,7 @@ void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
     TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
 }
 
-void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
+static void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
     gState.setup_done = true;
     gState.mode = AppMode::PERSONALIZADO;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
@@ -451,7 +430,7 @@ void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
     TEST_ASSERT_TRUE(cs.slots[0].hour != cs.slots[1].hour || cs.slots[0].minute != cs.slots[1].minute);
 }
 
-void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
+static void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -486,7 +465,7 @@ void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
 }
 
-void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
+static void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -601,7 +580,7 @@ void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
 #endif
 }
 
-void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(void) {
+static void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(void) {
     // 1. Display::recover() while _displayOn == true immediately restores _shadow onto LCD
     testDisp.setRows("Line0", "Line1", "Line2", "Line3");
     testDisp._lcd.clear();
@@ -646,7 +625,7 @@ void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(vo
     testDisp.setErrorCallback(nullptr);
 }
 
-void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(void) {
+static void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -683,7 +662,7 @@ void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(voi
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_IDLE_SET_TIME) != nullptr);
 }
 
-void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
+static void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -773,9 +752,9 @@ void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_MISSING) != nullptr);
 }
 
-static Display* _throttledDispPtr = nullptr;
-static uint8_t  _throttledCbCalls = 0;
-static bool     _simulateThrottle = false;
+inline static Display* _throttledDispPtr = nullptr;
+inline static uint8_t  _throttledCbCalls = 0;
+inline static bool     _simulateThrottle = false;
 static void _mockThrottledI2cRecoverCb(void) {
     _throttledCbCalls++;
     if (_simulateThrottle && _throttledDispPtr) {
@@ -783,7 +762,7 @@ static void _mockThrottledI2cRecoverCb(void) {
     }
 }
 
-void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void) {
+static void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void) {
     // 1. Setup wizard defers NVS writes (including sel:4 custom mode) until completion
     gState.setup_done = false;
     gState.mode = AppMode::DESATIVADO;
@@ -903,7 +882,7 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) != nullptr);
 }
 
-void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) {
+static void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) {
     // 1. Failed hardware write in ScreenTimeEdit leaves rtc_valid == false (no silent SW fallback)
     rtclock = RTClock();
     rtclock._rtc.mockPresent = true;
@@ -1050,7 +1029,7 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     TEST_ASSERT_TRUE(ESP.rebooted);
 }
 
-void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void) {
+static void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void) {
     // 1. Mid-frame I2C error during setRows() must still stage rows 1..3 so recovery renders a coherent frame
     testDisp.setRows("Old0", "Old1", "Old2", "Old3");
     TEST_ASSERT_EQUAL_STRING("Old0                ", testDisp._lcd.getRow(0));
@@ -1145,7 +1124,7 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expectedDone) != nullptr);
 }
 
-void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) {
+static void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) {
     gState.setup_done = true;
     rtclock = RTClock();
     rtclock.begin();
@@ -1259,7 +1238,7 @@ void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) 
     TEST_ASSERT_EQUAL_CHAR('F', testUi.getScreenInfo()._rows[3][0]);
 }
 
-void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry(void) {
+static void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry(void) {
     rtclock = RTClock();
     rtclock.begin();
     rtclock.set(2026, 6, 1, 9, 0, 0); // Monday June 1, 09:00
@@ -1406,7 +1385,7 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     TEST_ASSERT_EQUAL_STRING("", testUi.getScreenConfirm()._tag);
 }
 
-void test_ui_blocks_manual_and_test_while_watering_active(void) {
+static void test_ui_blocks_manual_and_test_while_watering_active(void) {
     gState.setup_done = true;
     gState.rtc_valid = true;
     gState.zones[0] = { "Z1", true, 5 };
@@ -1445,7 +1424,7 @@ void test_ui_blocks_manual_and_test_while_watering_active(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
 }
 
-void test_ui_idle_displays_skipped_slot_notice(void) {
+static void test_ui_idle_displays_skipped_slot_notice(void) {
     scheduler = Scheduler();
     gState.setup_done = true;
     gState.rtc_valid = true;
@@ -1472,7 +1451,7 @@ void test_ui_idle_displays_skipped_slot_notice(void) {
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expected) != nullptr);
 }
 
-void test_ui_shows_config_lost_alert_only_on_load_failure(void) {
+static void test_ui_shows_config_lost_alert_only_on_load_failure(void) {
     // 1. Fresh empty NVS -> Setup Welcome directly (no false error screen)
     storage.clear();
     initAppState();
@@ -1504,31 +1483,53 @@ void test_ui_shows_config_lost_alert_only_on_load_failure(void) {
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
 }
 
+};
+
+void setUp(void) {
+    resetAllTestMocks();
+    rtclock = RTClock();
+    storage.begin();
+    history.begin();
+    wateringCtrl.begin();
+    digitalWrite(PIN_CLK, HIGH);
+    digitalWrite(PIN_DT, HIGH);
+    digitalWrite(PIN_SW, HIGH);
+    testDisp = Display();
+    testDisp.begin();
+    testEnc.begin();
+    testUi.~UI();
+    new (&testUi) UI(testDisp, testEnc);
+}
+
+void tearDown(void) {
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
-    RUN_TEST(test_display_formatting_helpers_and_null_safety);
-    RUN_TEST(test_menubuilder_dynamic_stop_watering_and_live_menu_refresh);
-    RUN_TEST(test_menubuilder_history_localization_and_dynamic_test_duration);
-    RUN_TEST(test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete);
-    RUN_TEST(test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow);
-    RUN_TEST(test_ui_info_and_done_post_enter_rotation_bounce_guard);
-    RUN_TEST(test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety);
-    RUN_TEST(test_ui_idle_screen_waiting_between_zones_and_backlight_never);
-    RUN_TEST(test_display_i2c_fault_abort_cooldown_and_recovery_callback);
-    RUN_TEST(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
-    RUN_TEST(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
-    RUN_TEST(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
-    RUN_TEST(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
-    RUN_TEST(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
-    RUN_TEST(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
-    RUN_TEST(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
-    RUN_TEST(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
-    RUN_TEST(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
-    RUN_TEST(test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels);
-    RUN_TEST(test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry);
-    RUN_TEST(test_ui_blocks_manual_and_test_while_watering_active);
-    RUN_TEST(test_ui_idle_displays_skipped_slot_notice);
-    RUN_TEST(test_ui_shows_config_lost_alert_only_on_load_failure);
+    RUN_UT(test_display_delta_rows_and_nullptr_preservation_across_refresh);
+    RUN_UT(test_display_formatting_helpers_and_null_safety);
+    RUN_UT(test_menubuilder_dynamic_stop_watering_and_live_menu_refresh);
+    RUN_UT(test_menubuilder_history_localization_and_dynamic_test_duration);
+    RUN_UT(test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete);
+    RUN_UT(test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow);
+    RUN_UT(test_ui_info_and_done_post_enter_rotation_bounce_guard);
+    RUN_UT(test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety);
+    RUN_UT(test_ui_idle_screen_waiting_between_zones_and_backlight_never);
+    RUN_UT(test_display_i2c_fault_abort_cooldown_and_recovery_callback);
+    RUN_UT(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
+    RUN_UT(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
+    RUN_UT(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
+    RUN_UT(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
+    RUN_UT(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
+    RUN_UT(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
+    RUN_UT(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
+    RUN_UT(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
+    RUN_UT(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
+    RUN_UT(test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels);
+    RUN_UT(test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry);
+    RUN_UT(test_ui_blocks_manual_and_test_while_watering_active);
+    RUN_UT(test_ui_idle_displays_skipped_slot_notice);
+    RUN_UT(test_ui_shows_config_lost_alert_only_on_load_failure);
     return UNITY_END();
 }

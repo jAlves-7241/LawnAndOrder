@@ -17,6 +17,7 @@ public:
     void render(UI& ui) override;
 
 private:
+    UNIT_TEST_FRIEND
     char _rows[4][LCD_COLS + 1] = {};
     MenuID _backMenu = MenuID::MAIN;
     UIScreen* _backScreen = nullptr;
@@ -36,6 +37,7 @@ public:
     void render(UI& ui) override;
 
 private:
+    UNIT_TEST_FRIEND
     char _rows[4][LCD_COLS + 1] = {};
     MenuID _backMenu = MenuID::MAIN;
     char _tag[16] = {};
@@ -58,6 +60,7 @@ public:
     void setBackMenu(MenuID back) { _backMenu = back; }
 
 private:
+    UNIT_TEST_FRIEND
     char _rows[4][LCD_COLS + 1] = {};
     MenuID _backMenu = MenuID::MAIN; // inherited dynamically based on previous state
     uint32_t _enterMs = 0;

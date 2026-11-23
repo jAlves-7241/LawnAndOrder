@@ -6,7 +6,6 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-#define private public
 #include "Display.h"
 #include "Encoder.h"
 #include "RTClock.h"
@@ -15,7 +14,6 @@
 #include "Scheduler.h"
 #include "UI.h"
 #include "Terminal.h"
-#undef private
 
 static Display sysDisp;
 static Encoder sysEnc(PIN_CLK, PIN_DT, PIN_SW);
@@ -67,7 +65,8 @@ void tearDown(void) {
     wateringCtrl.stop();
 }
 
-void test_init_relay_pins_safe_core3_periman(void) {
+struct UnitTestAccess {
+static void test_init_relay_pins_safe_core3_periman(void) {
     memset(_mock_gpio, LOW, sizeof(_mock_gpio));
     memset(_mock_gpio_configured, 0, sizeof(_mock_gpio_configured));
     memset(_mock_gpio_glitch_low, 0, sizeof(_mock_gpio_glitch_low));
@@ -85,7 +84,7 @@ void test_init_relay_pins_safe_core3_periman(void) {
     _mock_enforce_periman = false;
 }
 
-void test_clear_i2c_bus_preloads_scl_and_generates_stop(void) {
+static void test_clear_i2c_bus_preloads_scl_and_generates_stop(void) {
     memset(_mock_gpio, LOW, sizeof(_mock_gpio));
     memset(_mock_gpio_configured, 0, sizeof(_mock_gpio_configured));
     memset(_mock_gpio_glitch_low, 0, sizeof(_mock_gpio_glitch_low));
@@ -107,7 +106,7 @@ void test_clear_i2c_bus_preloads_scl_and_generates_stop(void) {
     _mock_enforce_periman = false;
 }
 
-void test_recover_i2c_with_throttle_and_wraparound(void) {
+static void test_recover_i2c_with_throttle_and_wraparound(void) {
     I2CRecoveryState recState = {};
     Wire.beginCalls = 0;
     setMockMillis(5000);
@@ -151,7 +150,7 @@ void test_recover_i2c_with_throttle_and_wraparound(void) {
     TEST_ASSERT_EQUAL_UINT32(4, Wire.beginCalls);
 }
 
-void test_evaluate_boot_suspension_all_paths(void) {
+static void test_evaluate_boot_suspension_all_paths(void) {
     // 1. No suspension stored
     gState.suspended = true;
     gState.suspended_until = 0;
@@ -199,12 +198,12 @@ void test_evaluate_boot_suspension_all_paths(void) {
     TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
 }
 
-static bool _afterI2cHookCalled = false;
+inline static bool _afterI2cHookCalled = false;
 static void testAfterI2cHook() {
     _afterI2cHookCalled = true;
 }
 
-void test_boot_system_full_order_and_recovery_invariants(void) {
+static void test_boot_system_full_order_and_recovery_invariants(void) {
     // 1. Seed a saved config + active recovery state + future suspension in NVS,
     //    then run real bootSystem() and verify order-sensitive invariants:
     //    Wire.begin() called, afterI2cInit invoked, suspension evaluated BEFORE recovery,
@@ -290,12 +289,14 @@ void test_boot_system_full_order_and_recovery_invariants(void) {
     tickSystem(ui);
 }
 
+};
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_init_relay_pins_safe_core3_periman);
-    RUN_TEST(test_clear_i2c_bus_preloads_scl_and_generates_stop);
-    RUN_TEST(test_recover_i2c_with_throttle_and_wraparound);
-    RUN_TEST(test_evaluate_boot_suspension_all_paths);
-    RUN_TEST(test_boot_system_full_order_and_recovery_invariants);
+    RUN_UT(test_init_relay_pins_safe_core3_periman);
+    RUN_UT(test_clear_i2c_bus_preloads_scl_and_generates_stop);
+    RUN_UT(test_recover_i2c_with_throttle_and_wraparound);
+    RUN_UT(test_evaluate_boot_suspension_all_paths);
+    RUN_UT(test_boot_system_full_order_and_recovery_invariants);
     return UNITY_END();
 }

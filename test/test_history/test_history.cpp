@@ -4,9 +4,7 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-#define private public
 #include "History.h"
-#undef private
 
 #include "../../src/History.cpp"
 
@@ -18,7 +16,8 @@ void setUp(void) {
 
 void tearDown(void) {}
 
-void test_history_entry_to_line_format(void) {
+struct UnitTestAccess {
+static void test_history_entry_to_line_format(void) {
     HistoryEntry e = {};
     e.year = 2026;
     e.month = 4;
@@ -47,7 +46,7 @@ void test_history_entry_to_line_format(void) {
     TEST_ASSERT_EQUAL_STRING("2026-04-26T18:02,C,15,15,10,0", line);
 }
 
-void test_history_line_to_entry_valid(void) {
+static void test_history_line_to_entry_valid(void) {
     const char* csv = "2026-07-14T06:30,A,10,12,8,0";
     HistoryEntry e = {};
 
@@ -65,7 +64,7 @@ void test_history_line_to_entry_valid(void) {
     TEST_ASSERT_EQUAL_UINT8(0, e.zone_dur[3]);
 }
 
-void test_history_line_to_entry_rejects_corrupted(void) {
+static void test_history_line_to_entry_rejects_corrupted(void) {
     HistoryEntry e = {};
 
     // 1. Invalid date separators
@@ -90,7 +89,7 @@ void test_history_line_to_entry_rejects_corrupted(void) {
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-05-10T10:60,A,10,10,10,10", e));
 }
 
-void test_history_record_and_read_last(void) {
+static void test_history_record_and_read_last(void) {
     history.clear();
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 
@@ -120,7 +119,7 @@ void test_history_record_and_read_last(void) {
     TEST_ASSERT_EQUAL_UINT8(0, history.readLast(4, out));
 }
 
-void test_history_rotation_triggered_at_capacity(void) {
+static void test_history_rotation_triggered_at_capacity(void) {
     history.clear();
 
     // Populate file with lines directly using bulk pre-allocation for speed
@@ -152,7 +151,7 @@ void test_history_rotation_triggered_at_capacity(void) {
     TEST_ASSERT_EQUAL_UINT16(expectedRemaining, history.entryCount());
 }
 
-void test_history_rejects_missing_columns(void) {
+static void test_history_rejects_missing_columns(void) {
     HistoryEntry e = {};
     // 1. Line with only 1 zone duration instead of 4: should parse and pad remaining with 0
     const char* partialCsv = "2026-06-01T08:00,A,10";
@@ -170,7 +169,7 @@ void test_history_rejects_missing_columns(void) {
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-06", e));
 }
 
-void test_history_cache_fifo_eviction(void) {
+static void test_history_cache_fifo_eviction(void) {
     history.clear();
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 
@@ -191,7 +190,7 @@ void test_history_cache_fifo_eviction(void) {
     TEST_ASSERT_EQUAL_UINT8(7, out[2].day);
 }
 
-void test_history_deferred_queue_when_busy(void) {
+static void test_history_deferred_queue_when_busy(void) {
     history.clear();
 
     // Seed 1 record so export can run
@@ -244,7 +243,7 @@ void test_history_deferred_queue_when_busy(void) {
     TEST_ASSERT_EQUAL_UINT8(13, out[2].day);
 }
 
-void test_history_export_stream(void) {
+static void test_history_export_stream(void) {
     history.clear();
     Serial.reset();
 
@@ -266,7 +265,7 @@ void test_history_export_stream(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-02T08:00,M,12,12,0,0") != std::string::npos);
 }
 
-void test_history_guarded_format_on_mount_failure(void) {
+static void test_history_guarded_format_on_mount_failure(void) {
     Preferences::resetStorage();
     storage.begin();
     LittleFS.reset();
@@ -286,7 +285,7 @@ void test_history_guarded_format_on_mount_failure(void) {
     TEST_ASSERT_FALSE(guarded);
 }
 
-void test_history_line_to_entry_negative_and_overflow_bounds(void) {
+static void test_history_line_to_entry_negative_and_overflow_bounds(void) {
     HistoryEntry e = {};
 
     // Negative hour or minute must be rejected
@@ -304,7 +303,7 @@ void test_history_line_to_entry_negative_and_overflow_bounds(void) {
     TEST_ASSERT_EQUAL_UINT8(0, history.readLast(3, nullptr));
 }
 
-void test_history_rotation_write_failure_preserves_original_file(void) {
+static void test_history_rotation_write_failure_preserves_original_file(void) {
     history.clear();
 
     std::string fullFile;
@@ -335,7 +334,7 @@ void test_history_rotation_write_failure_preserves_original_file(void) {
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(origSize, LittleFS.files[HISTORY_FILE].size());
 }
 
-void test_history_corrupted_nvs_cache_rebuilds_from_fs(void) {
+static void test_history_corrupted_nvs_cache_rebuilds_from_fs(void) {
     Preferences::resetStorage();
     storage.begin();
     LittleFS.reset();
@@ -360,7 +359,7 @@ void test_history_corrupted_nvs_cache_rebuilds_from_fs(void) {
     TEST_ASSERT_EQUAL_UINT8(2, out[1].day);
 }
 
-void test_history_begin_detects_truncated_file_via_filesize(void) {
+static void test_history_begin_detects_truncated_file_via_filesize(void) {
     HistoryEntry e1 = { 2026, 7, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     HistoryEntry e2 = { 2026, 7, 2, 8, 0, { 12, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
     history.record(e1);
@@ -379,7 +378,7 @@ void test_history_begin_detects_truncated_file_via_filesize(void) {
     TEST_ASSERT_EQUAL_UINT8(1, out[0].day);
 }
 
-void test_history_pending_record_persisted_and_replayed_across_rotation(void) {
+static void test_history_pending_record_persisted_and_replayed_across_rotation(void) {
     history.clear();
 
     // Over-capacity file (HISTORY_MAX_ENTRIES + 5 lines) -> dynamic _rotDiscard trims to ~90%
@@ -418,7 +417,7 @@ void test_history_pending_record_persisted_and_replayed_across_rotation(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, latest[0].trigger);
 }
 
-void test_history_rejects_test_trigger_and_long_corrupt_line(void) {
+static void test_history_rejects_test_trigger_and_long_corrupt_line(void) {
     HistoryEntry e = {};
     TEST_ASSERT_FALSE(History::_lineToEntry("2026-06-01T08:00,T,5,0,0,0", e));
 
@@ -435,7 +434,7 @@ void test_history_rejects_test_trigger_and_long_corrupt_line(void) {
     TEST_ASSERT_EQUAL_UINT8(5, out[0].day);
 }
 
-void test_history_rotation_double_fail_export_suppression_and_guards(void) {
+static void test_history_rotation_double_fail_export_suppression_and_guards(void) {
     // 1. record() without valid RTC logs TXT_LOG_HIST_SKIP_NO_RTC and drops entry
     history.clear();
     gState.rtc_valid = false;
@@ -510,7 +509,7 @@ void test_history_rotation_double_fail_export_suppression_and_guards(void) {
 #endif
 }
 
-void test_history_rotation_read_failure_preserves_original_file(void) {
+static void test_history_rotation_read_failure_preserves_original_file(void) {
     history.clear();
 
     std::string fullFile;
@@ -547,7 +546,7 @@ void test_history_rotation_read_failure_preserves_original_file(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::MANUAL, latest[0].trigger);
 }
 
-void test_history_periodic_remount_and_force_repair(void) {
+static void test_history_periodic_remount_and_force_repair(void) {
     Preferences::resetStorage();
     storage.begin();
     LittleFS.reset();
@@ -587,7 +586,7 @@ void test_history_periodic_remount_and_force_repair(void) {
     TEST_ASSERT_FALSE(storage.hasHistoryData());
 }
 
-void test_history_remount_watering_guard_and_clear_edge_cases(void) {
+static void test_history_remount_watering_guard_and_clear_edge_cases(void) {
     Preferences::resetStorage();
     storage.begin();
     LittleFS.reset();
@@ -643,7 +642,7 @@ void test_history_remount_watering_guard_and_clear_edge_cases(void) {
 #endif
 }
 
-void test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv(void) {
+static void test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv(void) {
     // 1. Buffered VFSFileImpl::size() emulation: record() must flush/close before saving fsize to NVS
     Preferences::resetStorage();
     storage.begin();
@@ -723,7 +722,7 @@ void test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv(
     TEST_ASSERT_TRUE(History::_lineToEntry("2028-02-29T10:00,A,10,0,0,0", parsed));  // 2028 leap
 }
 
-void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback(void) {
+static void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback(void) {
     // 1. [M-5] Partial write without newline is isolated before next valid record()
     Preferences::resetStorage();
     storage.begin();
@@ -875,7 +874,7 @@ void test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_ov
     TEST_ASSERT_EQUAL_UINT8(20, out[0].day);
 }
 
-void test_history_clear_failure_preserves_pending_and_calendar_validation(void) {
+static void test_history_clear_failure_preserves_pending_and_calendar_validation(void) {
     // 1. Failed clear(false) during active rotation must NOT delete /hist_pend.txt before /history.csv is removed
     history.clear();
     HistoryEntry e1 = { 2026, 6, 1, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
@@ -958,30 +957,32 @@ void test_history_clear_failure_preserves_pending_and_calendar_validation(void) 
     TEST_ASSERT_EQUAL_UINT16(countBefore, history.entryCount());
 }
 
+};
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_history_entry_to_line_format);
-    RUN_TEST(test_history_line_to_entry_valid);
-    RUN_TEST(test_history_line_to_entry_rejects_corrupted);
-    RUN_TEST(test_history_record_and_read_last);
-    RUN_TEST(test_history_rotation_triggered_at_capacity);
-    RUN_TEST(test_history_rejects_missing_columns);
-    RUN_TEST(test_history_cache_fifo_eviction);
-    RUN_TEST(test_history_deferred_queue_when_busy);
-    RUN_TEST(test_history_export_stream);
-    RUN_TEST(test_history_guarded_format_on_mount_failure);
-    RUN_TEST(test_history_line_to_entry_negative_and_overflow_bounds);
-    RUN_TEST(test_history_rotation_write_failure_preserves_original_file);
-    RUN_TEST(test_history_corrupted_nvs_cache_rebuilds_from_fs);
-    RUN_TEST(test_history_begin_detects_truncated_file_via_filesize);
-    RUN_TEST(test_history_pending_record_persisted_and_replayed_across_rotation);
-    RUN_TEST(test_history_rejects_test_trigger_and_long_corrupt_line);
-    RUN_TEST(test_history_rotation_double_fail_export_suppression_and_guards);
-    RUN_TEST(test_history_rotation_read_failure_preserves_original_file);
-    RUN_TEST(test_history_periodic_remount_and_force_repair);
-    RUN_TEST(test_history_remount_watering_guard_and_clear_edge_cases);
-    RUN_TEST(test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv);
-    RUN_TEST(test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback);
-    RUN_TEST(test_history_clear_failure_preserves_pending_and_calendar_validation);
+    RUN_UT(test_history_entry_to_line_format);
+    RUN_UT(test_history_line_to_entry_valid);
+    RUN_UT(test_history_line_to_entry_rejects_corrupted);
+    RUN_UT(test_history_record_and_read_last);
+    RUN_UT(test_history_rotation_triggered_at_capacity);
+    RUN_UT(test_history_rejects_missing_columns);
+    RUN_UT(test_history_cache_fifo_eviction);
+    RUN_UT(test_history_deferred_queue_when_busy);
+    RUN_UT(test_history_export_stream);
+    RUN_UT(test_history_guarded_format_on_mount_failure);
+    RUN_UT(test_history_line_to_entry_negative_and_overflow_bounds);
+    RUN_UT(test_history_rotation_write_failure_preserves_original_file);
+    RUN_UT(test_history_corrupted_nvs_cache_rebuilds_from_fs);
+    RUN_UT(test_history_begin_detects_truncated_file_via_filesize);
+    RUN_UT(test_history_pending_record_persisted_and_replayed_across_rotation);
+    RUN_UT(test_history_rejects_test_trigger_and_long_corrupt_line);
+    RUN_UT(test_history_rotation_double_fail_export_suppression_and_guards);
+    RUN_UT(test_history_rotation_read_failure_preserves_original_file);
+    RUN_UT(test_history_periodic_remount_and_force_repair);
+    RUN_UT(test_history_remount_watering_guard_and_clear_edge_cases);
+    RUN_UT(test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv);
+    RUN_UT(test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback);
+    RUN_UT(test_history_clear_failure_preserves_pending_and_calendar_validation);
     return UNITY_END();
 }

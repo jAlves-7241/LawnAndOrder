@@ -49,6 +49,7 @@ public:
     template<size_t N> static char* pbar(char (&buf)[N], uint8_t pct) { return _pbar(buf, N, pct); }
 
 private:
+    UNIT_TEST_FRIEND
     static char* _fx(char* buf, size_t n, const char* s);
     static char* _cx(char* buf, size_t n, const char* s);
     static char* _hdr(char* buf, size_t n, const char* s);

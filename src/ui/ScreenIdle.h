@@ -21,6 +21,7 @@ public:
     void render(UI& ui) override;
 
 private:
+    UNIT_TEST_FRIEND
     bool _lastWateringActive;
     bool _lastIsWaiting;
     uint8_t _lastProgress;

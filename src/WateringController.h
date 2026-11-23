@@ -26,6 +26,7 @@ public:
     WaterTrigger activeTrigger() const { return _runTrigger; }
 
 private:
+    UNIT_TEST_FRIEND
     struct QueueEntry {
         uint8_t  zone_idx;
         uint32_t duration_ms;

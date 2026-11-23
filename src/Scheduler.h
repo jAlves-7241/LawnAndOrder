@@ -77,6 +77,7 @@ public:
     uint8_t skippedMin()     const { return _skippedMin; }
 
 private:
+    UNIT_TEST_FRIEND
     // Returns true if the schedule is active on the given calendar day (since 1970).
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
     bool _tryCatchUp(const SystemTime& t, bool allowExactSecond = false);

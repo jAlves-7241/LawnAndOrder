@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "config.h"
 
 class Terminal {
 public:
@@ -9,6 +10,7 @@ public:
 
     friend void terminalAwareLog(const char* msg);
 private:
+    UNIT_TEST_FRIEND
     char _buffer[256] = {};
     uint16_t _bufLen = 0;
     uint16_t _cursorPos = 0;

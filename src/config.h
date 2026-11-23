@@ -152,3 +152,10 @@
 #define DATE_YEAR_SPAN                                                         \
   (DATE_YEAR_MAX - DATE_YEAR_MIN +                                             \
    1) // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)
+
+// Standards-compliant white-box hook for native unit tests (zero overhead on ESP32)
+#ifdef UNIT_TEST
+#define UNIT_TEST_FRIEND friend struct UnitTestAccess;
+#else
+#define UNIT_TEST_FRIEND
+#endif

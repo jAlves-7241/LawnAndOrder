@@ -145,6 +145,7 @@ public:
     bool importConfigHex(const char* hexIn);
 
 private:
+    UNIT_TEST_FRIEND
     bool _ready = false;  // true after begin() succeeds
     bool _savePending = false;
     uint32_t _lastSaveRetryMs = 0;
