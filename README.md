@@ -24,7 +24,9 @@ Este projeto foi desenvolvido com [PlatformIO](https://platformio.org/) e é com
 ## Decisões de projeto e limites operacionais
 
 - **Retoma após blackout e desgaste da flash**: a NVS guarda o início do ciclo, a fila, a posição da zona, os minutos acumulados e o tempo restante da zona ativa em incrementos de `RECOVERY_CHECKPOINT_MIN` (2 min) para limitar escritas na flash. Se faltar energia durante uma zona, ao reiniciar são executados apenas os minutos inteiros em falta (repetindo no máximo até ao intervalo do último checkpoint, <2 min). O contador `retry_count` só é limpo quando a zona conclui, limitando qualquer zona em falha periódica a `MAX_RECOVERY_RETRIES` (3) tentativas. Quando uma retoma válida é abortada (limite de tentativas, expiração, suspensão ou ausência de RTC no arranque), os minutos já regados antes da falha são registados no histórico antes de limpar o estado. A retoma só ocorre se houver hora válida e as verificações de duração e intervalo de segurança permitirem. Para instalações em que qualquer repetição adicional não seja aceitável, usar um corte de água independente ou exigir confirmação manual após um blackout.
-- **Hora de verão**: a proteção contra a hora repetida no fim do DST persiste os marcadores de último disparo em NVS (`sched_tr`, com CRC-16) para evitar ativações duplicadas mesmo após reinício dentro da janela de recuo (2 h), sendo limpa apenas ao alterar o modo ou acertar a hora manualmente (`manualRevision()`).
+- **Redundância de configuração em NVS**: as definições são gravadas em dois slots alternados (`cfg` / `cfg_b`) com contador de sequência e CRC-16/CCITT (mantendo retrocompatibilidade de leitura com `cfg` legado v5). Se o slot mais recente estiver corrompido, o arranque recupera automaticamente o backup anterior; se ambos falharem (corrupção ou incompatibilidade de versão), o sistema reverte em segurança para `DESATIVADO`, regista erro (`LOG_E`), apresenta um alerta persistente no LCD antes do assistente inicial e sinaliza o estado no comando `status`. A arquitetura inclui ainda um hook de migração `N-1` para futuras evoluções de esquema.
+- **Proteção contra preempção e colisões de agendamento**: regas manuais e testes recusam interromper um ciclo já em curso (defesa no controlador e aviso no LCD `"Rega ativa / Parar primeiro"`). Se um horário automático coincidir com um teste (`TEST`) ou rega personalizada (`CUSTOM`), o agendamento é adiado e recuperado automaticamente mal o ciclo termine (dentro de `SCHED_CATCHUP_WINDOW_S`, 30 min); se coincidir com uma rega geral manual (`MANUAL`) ou exceder a janela de recuperação, o horário é marcado sem duplicação e um aviso `Omitida HH:MM` é apresentado no ecrã inicial e em `status`.
+- **Hora de verão**: a proteção contra a hora repetida no fim do DST (`DST_DUP_WINDOW_S` = 2 h) persiste os marcadores de último disparo em NVS (`sched_tr`, com CRC-16) para evitar ativações duplicadas mesmo após reinício dentro da janela de recuo, sendo limpa apenas ao alterar o modo ou acertar a hora manualmente (`manualRevision()`).
 - **RTC indisponível**: no assistente inicial, é possível confirmar que se pretende continuar sem RTC. A interface e a rega manual continuam disponíveis. Sem uma hora válida, rega agendada, suspensões temporizadas e validação da retoma após blackout ficam inibidas. No LCD, falhas de escrita no DS3231 não ativam silenciosamente o relógio por software; apenas `set_time` por Serial pode acertar o relógio por software e permitir automatismos até ao próximo reboot. Para operação automática persistente, defina/recupere o RTC.
 - **Histórico**: o arranque tenta montar LittleFS sem formatação (`begin(false)`, com retentativa) e consulta a cache NVS (`hblob`, com CRC-16 e verificação de tamanho). Se houver histórico conhecido em NVS, a formatação automática destrutiva é inibida para preservar os dados; registos adiados durante rotação são persistidos em `/hist_pend.txt` e reprocessados no arranque. As configurações NVS são armazenadas separadamente; exporte o histórico para cópia duradoura.
 - **Saída de relé**: o firmware comanda os GPIOs para o estado OFF no arranque, mas não consegue detetar um relé ou válvula mecanicamente preso. A instalação deve usar alimentação, isolamento e válvulas adequados; para instalações onde uma fuga tenha consequências relevantes, considere um corte de água independente.
@@ -80,7 +82,7 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 │   ├── WateringController.h / .cpp # Controlo dos relés e da fila de rega
 │   ├── History.h / .cpp           # Histórico de regas em CSV (LittleFS)
 │   ├── Storage.h / .cpp            # Persistência de configurações em NVS Flash
-│   ├── SystemBoot.h / .cpp         # Arranque seguro dos relés, recuperação I2C e suspensão
+│   ├── SystemBoot.h / .cpp         # Orquestração partilhada bootSystem()/tickSystem(), relés seguros e recuperação I2C
 │   ├── Terminal.h / .cpp            # Terminal de comandos interativo via Serial
 │   ├── UI.h / .cpp                   # Gestor de interface e navegação entre ecrãs
 │   ├── README.md                      # Documentação detalhada do código fonte e da UI
@@ -105,6 +107,7 @@ Para uma descrição detalhada de cada módulo, do fluxo de inicialização e do
 ### Pré-requisitos
 
 - [PlatformIO Core](https://platformio.org/install) (CLI) ou a extensão PlatformIO no VS Code.
+- Alvo suportado: **ESP-IDF 5.x / Arduino-ESP32 Core 3.x** (resolvido via `espressif32 @ 8.0.0` em `platformio.ini`; verificado em tempo de compilação).
 
 ### Compilar
 
@@ -131,11 +134,14 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute fast unit suites (172 tests across 11 suites)
+# Execute fast unit suites (233 tests across 11 suites)
 pio test -e native
 
-# Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2)
+# Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2, 13 tests)
 pio test -e native && pio test -e native_soak
+
+# Measure gcov line/function coverage across native unit suites
+PLATFORMIO_BUILD_FLAGS="--coverage -O0 -lgcov" pio test -e native && python3 test/coverage.py
 
 # Filter by module (e.g. scheduler, watering, terminal, ui, soak)
 pio test -e native -f test_scheduler
