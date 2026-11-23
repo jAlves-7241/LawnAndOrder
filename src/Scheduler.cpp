@@ -148,6 +148,19 @@ void Scheduler::update() {
                     if (t.hour == sched.slots[i].hour &&
                         t.min  == sched.slots[i].minute) {
                         _catchUpPending = false;
+                        // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
+                        // DST_DUP_WINDOW_S (2h UTC) ago, this is a duplicate from the repeated hour.
+                        // Same slot on consecutive days is >=24h apart, so 2h is safe.
+                        if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
+                            (t.unix - _lastTriggerUnix[i]) < DST_DUP_WINDOW_S) {
+                            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_DUP_BLOCK,
+                                  (int)sched.slots[i].hour, (int)sched.slots[i].minute);
+                            break;
+                        }
+                        if (!hasEnabledZones()) {
+                            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
+                            break;
+                        }
                         if (gState.watering.active) {
                             WaterTrigger activeTrig = wateringCtrl.activeTrigger();
                             if (activeTrig == WaterTrigger::TEST || activeTrig == WaterTrigger::CUSTOM) {
@@ -166,19 +179,6 @@ void Scheduler::update() {
                                 LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
                                       (int)_skippedHour, (int)_skippedMin);
                             }
-                            break;
-                        }
-                        // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
-                        // DST_DUP_WINDOW_S (2h UTC) ago, this is a duplicate from the repeated hour.
-                        // Same slot on consecutive days is >=24h apart, so 2h is safe.
-                        if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
-                            (t.unix - _lastTriggerUnix[i]) < DST_DUP_WINDOW_S) {
-                            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_DUP_BLOCK,
-                                  (int)sched.slots[i].hour, (int)sched.slots[i].minute);
-                            break;
-                        }
-                        if (!hasEnabledZones()) {
-                            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
                             break;
                         }
                         _collisionCatchUpPending = false;

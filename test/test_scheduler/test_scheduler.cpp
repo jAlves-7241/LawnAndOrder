@@ -1222,6 +1222,22 @@ static void test_scheduler_collision_manual_sets_skipped_indicator_no_double_wat
     TEST_ASSERT_TRUE(wateringCtrl.isActive());
     TEST_ASSERT_FALSE(scheduler.hasSkippedSlot());
     wateringCtrl.stop();
+
+    // TEST overlapping a slot with zero enabled zones must NOT arm defer or skipped indicator
+    scheduler = Scheduler();
+    storage.clear();
+    for (int i = 0; i < NUM_ZONES; i++) {
+        gState.zones[i].enabled = false;
+        gState.zones[i].duration_min = 0;
+    }
+    setSchedulerTestLocalNow(2026, 6, 16, 7, 59, 58);
+    scheduler.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.startTest(0));
+    setSchedulerTestLocalNow(2026, 6, 16, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_FALSE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_FALSE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
 }
 
 };
