@@ -140,7 +140,7 @@ void ScreenDurPick::handleClick(UI& ui) {
         }
         gState.suspended = true;
         uint64_t until = (uint64_t)gState.now.unix + ((uint64_t)_durValue * 86400ULL);
-        if (until > 4102444799ULL) until = 4102444799ULL;
+        if (until > (uint64_t)UNIX_MAX_VALID) until = (uint64_t)UNIX_MAX_VALID;
         gState.suspended_until = (uint32_t)until;
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_SET, (int)_durValue);
         ui.flagConfigChanged();

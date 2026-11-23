@@ -93,11 +93,11 @@ static bool _validateImportBlob(const AppConfigBlob& blob) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_BACKLIGHT);
         return false;
     }
-    if (blob.suspended_until > 4102444799UL) { // > 2099-12-31 23:59:59 UTC
+    if (blob.suspended_until > UNIX_MAX_VALID) { // > 2099-12-31 23:59:59 UTC
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_SUSP_END);
         return false;
     }
-    if (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > 47482UL) {
+    if (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > CUSTOM_REF_DAY_MAX) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_REF_DAY);
         return false;
     }
@@ -186,12 +186,6 @@ bool Storage::save() {
         _lastSaveRetryMs = millis();
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
-    }
-
-    for (int i = 0; i < NUM_ZONES; i++) {
-        if (gState.zones[i].duration_min == 0) {
-            gState.zones[i].enabled = false;
-        }
     }
 
     AppConfigBlob blob = {};
@@ -590,8 +584,8 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
     } else {
         gState.backlight_timeout_ms = blob.backlight_timeout_ms;
     }
-    gState.suspended_until = (blob.suspended_until > 4102444799UL) ? 4102444799UL : blob.suspended_until;
-    gState.custom_ref_day = (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > 47482UL)
+    gState.suspended_until = (blob.suspended_until > UNIX_MAX_VALID) ? UNIX_MAX_VALID : blob.suspended_until;
+    gState.custom_ref_day = (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > CUSTOM_REF_DAY_MAX)
                             ? 0xFFFFFFFFUL : blob.custom_ref_day;
     gState.auto_dst = !!blob.auto_dst;
     gState.setup_done = !!blob.setup_done;

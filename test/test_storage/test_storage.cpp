@@ -375,7 +375,8 @@ void test_storage_zero_duration_normalizes_enabled_false(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 0;
     TEST_ASSERT_TRUE(storage.save());
-    TEST_ASSERT_FALSE(gState.zones[0].enabled);
+    // Persistence must not mutate caller RAM state; normalization occurs in _stateToBlob() / _blobToState()
+    TEST_ASSERT_TRUE(gState.zones[0].enabled);
 
     initAppState();
     TEST_ASSERT_TRUE(storage.load());

@@ -32,6 +32,33 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
 
     char lbuf[32];
 
+    auto add_custom_items = [&]() {
+        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_FREQ_DAYS, cs.interval_days);
+        add_item(lbuf, "dur_pick:freq");
+        snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
+        add_item(lbuf, "dur_pick:cycles");
+        uint8_t slotCount = (cs.slot_count <= MAX_SLOTS_PER_MODE) ? cs.slot_count : MAX_SLOTS_PER_MODE;
+        for (uint8_t i = 0; i < slotCount; i++) {
+            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, (int)(i + 1), cs.slots[i].hour, cs.slots[i].minute);
+            char act[16];
+            snprintf(act, sizeof(act), "time_edit:c%u", (unsigned)i);
+            add_item(lbuf, act);
+        }
+    };
+
+    auto add_zone_cfg_items = [&]() {
+        for (uint8_t i = 0; i < NUM_ZONES; i++) {
+            Zone& z = gState.zones[i];
+            if (z.enabled && z.duration_min > 0)
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, (int)(i + 1), z.name);
+            else
+                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, (int)(i + 1), z.name);
+            char act[12]; snprintf(act, sizeof(act), "cfgz:%u", (unsigned)i);
+            add_item(lbuf, act);
+        }
+    };
+
     switch (mid) {
     case MenuID::MAIN:
         if (gState.watering.active) add_item(TXT_STOP_WATERING, "stop_now");
@@ -61,40 +88,16 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         add_item(TXT_BACK,        "go:main");
         break;
 
-    case MenuID::CFG_CUSTOM: {
-        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        snprintf(lbuf, sizeof(lbuf), TXT_MB_FREQ_DAYS, cs.interval_days);
-        add_item(lbuf, "dur_pick:freq");
-        snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
-        add_item(lbuf, "dur_pick:cycles");
-        uint8_t slotCount = (cs.slot_count <= MAX_SLOTS_PER_MODE) ? cs.slot_count : MAX_SLOTS_PER_MODE;
-        for (uint8_t i = 0; i < slotCount; i++) {
-            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, (int)(i + 1), cs.slots[i].hour, cs.slots[i].minute);
-            char act[16];
-            snprintf(act, sizeof(act), "time_edit:c%u", (unsigned)i);
-            add_item(lbuf, act);
-        }
+    case MenuID::CFG_CUSTOM:
+        add_custom_items();
         add_item(TXT_FINISH_BACK, "go:prog");
         break;
-    }
 
-    case MenuID::SETUP_CUSTOM: {
-        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        snprintf(lbuf, sizeof(lbuf), TXT_MB_FREQ_DAYS, cs.interval_days);
-        add_item(lbuf, "dur_pick:freq");
-        snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLES, cs.slot_count);
-        add_item(lbuf, "dur_pick:cycles");
-        uint8_t slotCount = (cs.slot_count <= MAX_SLOTS_PER_MODE) ? cs.slot_count : MAX_SLOTS_PER_MODE;
-        for (uint8_t i = 0; i < slotCount; i++) {
-            snprintf(lbuf, sizeof(lbuf), TXT_MB_CYCLE_TIME, (int)(i + 1), cs.slots[i].hour, cs.slots[i].minute);
-            char act[16];
-            snprintf(act, sizeof(act), "time_edit:c%u", (unsigned)i);
-            add_item(lbuf, act);
-        }
+    case MenuID::SETUP_CUSTOM:
+        add_custom_items();
         add_item(TXT_MB_ADVANCE, "setup_advance");
         add_item(TXT_BACK, "setup_back");
         break;
-    }
 
     case MenuID::MODOS:
         snprintf(lbuf, sizeof(lbuf), TXT_MB_INTENSE,      mc(0)); add_item(lbuf, "sel:0");
@@ -106,15 +109,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::CFG_ZONAS:
-        for (uint8_t i = 0; i < NUM_ZONES; i++) {
-            Zone& z = gState.zones[i];
-            if (z.enabled && z.duration_min > 0)
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, (int)(i + 1), z.name);
-            else
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, (int)(i + 1), z.name);
-            char act[12]; snprintf(act, sizeof(act), "cfgz:%u", (unsigned)i);
-            add_item(lbuf, act);
-        }
+        add_zone_cfg_items();
         add_item(TXT_BACK, "go:prog");
         break;
 
@@ -223,15 +218,7 @@ void MenuBuilder::build(MenuID mid, MenuItem* items, uint8_t& itemCount) {
         break;
 
     case MenuID::SETUP_ZONES:
-        for (uint8_t i = 0; i < NUM_ZONES; i++) {
-            Zone& z = gState.zones[i];
-            if (z.enabled && z.duration_min > 0)
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_ON, z.duration_min, (int)(i + 1), z.name);
-            else
-                snprintf(lbuf, sizeof(lbuf), TXT_MB_ZONE_OFF, (int)(i + 1), z.name);
-            char act[12]; snprintf(act, sizeof(act), "cfgz:%u", (unsigned)i);
-            add_item(lbuf, act);
-        }
+        add_zone_cfg_items();
         add_item(TXT_FINISH,  "setup_advance");
         add_item(TXT_BACK,   "setup_back");
         break;

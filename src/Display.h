@@ -81,6 +81,7 @@ private:
     uint32_t _lastFullRefresh;
     uint32_t _lastAttemptMs = 0;
 
+    static void _padRow(char (&out)[LCD_COLS + 1], const char* text);
     bool _flushRow(uint8_t row);
     void _stageRow(uint8_t row, const char* text);
     bool _writeRow(uint8_t row, const char* text, bool* wroteFull = nullptr, bool* didI2c = nullptr);

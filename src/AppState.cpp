@@ -189,7 +189,7 @@ void initAppState() {
 
     // ── RTC ──────────────────────────────────────────────
     gState.rtc_valid = false;
-    gState.now = { 2026, 1, 1, 0, 0, 0, 4, 1767225600UL };  // placeholder until RTC is read
+    gState.now = { 2026, 1, 1, 0, 0, 0, 4, UNIX_DEFAULT_FALLBACK };  // placeholder until RTC is read
 
     // ── Watering ─────────────────────────────────────────
     gState.watering = { false, false, 0, 0 };

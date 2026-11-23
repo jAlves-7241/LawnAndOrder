@@ -99,7 +99,7 @@ void WateringController::begin() {
             // rec.start_unix_time was persisted only while _cycleStartValid == true;
             // preserve genuine pre-blackout watering minutes even if RTC failed on reboot.
             if (rec.trigger == WaterTrigger::TEST) return;
-            if (rec.start_unix_time < 1577836800UL || rec.start_unix_time > 4102444799UL) return;
+            if (rec.start_unix_time < UNIX_MIN_VALID || rec.start_unix_time > UNIX_MAX_VALID) return;
             bool anyRun = false;
             for (uint8_t z = 0; z < NUM_ZONES; z++) {
                 if (rec.zone_dur_min[z] > 0) {
@@ -137,7 +137,7 @@ void WateringController::begin() {
             LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_RTC_INVALID_RESUME);
         } else if (gState.suspended && rs.trigger == WaterTrigger::AUTO) {
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_REC_SKIP_SUSP);
-        } else if (rs.start_unix_time >= 1577836800UL && rs.start_unix_time <= 4102444799UL) {
+        } else if (rs.start_unix_time >= UNIX_MIN_VALID && rs.start_unix_time <= UNIX_MAX_VALID) {
             uint64_t remaining_ms = 0;
             for (uint8_t i = rs.queuePos; i < rs.queueLen; i++) {
                 remaining_ms += (uint64_t)rs.queue[i].duration_ms;

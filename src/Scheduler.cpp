@@ -113,7 +113,7 @@ void Scheduler::update() {
         uint32_t localWallUnix = DateTime(t.year, t.month, t.day, t.hour, t.min, 0).unixtime();
         if (_prevLocalWallUnix > 0 && localWallUnix > _prevLocalWallUnix) {
             uint32_t wallJump = localWallUnix - _prevLocalWallUnix;
-            if (wallJump > 60UL && wallJump <= 7200UL) {
+            if (wallJump > 60UL && wallJump <= SCHED_WALL_JUMP_MAX_S) {
                 _catchUpPending = true;
             }
         }
@@ -141,10 +141,10 @@ void Scheduler::update() {
                             break;
                         }
                         // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
-                        // 2 hours ago (UTC), this is a duplicate from the repeated hour.
-                        // Same slot on consecutive days is >=24h apart, so 7200s is safe.
+                        // DST_DUP_WINDOW_S (2h UTC) ago, this is a duplicate from the repeated hour.
+                        // Same slot on consecutive days is >=24h apart, so 2h is safe.
                         if (_lastTriggerUnix[i] > 0 && t.unix >= _lastTriggerUnix[i] &&
-                            (t.unix - _lastTriggerUnix[i]) < 7200) {
+                            (t.unix - _lastTriggerUnix[i]) < DST_DUP_WINDOW_S) {
                             LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_DUP_BLOCK,
                                   (int)sched.slots[i].hour, (int)sched.slots[i].minute);
                             break;
@@ -250,7 +250,7 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
     if (!found) return false;
 
     if (_lastTriggerUnix[bestIdx] > 0 && t.unix >= _lastTriggerUnix[bestIdx] &&
-        (t.unix - _lastTriggerUnix[bestIdx]) < 7200UL) {
+        (t.unix - _lastTriggerUnix[bestIdx]) < DST_DUP_WINDOW_S) {
         return false;
     }
 
@@ -382,7 +382,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
         return true;
     }
     uint32_t current_unix = current_time.unix;
-    if (start_unix < 1577836800UL || start_unix > 4102444799UL) {
+    if (start_unix < UNIX_MIN_VALID || start_unix > UNIX_MAX_VALID) {
         LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_REC_BACKWARD);
         return true;
     }
@@ -555,12 +555,12 @@ bool Scheduler::computeNext(AppMode mode, const SystemTime& now,
                 if (dayOffset == 0) {
                     if (sl.hour < now.hour) continue;
                     if (sl.hour == now.hour && sl.minute <= now.min) continue;
-                    if (mode == gState.mode && now.unix >= 1577836800UL &&
+                    if (mode == gState.mode && now.unix >= UNIX_MIN_VALID &&
                         _lastTriggerUnix[i] > 0) {
                         DateTime slotLocal(now.year, now.month, now.day, sl.hour, sl.minute, 0);
                         uint32_t slotUtc = _resolveSlotUtc(slotLocal, now.unix);
                         if (slotUtc >= _lastTriggerUnix[i] &&
-                            (slotUtc - _lastTriggerUnix[i]) < 7200UL) {
+                            (slotUtc - _lastTriggerUnix[i]) < DST_DUP_WINDOW_S) {
                             continue;
                         }
                     }

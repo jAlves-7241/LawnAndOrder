@@ -637,7 +637,7 @@ bool History::_lineToEntry(const char* line, HistoryEntry& out) {
     char tc = line[17];
 
     // Rejeitar valores cronológicos impossíveis (incluindo dias por mês e ano bissexto)
-    if (yr < 2020 || yr > 2099 || mo < 1 || mo > 12 ||
+    if (yr < DATE_YEAR_MIN || yr > DATE_YEAR_MAX || mo < 1 || mo > 12 ||
         hh < 0 || hh > 23 || mm < 0 || mm > 59) return false;
     uint8_t maxD = daysInMonth((uint16_t)yr, (uint8_t)mo);
     if (dy < 1 || dy > (int)maxD) return false;
