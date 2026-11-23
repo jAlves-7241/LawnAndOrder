@@ -28,6 +28,7 @@ public:
     uint8_t readLast(uint8_t count, HistoryEntry out[]) const;
     bool     clear(bool forceFormat = false);
     bool     isReady() const;
+    bool     hasFileData() const;
     uint16_t entryCount() const;
 
     void    update();
@@ -58,6 +59,8 @@ private:
     size_t _rotLinePos = 0;
     bool _rotWriteErr = false;
     bool _rotLineOverflow = false;
+    bool _rotPendingInFile = false;
+    bool _rotHadPriorPending = false;
     char _rotPendingLine[LINE_BUF] = {};
 
     // Cache for UI display

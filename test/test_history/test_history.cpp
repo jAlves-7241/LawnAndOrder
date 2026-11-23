@@ -915,6 +915,47 @@ void test_history_clear_failure_preserves_pending_and_calendar_validation(void) 
     HistoryEntry badDate = { 2026, 2, 30, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(badDate, false);
     TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // 3. Subsequent rotation after failed clear(false) appends to /hist_pend.txt and preserves BOTH pending records
+    gState.rtc_valid = true;
+    history.clear();
+    HistoryEntry base = { 2026, 6, 1, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(base);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    HistoryEntry p1 = { 2026, 6, 2, 8, 0, { 6, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(p1); // starts rotation and creates /hist_pend.txt with p1
+    TEST_ASSERT_TRUE(history.isRotating());
+
+    LittleFS.removeFail = true;
+    TEST_ASSERT_FALSE(history.clear(false)); // aborts rotation, keeps /hist_pend.txt with p1
+    LittleFS.removeFail = false;
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    HistoryEntry p2 = { 2026, 6, 3, 8, 0, { 9, 0, 0, 0 }, WaterTrigger::CUSTOM, 0 };
+    history.record(p2); // triggers 2nd rotation — must append p2 without truncating p1!
+    TEST_ASSERT_TRUE(history.isRotating());
+    int safety = 200;
+    while (history.isRotating() && safety-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isRotating());
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-02T08:00,M,6,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-03T08:00,C,9,0,0,0") != std::string::npos);
+    HistoryEntry mergedTail[2] = {};
+    TEST_ASSERT_EQUAL_UINT8(2, history.readLast(2, mergedTail));
+    TEST_ASSERT_EQUAL_UINT8(2, mergedTail[0].day);
+    TEST_ASSERT_EQUAL_UINT8(3, mergedTail[1].day);
+
+    // 4. Multi-line /hist_pend.txt post-rename reboot dedup does not duplicate already-committed entries
+    LittleFS.files["/hist_pend.txt"] = "2026-06-02T08:00,M,6,0,0,0\r\n2026-06-03T08:00,C,9,0,0,0\r\n";
+    uint16_t countBefore = history.entryCount();
+    history = History();
+    TEST_ASSERT_TRUE(history.begin());
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_EQUAL_UINT16(countBefore, history.entryCount());
 }
 
 int main(void) {

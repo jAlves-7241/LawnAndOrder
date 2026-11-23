@@ -24,6 +24,46 @@ static bool _isValidCachedEntry(const HistoryEntry& e) {
     return true;
 }
 
+template <typename Fn>
+static void _forEachTrimmedLine(File& f, Fn&& fn) {
+    char lineBuf[LINE_BUF];
+    size_t linePos = 0;
+    bool overflow = false;
+    auto flushLine = [&]() {
+        if (!overflow && linePos > 0) {
+            lineBuf[linePos] = '\0';
+            while (linePos > 0 && (lineBuf[linePos - 1] == '\r' ||
+                                   lineBuf[linePos - 1] == ' ' ||
+                                   lineBuf[linePos - 1] == '\n')) {
+                lineBuf[--linePos] = '\0';
+            }
+            char* p = lineBuf;
+            while (*p == ' ') p++;
+            if (p[0] != '\0') {
+                fn(p);
+            }
+        }
+        linePos = 0;
+        overflow = false;
+    };
+    while (f.available()) {
+        esp_task_wdt_reset();
+        int cInt = f.read();
+        if (cInt < 0) break;
+        char c = (char)cInt;
+        if (c == '\n') {
+            flushLine();
+        } else if (c != '\r') {
+            if (linePos < sizeof(lineBuf) - 1) {
+                lineBuf[linePos++] = c;
+            } else {
+                overflow = true;
+            }
+        }
+    }
+    flushLine();
+}
+
 #if LOG_LEVEL >= LVL_INFO
 static void _formatEntryZones(const HistoryEntry& entry, char* out, size_t len) {
     if (!out || len == 0) return;
@@ -55,6 +95,8 @@ bool History::begin(bool formatOnFail) {
     _exportLineOverflow = false;
     _rotWriteErr = false;
     _rotLineOverflow = false;
+    _rotPendingInFile = false;
+    _rotHadPriorPending = false;
     _rotCorruptLines = 0;
     _defHead = 0;
     _defTail = 0;
@@ -95,55 +137,41 @@ bool History::begin(bool formatOnFail) {
     } else {
         LittleFS.remove(HIST_TMP_FILE); // Clean up orphaned temp file from a crash
 
-        // Replay any pending line persisted right before a mid-rotation power loss
+        // Replay any pending line(s) persisted right before a mid-rotation power loss
         bool replayedPending = false;
         bool pendingAlreadyPresent = false;
         File pendFile = LittleFS.open(HIST_PENDING_FILE, "r");
         if (pendFile) {
-            char lineBuf[LINE_BUF];
-            size_t linePos = 0;
-            bool overflow = false;
-            int replayed = 0;
-            bool replayWriteFailed = false;
-            auto replayLine = [&](char* p) {
-                if (strlen(p) == 0) return;
+            // Check whether the final valid pending line is already at the tail of HISTORY_FILE
+            // (indicates power loss right after rename() succeeded and before remove(HIST_PENDING_FILE)).
+            char lastValidPend[LINE_BUF] = {};
+            _forEachTrimmedLine(pendFile, [&](char* p) {
                 HistoryEntry tmp = {};
                 if (_lineToEntry(p, tmp)) {
-                    if (_lastNonEmptyLineEquals(p)) {
-                        // Already committed by rename() right before power loss; avoid duplicate
-                        pendingAlreadyPresent = true;
-                        return;
-                    }
-                    if (_appendCsvLine(p)) {
-                        replayed++;
-                    } else {
-                        replayWriteFailed = true;
-                    }
+                    strlcpy(lastValidPend, p, sizeof(lastValidPend));
                 }
-            };
-            while (pendFile.available()) {
-                esp_task_wdt_reset();
-                int cInt = pendFile.read();
-                if (cInt < 0) break;
-                char c = (char)cInt;
-                if (c == '\n') {
-                    if (!overflow) {
-                        char* p = _trimLineBuffer(lineBuf, linePos);
-                        replayLine(p);
+            });
+
+            bool replayWriteFailed = false;
+            int replayed = 0;
+            if (lastValidPend[0] != '\0' && _lastNonEmptyLineEquals(lastValidPend)) {
+                pendingAlreadyPresent = true;
+            } else {
+                pendFile.seek(0, SeekSet);
+                _forEachTrimmedLine(pendFile, [&](char* p) {
+                    HistoryEntry tmp = {};
+                    if (_lineToEntry(p, tmp)) {
+                        if (_lastNonEmptyLineEquals(p)) {
+                            pendingAlreadyPresent = true;
+                            return;
+                        }
+                        if (_appendCsvLine(p)) {
+                            replayed++;
+                        } else {
+                            replayWriteFailed = true;
+                        }
                     }
-                    linePos = 0;
-                    overflow = false;
-                } else if (c != '\r') {
-                    if (linePos < sizeof(lineBuf) - 1) {
-                        lineBuf[linePos++] = c;
-                    } else {
-                        overflow = true;
-                    }
-                }
-            }
-            if (!overflow && linePos > 0) {
-                char* p = _trimLineBuffer(lineBuf, linePos);
-                replayLine(p);
+                });
             }
             pendFile.close();
             if (replayWriteFailed) {
@@ -344,6 +372,8 @@ bool History::clear(bool forceFormat) {
         if (_rotSrc) _rotSrc.close();
         if (_rotDst) _rotDst.close();
         _rotState = RotState::IDLE;
+        _rotPendingInFile = false;
+        _rotHadPriorPending = false;
     }
 
     if (_exportState != ExportState::IDLE) {
@@ -422,6 +452,10 @@ bool History::clear(bool forceFormat) {
 }
 
 bool History::isReady() const { return _ready; }
+
+bool History::hasFileData() const {
+    return _ready && (_currentFileSize() > 0);
+}
 
 uint16_t History::entryCount() const { return _lineCount; }
 
@@ -805,11 +839,33 @@ void History::_rotateAndAppend(const char* newLine) {
         return;
     }
 
-    // Persist pending line before starting async copy so power loss cannot drop it
-    File pendFile = LittleFS.open(HIST_PENDING_FILE, "w");
+    // Append pending line before starting async copy so power loss (or an earlier
+    // preserved pending entry after a failed clear/rotation) cannot be truncated/lost.
+    const uint32_t priorPendSize = _fileSize(HIST_PENDING_FILE);
+    _rotHadPriorPending = (priorPendSize > 0);
+    bool needPendNewline = false;
+    if (priorPendSize > 0) {
+        File rf = LittleFS.open(HIST_PENDING_FILE, "r");
+        if (rf) {
+            if (rf.seek(priorPendSize - 1, SeekSet)) {
+                int lastByte = rf.read();
+                if (lastByte >= 0 && lastByte != '\n') {
+                    needPendNewline = true;
+                }
+            }
+            rf.close();
+        }
+    }
+    _rotPendingInFile = false;
+    File pendFile = LittleFS.open(HIST_PENDING_FILE, "a");
     if (pendFile) {
-        if (_writeCsvLine(pendFile, newLine)) {
+        bool ok = true;
+        if (needPendNewline && pendFile.println("") != 2U) {
+            ok = false;
+        }
+        if (ok && _writeCsvLine(pendFile, newLine)) {
             pendFile.flush();
+            _rotPendingInFile = true;
         }
         pendFile.close();
     }
@@ -922,11 +978,37 @@ void History::update() {
 
     if (_rotState == RotState::FINISHING) {
         _rotSrc.close();
+        uint16_t pendingWritten = 0;
         if (!_rotWriteErr) {
-            if (!_writeCsvLine(_rotDst, _rotPendingLine)) {
-                _rotWriteErr = true;
-            } else {
-                _rotExpectedBytes += (uint32_t)(strlen(_rotPendingLine) + 2U);
+            if (_rotHadPriorPending || _rotPendingInFile) {
+                File pf = LittleFS.open(HIST_PENDING_FILE, "r");
+                if (pf) {
+                    _forEachTrimmedLine(pf, [&](char* p) {
+                        if (_rotWriteErr) return;
+                        HistoryEntry tmp = {};
+                        if (_lineToEntry(p, tmp)) {
+                            if (!_writeCsvLine(_rotDst, p)) {
+                                _rotWriteErr = true;
+                            } else {
+                                _rotExpectedBytes += (uint32_t)(strlen(p) + 2U);
+                                pendingWritten++;
+                            }
+                        }
+                    });
+                    pf.close();
+                } else {
+                    _rotPendingInFile = false;
+                }
+            }
+            if (!_rotWriteErr && !_rotPendingInFile) {
+                if (!_writeCsvLine(_rotDst, _rotPendingLine)) {
+                    _rotWriteErr = true;
+                } else {
+                    _rotExpectedBytes += (uint32_t)(strlen(_rotPendingLine) + 2U);
+                    pendingWritten++;
+                }
+            }
+            if (!_rotWriteErr) {
                 _rotDst.flush();
             }
         }
@@ -938,7 +1020,11 @@ void History::update() {
 
         if (!_rotWriteErr && LittleFS.rename(HIST_TMP_FILE, HISTORY_FILE)) {
             LittleFS.remove(HIST_PENDING_FILE);
-            _lineCount = _rotCopied + 1;
+            _lineCount = _rotCopied + pendingWritten;
+            if (_rotHadPriorPending) {
+                // Prior pending entries were merged into HISTORY_FILE — resync RAM cache order
+                _populateCache();
+            }
 
             // Salvar NVS agora que _lineCount e correto E cache ja foi atualizado
             uint32_t fsize = _currentFileSize();
@@ -951,7 +1037,27 @@ void History::update() {
         } else {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_RENAME_FAIL);
             LittleFS.remove(HIST_TMP_FILE);
-            if (_appendCsvLine(_rotPendingLine)) {
+            bool allFallbackOk = true;
+            if (_rotHadPriorPending) {
+                File pf = LittleFS.open(HIST_PENDING_FILE, "r");
+                if (pf) {
+                    _forEachTrimmedLine(pf, [&](char* p) {
+                        HistoryEntry tmp = {};
+                        if (_lineToEntry(p, tmp) && !_appendCsvLine(p)) {
+                            allFallbackOk = false;
+                        }
+                    });
+                    pf.close();
+                } else {
+                    allFallbackOk = false;
+                }
+                if (!_rotPendingInFile && !_appendCsvLine(_rotPendingLine)) {
+                    allFallbackOk = false;
+                }
+            } else {
+                allFallbackOk = _appendCsvLine(_rotPendingLine);
+            }
+            if (allFallbackOk) {
                 LittleFS.remove(HIST_PENDING_FILE);
             }
             // Rebuild consistent state from the actual file
@@ -962,6 +1068,8 @@ void History::update() {
             }
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
         }
+        _rotPendingInFile = false;
+        _rotHadPriorPending = false;
         _rotState = RotState::IDLE;
         // Drenar apenas UMA entrada por ciclo para evitar re-entrancia;
         // restantes entradas drenam uma por ciclo seguinte em update().
