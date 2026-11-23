@@ -24,7 +24,7 @@ A separação por módulos é acompanhada por singletons e estado global partilh
 2. Inicializa o watchdog com `WDT_TIMEOUT_S` (8 s por defeito) e o estado em RAM.
 3. Abre NVS e carrega configurações validadas.
 4. Monta LittleFS e carrega a cache do histórico.
-5. Recupera o barramento I²C, inicializa-o, faz um scan, inicia o LCD e o encoder.
+5. Recupera o barramento I²C, inicializa-o (com scan de diagnóstico em modo `LVL_DEBUG`), inicia o LCD e o encoder.
 6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão, carrega os marcadores DST persistidos (`scheduler.loadTriggers()`) e tenta recuperar um ciclo interrompido.
 7. Calcula o horário seguinte, inicia UI e terminal.
 
@@ -40,7 +40,7 @@ A ordem efetiva em `main.cpp` é:
 4. `ui.update()`.
 5. `wateringCtrl.update()`.
 6. `history.update()`.
-7. `terminal.update()` e pausa de 1 ms.
+7. `terminal.update()`, `storage.update()` (fora do assistente inicial, para retentativa de escritas NVS) e pausa de 1 ms.
 
 O RTC de hardware é consultado com intervalo nominal de 30 s; entre leituras, o relógio por software avança com base em `millis()`. O scheduler é avaliado com o tempo atualizado, e o controlador de rega implementa dead-time e espera entre zonas sem `delay()` durante a rega.
 

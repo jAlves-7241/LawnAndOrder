@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <esp_task_wdt.h>
+#if __has_include(<esp_idf_version.h>)
+  #include <esp_idf_version.h>
+#endif
 #if __has_include(<esp_system.h>)
   #include <esp_system.h>
 #endif
@@ -81,7 +84,8 @@ void setup() {
 #if LOG_LEVEL >= LVL_ERROR
     esp_err_t wdt_err;
 #endif
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#if defined(ESP_IDF_VERSION) && defined(ESP_IDF_VERSION_VAL) && \
+    (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0))
     esp_task_wdt_config_t wdt_config = {
         .timeout_ms = WDT_TIMEOUT_S * 1000,
         .idle_core_mask = (1 << 0), // Watch Core 0 idle (Arduino-ESP32 default); Core 1 loopTask is watched via esp_task_wdt_add(NULL)
@@ -138,19 +142,16 @@ void setup() {
     configureI2CTimeout();
     delay(200); // Allow LCD to boot fully
 
-#if LOG_LEVEL >= LVL_ERROR
-    // I2C bus scan — log concise summary with friendly device names
-    byte i2cCount = 0;
 #if LOG_LEVEL >= LVL_DEBUG
+    // Full I2C bus diagnostic scan (debug builds only; LCD/RTC probe their own addresses below)
+    byte i2cCount = 0;
     char i2cList[192] = "";
     size_t i2cPos = 0;
     bool i2cTruncated = false;
-#endif
     for (byte i = 8; i < 120; i++) {
         esp_task_wdt_reset();
         Wire.beginTransmission(i);
         if (Wire.endTransmission() == 0) {
-#if LOG_LEVEL >= LVL_DEBUG
             if (!i2cTruncated) {
                 int n = snprintf(i2cList + i2cPos, sizeof(i2cList) - i2cPos,
                                  "%s0x%02X (%s)",
@@ -165,7 +166,6 @@ void setup() {
                     i2cTruncated = true;
                 }
             }
-#endif
             i2cCount++;
             delay(1);
         }
@@ -213,6 +213,9 @@ void loop() {
     wateringCtrl.update();  // advances zone timer, drives relays
     history.update();       // processes background file rotations
     terminal.update();
+    if (!ui.inSetup()) {
+        storage.update();   // retries transient NVS config write failures
+    }
 #if LOG_LEVEL >= LVL_WARN
     uint32_t loopEndMs = millis();
     uint32_t loopDurMs = loopEndMs - loopStartMs;
