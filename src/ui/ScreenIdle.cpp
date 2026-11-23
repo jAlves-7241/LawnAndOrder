@@ -36,6 +36,9 @@ void ScreenIdle::onEnter(UI& ui) {
     _lastHistReady = !history.isReady();
     _lastHistCount = 0xFFFF;
     _lastHasEnabledZones = !Scheduler::hasEnabledZones();
+    _lastSkippedSlot = !scheduler.hasSkippedSlot();
+    _lastSkippedHour = 0xFF;
+    _lastSkippedMin = 0xFF;
     render(ui);
 }
 
@@ -74,6 +77,11 @@ void ScreenIdle::update(UI& ui) {
     if (_lastMode != gState.mode) needsRender = true;
     if (_lastNextH != gState.next_hour || _lastNextM != gState.next_min) needsRender = true;
     if (_lastHasEnabledZones != Scheduler::hasEnabledZones()) needsRender = true;
+    if (_lastSkippedSlot != scheduler.hasSkippedSlot() ||
+        (_lastSkippedSlot && (_lastSkippedHour != scheduler.skippedHour() ||
+                              _lastSkippedMin != scheduler.skippedMin()))) {
+        needsRender = true;
+    }
 
     if (needsRender) {
         render(ui);
@@ -108,6 +116,10 @@ void ScreenIdle::fullRender(UI& ui) {
     _lastHistCount = history.entryCount();
     const bool hasZones = Scheduler::hasEnabledZones();
     _lastHasEnabledZones = hasZones;
+    const bool skippedSlot = scheduler.hasSkippedSlot();
+    _lastSkippedSlot = skippedSlot;
+    _lastSkippedHour = scheduler.skippedHour();
+    _lastSkippedMin = scheduler.skippedMin();
 
     char b0[LCD_COLS+1], b1[LCD_COLS+1], b2[LCD_COLS+1], b3[LCD_COLS+1];
 
@@ -136,6 +148,11 @@ void ScreenIdle::fullRender(UI& ui) {
             warnLine = ui.getDisplay().cx(b1, TXT_IDLE_RTC_BAT);
         } else if (!rtcPresent) {
             warnLine = ui.getDisplay().cx(b1, TXT_IDLE_RTC_MISSING);
+        } else if (skippedSlot) {
+            char sstr[LCD_COLS + 1];
+            snprintf(sstr, sizeof(sstr), TXT_IDLE_SKIPPED_FMT,
+                     (int)_lastSkippedHour, (int)_lastSkippedMin);
+            warnLine = ui.getDisplay().cx(b1, sstr);
         }
 
         const char* lastLine = "";

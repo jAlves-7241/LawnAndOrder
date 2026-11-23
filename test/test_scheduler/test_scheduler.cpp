@@ -1067,6 +1067,125 @@ void test_scheduler_cycle_expired_respects_suspension_and_zero_zones(void) {
     TEST_ASSERT_FALSE(scheduler.isCycleExpired(startUtc, gState.now, 600));
 }
 
+static void setLocalNow(uint16_t y, uint8_t m, uint8_t d, uint8_t hh, uint8_t mm, uint8_t ss) {
+    DateTime localDt(y, m, d, hh, mm, ss);
+    DateTime utcDt = RTClock::localToUtc(localDt);
+    gState.now.year  = y;
+    gState.now.month = m;
+    gState.now.day   = d;
+    gState.now.hour  = hh;
+    gState.now.min   = mm;
+    gState.now.sec   = ss;
+    gState.now.dow   = localDt.dayOfTheWeek();
+    gState.now.unix  = utcDt.unixtime();
+}
+
+void test_scheduler_collision_defers_after_test_and_custom_runs(void) {
+    // 1. 5 s TEST overlapping 08:00 defers and triggers AUTO immediately after TEST ends
+    scheduler = Scheduler();
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    setLocalNow(2026, 6, 15, 7, 59, 58);
+    scheduler.begin();
+
+    TEST_ASSERT_TRUE(wateringCtrl.startTest(0));
+    setLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_FALSE(scheduler.hasSkippedSlot());
+    TEST_ASSERT_EQUAL(WaterTrigger::TEST, wateringCtrl.activeTrigger());
+
+    // TEST finishes at 08:00:03 -> next second tick catches up 08:00 AUTO
+    wateringCtrl.stop();
+    setLocalNow(2026, 6, 15, 8, 0, 4);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+    TEST_ASSERT_FALSE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
+
+    // 2. CUSTOM spanning multiple minutes (07:58..08:04) preserves deferral across minute rollovers
+    scheduler = Scheduler();
+    storage.clear();
+    setLocalNow(2026, 6, 15, 7, 58, 0);
+    scheduler.begin();
+    bool sel[NUM_ZONES] = { false, false, false, true };
+    TEST_ASSERT_TRUE(wateringCtrl.startCustom(sel, 6));
+
+    setLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+
+    // Minute rollovers while CUSTOM is still running must NOT drop deferral
+    setLocalNow(2026, 6, 15, 8, 1, 1);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    setLocalNow(2026, 6, 15, 8, 3, 2);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+
+    // CUSTOM finishes at 08:04:00 -> catches up 08:00 AUTO
+    wateringCtrl.stop();
+    setLocalNow(2026, 6, 15, 8, 4, 3);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+    wateringCtrl.stop();
+
+    // 3. CUSTOM running past SCHED_CATCHUP_WINDOW_S (>30 min) records skipped indicator instead
+    scheduler = Scheduler();
+    storage.clear();
+    setLocalNow(2026, 6, 15, 7, 55, 0);
+    scheduler.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.startCustom(sel, 20));
+    setLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    wateringCtrl.stop();
+    setLocalNow(2026, 6, 15, 8, 35, 1);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+    TEST_ASSERT_EQUAL_UINT8(8, scheduler.skippedHour());
+    TEST_ASSERT_EQUAL_UINT8(0, scheduler.skippedMin());
+}
+
+void test_scheduler_collision_manual_sets_skipped_indicator_no_double_water(void) {
+    scheduler = Scheduler();
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    setLocalNow(2026, 6, 15, 7, 58, 0);
+    scheduler.begin();
+
+    // Full MANUAL General overlaps 08:00 -> must NOT double-water after it finishes
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+    setLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_FALSE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+    TEST_ASSERT_EQUAL_UINT8(8, scheduler.skippedHour());
+    TEST_ASSERT_EQUAL_UINT8(0, scheduler.skippedMin());
+
+    wateringCtrl.stop();
+    setLocalNow(2026, 6, 15, 8, 5, 1);
+    scheduler.update();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+
+    // Cleared once next scheduled AUTO run fires (20:00)
+    setLocalNow(2026, 6, 15, 20, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_FALSE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scheduler_medio_next_slot);
@@ -1094,5 +1213,7 @@ int main(void) {
     RUN_TEST(test_scheduler_spring_forward_next_unix_no_zones_and_same_min_jump);
     RUN_TEST(test_scheduler_setup_guard_dst_fallback_next_and_start_bounds);
     RUN_TEST(test_scheduler_cycle_expired_respects_suspension_and_zero_zones);
+    RUN_TEST(test_scheduler_collision_defers_after_test_and_custom_runs);
+    RUN_TEST(test_scheduler_collision_manual_sets_skipped_indicator_no_double_water);
     return UNITY_END();
 }

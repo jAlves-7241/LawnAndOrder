@@ -11,7 +11,10 @@ Scheduler scheduler;
 // ─────────────────────────────────────────────────────────
 Scheduler::Scheduler()
     : _lastMin(0xFF), _lastSec(0xFF), _lastClockRev(0),
-      _lastManualClockRev(0), _catchUpPending(false), _triggersLoaded(false), _prevLocalWallUnix(0)
+      _lastManualClockRev(0), _catchUpPending(false),
+      _collisionCatchUpPending(false), _collisionHour(0), _collisionMin(0),
+      _hasSkippedSlot(false), _skippedHour(0), _skippedMin(0),
+      _triggersLoaded(false), _prevLocalWallUnix(0)
 {
     memset(_lastTriggerUnix, 0, sizeof(_lastTriggerUnix));
 }
@@ -29,6 +32,12 @@ void Scheduler::begin() {
     _lastManualClockRev = rtclock.manualRevision();
     _prevLocalWallUnix = 0;
     _catchUpPending = gState.setup_done && !gState.suspended && !wateringCtrl.isActive();
+    _collisionCatchUpPending = false;
+    _collisionHour = 0;
+    _collisionMin = 0;
+    _hasSkippedSlot = false;
+    _skippedHour = 0;
+    _skippedMin = 0;
     if (!_triggersLoaded) {
         loadTriggers();
     }
@@ -69,12 +78,15 @@ void Scheduler::update() {
         _lastManualClockRev = rtclock.manualRevision();
         clearLastTriggers();
         _catchUpPending = false;
+        _collisionCatchUpPending = false;
+        _hasSkippedSlot = false;
         _prevLocalWallUnix = 0;
         clockChanged = true;
     }
 
     if (!gState.setup_done) {
         _catchUpPending = false;
+        _collisionCatchUpPending = false;
         _prevLocalWallUnix = 0;
         return;
     }
@@ -93,6 +105,7 @@ void Scheduler::update() {
     // Auto-wake from suspension
     if (gState.suspended) {
         _catchUpPending = false;
+        _collisionCatchUpPending = false;
         _prevLocalWallUnix = 0;
         if (t.unix >= gState.suspended_until) {
             gState.suspended = false;
@@ -136,8 +149,23 @@ void Scheduler::update() {
                         t.min  == sched.slots[i].minute) {
                         _catchUpPending = false;
                         if (gState.watering.active) {
-                            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
-                                  (int)sched.slots[i].hour, (int)sched.slots[i].minute);
+                            WaterTrigger activeTrig = wateringCtrl.activeTrigger();
+                            if (activeTrig == WaterTrigger::TEST || activeTrig == WaterTrigger::CUSTOM) {
+                                _collisionCatchUpPending = true;
+                                _collisionHour = sched.slots[i].hour;
+                                _collisionMin  = sched.slots[i].minute;
+                                LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_DEFER,
+                                      (int)_collisionHour, (int)_collisionMin);
+                            } else {
+                                _collisionCatchUpPending = false;
+                                _hasSkippedSlot = true;
+                                _skippedHour = sched.slots[i].hour;
+                                _skippedMin  = sched.slots[i].minute;
+                                _lastTriggerUnix[i] = t.unix;
+                                storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
+                                LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
+                                      (int)_skippedHour, (int)_skippedMin);
+                            }
                             break;
                         }
                         // DST fall-back guard: if THIS SPECIFIC SLOT fired less than
@@ -153,6 +181,8 @@ void Scheduler::update() {
                             LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
                             break;
                         }
+                        _collisionCatchUpPending = false;
+                        _hasSkippedSlot = false;
                         _lastTriggerUnix[i] = t.unix;
                         storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
                         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_AUTO_START,
@@ -169,6 +199,18 @@ void Scheduler::update() {
             if (!gState.watering.active && sched.slot_count > 0) {
                 _tryCatchUp(t);
             }
+        }
+    }
+
+    // Retry a slot that collided with a TEST or CUSTOM run once watering ends
+    if (_collisionCatchUpPending && !gState.watering.active) {
+        _collisionCatchUpPending = false;
+        if (!_tryCatchUp(t, true)) {
+            _hasSkippedSlot = true;
+            _skippedHour = _collisionHour;
+            _skippedMin  = _collisionMin;
+            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
+                  (int)_skippedHour, (int)_skippedMin);
         }
     }
 }
@@ -196,7 +238,7 @@ uint32_t Scheduler::_resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc
     return effSlotUtc;
 }
 
-bool Scheduler::_tryCatchUp(const SystemTime& t) {
+bool Scheduler::_tryCatchUp(const SystemTime& t, bool allowExactSecond) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return false;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     if (sched.slot_count == 0) return false;
@@ -232,7 +274,7 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
             bool dstSkipped = false;
             uint32_t effSlotUtc = _resolveSlotUtc(slotLocal, afterUtc, &dstSkipped);
             if (t.unix < effSlotUtc) continue;
-            if (!dstSkipped && t.unix == effSlotUtc) continue;
+            if (!dstSkipped && !allowExactSecond && t.unix == effSlotUtc) continue;
 
             uint32_t age = t.unix - effSlotUtc;
             if (age <= SCHED_CATCHUP_WINDOW_S && (!found || age < bestAge)) {
@@ -274,6 +316,7 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
         return false;
     }
 
+    _hasSkippedSlot = false;
     _lastTriggerUnix[bestIdx] = t.unix;
     storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
     LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CATCHUP, (int)bestHour, (int)bestMin);
@@ -288,6 +331,7 @@ bool Scheduler::refreshNext() {
     _lastManualClockRev = rtclock.manualRevision();
     _lastSec = 0xFF;
     _catchUpPending = false;
+    _collisionCatchUpPending = false;
     _prevLocalWallUnix = 0;
     if (gState.rtc_valid) {
         _lastMin = gState.now.min; // Align with current minute to prevent mid-minute double trigger
@@ -316,6 +360,7 @@ bool Scheduler::refreshNext() {
 // ─────────────────────────────────────────────────────────
 void Scheduler::onModeChanged(bool announceMode) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
+    _hasSkippedSlot = false;
     clearLastTriggers();
     bool hasNext = refreshNext();
     if (!gState.rtc_valid) {

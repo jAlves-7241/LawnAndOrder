@@ -200,7 +200,12 @@ void WateringController::begin() {
 // Start commands
 // ─────────────────────────────────────────────────────────
 
-void WateringController::startGeneral(WaterTrigger trigger) {
+bool WateringController::startGeneral(WaterTrigger trigger) {
+    if (_active) {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+        return false;
+    }
+
     QueueEntry candidate[NUM_ZONES];
     uint8_t candidateLen = 0;
 #if LOG_LEVEL >= LVL_INFO
@@ -218,10 +223,9 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     }
     if (candidateLen == 0) {
         LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
-        return;
+        return false;
     }
 
-    stop();
     _queueLen = candidateLen;
     for (uint8_t i = 0; i < _queueLen; i++) {
         _queue[i] = candidate[i];
@@ -244,17 +248,22 @@ void WateringController::startGeneral(WaterTrigger trigger) {
     LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_START_GEN,
           serialTriggerName(trigger), (unsigned)_queueLen, (unsigned long)totalMin);
     _startNextZone();
+    return true;
 }
 
-void WateringController::startCustom(const bool zones[NUM_ZONES],
+bool WateringController::startCustom(const bool zones[NUM_ZONES],
                                      uint8_t dur_min) {
     if (dur_min == 0 || dur_min > 20) {
         LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_INV_DUR, (unsigned)dur_min);
-        return;
+        return false;
     }
     if (!zones) {
         LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
-        return;
+        return false;
+    }
+    if (_active) {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+        return false;
     }
     uint32_t dur_ms = (uint32_t)dur_min * 60000UL;
     if (_buildQueue(zones, dur_ms, WaterTrigger::CUSTOM)) {
@@ -273,17 +282,23 @@ void WateringController::startCustom(const bool zones[NUM_ZONES],
         LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_START_CUSTOM, zList, (unsigned)dur_min);
 #endif
         _startNextZone();
+        return true;
     } else {
         LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_NO_ZONES);
+        return false;
     }
 }
 
-void WateringController::startTest(int8_t zone_idx) {
+bool WateringController::startTest(int8_t zone_idx) {
     if (zone_idx < -1 || zone_idx >= NUM_ZONES) {
         LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_ZONE_OOB,
               (zone_idx >= 0) ? ((unsigned)zone_idx + 1U) : 0U,
               (unsigned)NUM_ZONES);
-        return;
+        return false;
+    }
+    if (_active) {
+        LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+        return false;
     }
     uint32_t dur_ms = (uint32_t)ZONE_TEST_DURATION_S * 1000UL;
     bool zones[NUM_ZONES];
@@ -302,7 +317,9 @@ void WateringController::startTest(int8_t zone_idx) {
                   (unsigned long)ZONE_TEST_DURATION_S);
         }
         _startNextZone();
+        return true;
     }
+    return false;
 }
 
 void WateringController::stop() {
@@ -533,7 +550,7 @@ uint32_t WateringController::_effectiveZoneDurationMs() const {
 bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
                                      uint32_t dur_ms,
                                      WaterTrigger trigger) {
-    if (!zones || dur_ms == 0) return false;
+    if (_active || !zones || dur_ms == 0) return false;
     if (trigger != WaterTrigger::TEST && dur_ms > 20UL * 60000UL) return false;
 
     QueueEntry candidate[NUM_ZONES];
@@ -545,7 +562,6 @@ bool WateringController::_buildQueue(const bool zones[NUM_ZONES],
     }
     if (candidateLen == 0) return false;
 
-    stop();
     _queueLen = candidateLen;
     for (uint8_t i = 0; i < _queueLen; i++) {
         _queue[i] = candidate[i];

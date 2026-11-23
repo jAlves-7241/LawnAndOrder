@@ -235,6 +235,11 @@ void UI::refreshClockEditors() {
     }
 }
 
+void UI::_showWateringActiveInfo(MenuID backMenu) {
+    _screenInfo.setup(TXT_ATTENTION, TXT_WATERING_ACTIVE, TXT_STOP_FIRST, "", backMenu);
+    changeScreen(&_screenInfo);
+}
+
 bool UI::executeConfirmed(const char* tag) {
     if (!tag) return false;
     LOG_D(TXT_LOG_TAG_UI, TXT_LOG_UI_CONFIRM_TAG, tag);
@@ -258,6 +263,11 @@ bool UI::executeConfirmed(const char* tag) {
     }
 
     if (!strcmp(tag, "general")) {
+        if (gState.watering.active || wateringCtrl.isActive()) {
+            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+            _showWateringActiveInfo(MenuID::MAIN);
+            return true;
+        }
         bool any = false;
         for (int i = 0; i < NUM_ZONES; i++) {
             if (gState.zones[i].enabled && gState.zones[i].duration_min > 0) any = true;
@@ -270,24 +280,52 @@ bool UI::executeConfirmed(const char* tag) {
             changeScreen(&_screenInfo);
             return true;
         }
-        wateringCtrl.startGeneral();
+        if (!wateringCtrl.startGeneral()) {
+            _showWateringActiveInfo(MenuID::MAIN);
+            return true;
+        }
         return false;
     }
 
     if (!strcmp(tag, "custom")) {
-        wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min);
+        if (gState.watering.active || wateringCtrl.isActive()) {
+            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+            _showWateringActiveInfo(MenuID::MAIN);
+            return true;
+        }
+        if (!wateringCtrl.startCustom(gState.custom_sel, gState.custom_dur_min)) {
+            _screenInfo.setup(TXT_ATTENTION, TXT_SELECT_AT_LEAST, TXT_ONE_ZONE, "", MenuID::CUSTOM_ZONAS);
+            changeScreen(&_screenInfo);
+            return true;
+        }
         return false;
     }
 
     if (!strcmp(tag, "test_all")) {
-        wateringCtrl.startTest(-1);
+        if (gState.watering.active || wateringCtrl.isActive()) {
+            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+            _showWateringActiveInfo(MenuID::DEF);
+            return true;
+        }
+        if (!wateringCtrl.startTest(-1)) {
+            _showWateringActiveInfo(MenuID::DEF);
+            return true;
+        }
         return false;
     }
 
     if (strncmp(tag, "test_", 5) == 0) {
         int z = 0;
         if (parseStrictIndex(tag + 5, 0, NUM_ZONES - 1, z)) {
-            wateringCtrl.startTest((int8_t)z);
+            if (gState.watering.active || wateringCtrl.isActive()) {
+                LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_START_ALREADY_ACTIVE);
+                _showWateringActiveInfo(MenuID::DEF);
+                return true;
+            }
+            if (!wateringCtrl.startTest((int8_t)z)) {
+                _showWateringActiveInfo(MenuID::DEF);
+                return true;
+            }
             return false;
         }
     }
@@ -302,8 +340,16 @@ void UI::dispatchAction(const char* action) {
     if (!action || !*action) return;
 
     if (strncmp(action, "go:", 3) == 0) {
-        if (!strcmp(action+3, "idle")) goIdle();
-        else goMenu(MenuBuilder::parseMenuID(action+3));
+        const char* target = action + 3;
+        if (!strcmp(target, "idle")) {
+            goIdle();
+        } else if (!strcmp(target, "manual") && (gState.watering.active || wateringCtrl.isActive())) {
+            _showWateringActiveInfo(MenuID::MAIN);
+        } else if (!strcmp(target, "testes") && (gState.watering.active || wateringCtrl.isActive())) {
+            _showWateringActiveInfo(MenuID::DEF);
+        } else {
+            goMenu(MenuBuilder::parseMenuID(target));
+        }
         return;
     }
 

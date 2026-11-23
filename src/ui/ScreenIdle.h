@@ -11,7 +11,8 @@ public:
                    _lastNextH(0xFF), _lastNextM(0xFF),
                    _lastZoneIdx(0xFF), _lastRtcValid(false), _lastRtcPresent(false),
                    _lastBatteryLow(false), _lastHistReady(false), _lastHistCount(0xFFFF),
-                   _lastHasEnabledZones(false) {}
+                   _lastHasEnabledZones(false), _lastSkippedSlot(false),
+                   _lastSkippedHour(0xFF), _lastSkippedMin(0xFF) {}
 
     void onEnter(UI& ui) override;
     void handleRotation(UI& ui, int8_t dir) override;
@@ -39,6 +40,9 @@ private:
     bool _lastHistReady;
     uint16_t _lastHistCount;
     bool _lastHasEnabledZones;
+    bool _lastSkippedSlot;
+    uint8_t _lastSkippedHour;
+    uint8_t _lastSkippedMin;
     
     // Renders the entire screen
     void fullRender(UI& ui);

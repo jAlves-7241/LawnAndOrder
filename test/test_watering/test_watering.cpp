@@ -1033,6 +1033,39 @@ void test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history
     TEST_ASSERT_EQUAL_UINT8(4, savedPartial[0].zone_dur[0]);
 }
 
+void test_watering_refuses_preemption_while_active(void) {
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime() };
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1] = { "Z2", true, 5 };
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::AUTO));
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+
+    // Attempting test, custom, or manual general start while active must be refused without interrupting AUTO
+    bool customSel[NUM_ZONES] = { false, true, false, false };
+    TEST_ASSERT_FALSE(wateringCtrl.startTest(-1));
+    TEST_ASSERT_FALSE(wateringCtrl.startTest(1));
+    TEST_ASSERT_FALSE(wateringCtrl.startCustom(customSel, 3));
+    TEST_ASSERT_FALSE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+    TEST_ASSERT_EQUAL_UINT8(0, wateringCtrl.currentZone());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+
+    RecoveryState rs = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_TRUE(rs.active);
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, rs.trigger);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
@@ -1056,5 +1089,6 @@ int main(void) {
     RUN_TEST(test_watering_mid_cycle_rtc_set_and_aborted_recovery_history);
     RUN_TEST(test_watering_begin_core3_periman_glitch_free_relay_off);
     RUN_TEST(test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history);
+    RUN_TEST(test_watering_refuses_preemption_while_active);
     return UNITY_END();
 }

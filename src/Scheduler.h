@@ -71,10 +71,15 @@ public:
     // Returns true if at least one zone is enabled with duration_min > 0.
     static bool hasEnabledZones();
 
+    // True when a scheduled slot was skipped because another watering run was active.
+    bool    hasSkippedSlot() const { return _hasSkippedSlot; }
+    uint8_t skippedHour()    const { return _skippedHour; }
+    uint8_t skippedMin()     const { return _skippedMin; }
+
 private:
     // Returns true if the schedule is active on the given calendar day (since 1970).
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
-    bool _tryCatchUp(const SystemTime& t);
+    bool _tryCatchUp(const SystemTime& t, bool allowExactSecond = false);
     static uint32_t _resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc, bool* outDstSkipped = nullptr);
 
     // Last minute we checked - used to detect minute rollover.
@@ -83,6 +88,12 @@ private:
     uint32_t _lastClockRev;
     uint32_t _lastManualClockRev;
     bool _catchUpPending;
+    bool _collisionCatchUpPending;
+    uint8_t _collisionHour;
+    uint8_t _collisionMin;
+    bool _hasSkippedSlot;
+    uint8_t _skippedHour;
+    uint8_t _skippedMin;
     bool _triggersLoaded;
     uint32_t _prevLocalWallUnix;
 

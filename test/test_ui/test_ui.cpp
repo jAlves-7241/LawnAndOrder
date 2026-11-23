@@ -1406,6 +1406,72 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     TEST_ASSERT_EQUAL_STRING("", testUi.getScreenConfirm()._tag);
 }
 
+void test_ui_blocks_manual_and_test_while_watering_active(void) {
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1] = { "Z2", false, 0 };
+    gState.zones[2] = { "Z3", false, 0 };
+    gState.zones[3] = { "Z4", false, 0 };
+    gState.custom_sel[0] = true;
+    gState.custom_dur_min = 3;
+    testUi.begin();
+
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::AUTO));
+    TEST_ASSERT_TRUE(gState.watering.active);
+
+    // Early menu gates block entering MANUAL and TESTES while watering is active
+    testUi.dispatchAction("go:manual");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_WATERING_ACTIVE) != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), TXT_STOP_FIRST) != nullptr);
+
+    testUi.goIdle();
+    testUi.dispatchAction("go:testes");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_WATERING_ACTIVE) != nullptr);
+
+    // Late confirm gates (e.g. AUTO started while sitting on ScreenConfirm) also block and return true
+    const char* blockedTags[] = { "general", "custom", "test_all", "test_0" };
+    for (size_t i = 0; i < sizeof(blockedTags) / sizeof(blockedTags[0]); i++) {
+        testUi.goIdle();
+        TEST_ASSERT_TRUE(testUi.executeConfirmed(blockedTags[i]));
+        TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+        TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_WATERING_ACTIVE) != nullptr);
+    }
+
+    // Active AUTO run remains intact
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+}
+
+void test_ui_idle_displays_skipped_slot_notice(void) {
+    scheduler = Scheduler();
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 7, 59, 0);
+    scheduler.begin();
+    testUi.begin();
+
+    // MANUAL General overlaps 08:00 -> skipped indicator set
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+    rtclock.set(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
+
+    testUi.update();
+    char expected[LCD_COLS + 1];
+    snprintf(expected, sizeof(expected), TXT_IDLE_SKIPPED_FMT, 8, 0);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expected) != nullptr);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -1429,5 +1495,7 @@ int main(void) {
     RUN_TEST(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
     RUN_TEST(test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels);
     RUN_TEST(test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry);
+    RUN_TEST(test_ui_blocks_manual_and_test_while_watering_active);
+    RUN_TEST(test_ui_idle_displays_skipped_slot_notice);
     return UNITY_END();
 }

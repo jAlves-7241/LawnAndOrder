@@ -64,6 +64,7 @@
 #define TXT_IDLE_SET_TIME "Set date and time!"
 #define TXT_IDLE_RTC_BAT "Check RTC battery!"
 #define TXT_IDLE_RTC_MISSING "RTC disconnected!"
+#define TXT_IDLE_SKIPPED_FMT "Skipped %02d:%02d"
 #define TXT_IDLE_HIST_ERR "History unavail."
 #define TXT_IDLE_LAST_FMT "Last: %02d%s %02d:%02d"
 #define TXT_IDLE_SUSPENDED "Watering Suspended"
@@ -101,6 +102,8 @@
 #define TXT_CLICK_TO_BACK "Click to go back"
 #define TXT_WATERING_STARTED "Watering started"
 #define TXT_TEST_STARTED "Test started"
+#define TXT_WATERING_ACTIVE "Watering active"
+#define TXT_STOP_FIRST "Stop watering first."
 
 #define TXT_MENU_CHANGE_MODE "Change Mode"
 #define TXT_MENU_CUSTOMIZE "Customize"
@@ -258,6 +261,7 @@
 #define TXT_IDLE_SET_TIME "Acertar data/hora!"
 #define TXT_IDLE_RTC_BAT "Pilha RTC falhou!"
 #define TXT_IDLE_RTC_MISSING "RTC desligado!"
+#define TXT_IDLE_SKIPPED_FMT "Ignorada %02d:%02d"
 #define TXT_IDLE_HIST_ERR "Hist. indisponivel"
 #define TXT_IDLE_LAST_FMT "Ult: %02d%s %02d:%02d"
 #define TXT_IDLE_SUSPENDED "Rega Suspensa"
@@ -295,6 +299,8 @@
 #define TXT_CLICK_TO_BACK "Click p/ voltar"
 #define TXT_WATERING_STARTED "Rega iniciada"
 #define TXT_TEST_STARTED "Teste iniciado"
+#define TXT_WATERING_ACTIVE "Rega em curso"
+#define TXT_STOP_FIRST "Pare a rega primeiro"
 
 #define TXT_MENU_CHANGE_MODE "Alterar Modo"
 #define TXT_MENU_CUSTOMIZE "Personalizar"
@@ -532,6 +538,8 @@
 #define TXT_TERM_STAT_NO_ZONES "  Watering State: STANDBY (no active zones)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
   "  Watering State: ACTIVE (Next watering scheduled for %04d-%02d-%02d %02d:%02d)\r\n"
+#define TXT_TERM_STAT_SKIPPED                                                  \
+  "  Last Notice:    Skipped %02d:%02d schedule (watering was active)\r\n"
 #define TXT_TERM_STAT_ZONES "  Watering Zones:"
 #define TXT_TERM_STAT_Z_FMT "    Zone %d: [%s] Duration: %d min - Name: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Active Watering: "
@@ -616,6 +624,7 @@
 #define TXT_LOG_REC_ZONE_INV "Saved resume data was invalid - discarded"
 #define TXT_LOG_REC_DUR_INV "Saved resume data was invalid - discarded"
 #define TXT_LOG_START_GEN "Starting %s watering: %u zone(s), %lu min total"
+#define TXT_LOG_START_ALREADY_ACTIVE "Cannot start watering: a cycle is already running"
 #define TXT_LOG_START_NO_ZONES "Cannot start watering: no enabled zones have time > 0 min"
 #define TXT_LOG_START_INV_DUR "Cannot start watering: invalid duration (%u min)"
 #define TXT_LOG_START_CUSTOM "Starting custom watering: Zones [%s], %u min each"
@@ -691,6 +700,7 @@
 #define TXT_LOG_SCHED_AUTO_START "Starting scheduled watering for %02d:%02d"
 #define TXT_LOG_SCHED_CATCHUP "Starting missed %02d:%02d watering (catch-up)"
 #define TXT_LOG_SCHED_COLLISION_SKIP "Skipped %02d:%02d schedule - watering already running"
+#define TXT_LOG_SCHED_COLLISION_DEFER "Deferred %02d:%02d schedule until current run finishes"
 #define TXT_LOG_SCHED_MODE_CHG "Schedule updated (%s) - next run at %02d:%02d"
 #define TXT_LOG_SCHED_MODE_CHG_OFF "Schedule updated (%s) - automatic watering off"
 #define TXT_LOG_SCHED_MODE_WAIT_CLK "Mode changed to %s (waiting for valid clock time)"
@@ -882,6 +892,8 @@
 #define TXT_TERM_STAT_NO_ZONES "  Estado Rega: EM ESPERA (nenhuma zona ativa)"
 #define TXT_TERM_STAT_ACTIVE                                                   \
   "  Estado Rega: ATIVA (Proxima rega agendada para %04d-%02d-%02d %02d:%02d)\r\n"
+#define TXT_TERM_STAT_SKIPPED                                                  \
+  "  Ultimo Aviso:   Horario %02d:%02d ignorado (rega ja estava ativa)\r\n"
 #define TXT_TERM_STAT_ZONES "  Zonas de Rega:"
 #define TXT_TERM_STAT_Z_FMT "    Zona %d: [%s] Duracao: %d min - Nome: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Rega Ativa:  "
@@ -968,6 +980,7 @@
 #define TXT_LOG_REC_ZONE_INV "Dados de retoma invalidos - descartados"
 #define TXT_LOG_REC_DUR_INV "Dados de retoma invalidos - descartados"
 #define TXT_LOG_START_GEN "A iniciar rega %s: %u zona(s), %lu min no total"
+#define TXT_LOG_START_ALREADY_ACTIVE "Impossivel iniciar rega: ja existe uma rega ativa"
 #define TXT_LOG_START_NO_ZONES                                                 \
   "Impossivel iniciar rega: nenhuma zona ativa com tempo > 0 min"
 #define TXT_LOG_START_INV_DUR "Impossivel iniciar rega: duracao invalida (%u min)"
@@ -1083,6 +1096,8 @@
 #define TXT_LOG_SCHED_CATCHUP "A iniciar rega em atraso das %02d:%02d (recuperacao)"
 #define TXT_LOG_SCHED_COLLISION_SKIP                                           \
   "Horario %02d:%02d ignorado - ja existe uma rega ativa"
+#define TXT_LOG_SCHED_COLLISION_DEFER                                          \
+  "Horario %02d:%02d adiado ate terminar a rega atual"
 #define TXT_LOG_SCHED_MODE_CHG                                                 \
   "Agendamento atualizado (%s) - proxima rega as %02d:%02d"
 #define TXT_LOG_SCHED_MODE_CHG_OFF                                             \
