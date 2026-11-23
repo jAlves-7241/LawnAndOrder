@@ -89,8 +89,12 @@ public:
     bool load();
 
     // Write all persisted fields from gState to NVS.
-    // Returns false if NVS is unavailable or the write fails.
+    // Returns false if NVS is unavailable or the write fails (arms periodic retry).
     bool save();
+
+    // Retry a previously failed config save on a 5 s throttle. Call from loop().
+    void update();
+    bool hasPendingSave() const { return _savePending; }
 
     // Erase the entire NVS namespace (factory reset).
     // Returns false if NVS is unavailable or the erase fails.
@@ -105,9 +109,9 @@ public:
     bool loadLastTriggers(uint32_t* out, size_t count);
     void saveLastTriggers(const uint32_t* in, size_t count);
 
-    // Persist recovery state to NVS
+    // Persist recovery state to NVS. Returns true if persisted or already up to date.
     bool loadRecoveryState(RecoveryState& rs);
-    void saveRecoveryState(const RecoveryState& rs);
+    bool saveRecoveryState(const RecoveryState& rs);
 
     // Export current state as a 72-character hexadecimal string (v5 CRC-protected)
     void exportConfigHex(char* hexOut, size_t maxLen);
@@ -117,6 +121,8 @@ public:
 
 private:
     bool _ready = false;  // true after begin() succeeds
+    bool _savePending = false;
+    uint32_t _lastSaveRetryMs = 0;
 
     static uint16_t _crc16(const uint8_t* data, size_t len);
     void _stateToBlob(AppConfigBlob& blob);

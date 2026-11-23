@@ -596,6 +596,35 @@ void test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clam
     TEST_ASSERT_TRUE(gState.suspended);
     TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
+
+    // 6. Storage::update() retries failed config saves on a 5 s throttle,
+    //    saveRecoveryState() reports write failure, and failed importConfigHex() preserves _savePending
+    TEST_ASSERT_FALSE(storage.hasPendingSave());
+    gState.mode = AppMode::INTENSO;
+    Preferences::writeFail = true;
+    TEST_ASSERT_FALSE(storage.save());
+    TEST_ASSERT_TRUE(storage.hasPendingSave());
+
+    RecoveryState failRs = {};
+    failRs.active = true;
+    TEST_ASSERT_FALSE(storage.saveRecoveryState(failRs));
+
+    Preferences::writeFail = false;
+    advanceMockMillis(2000UL);
+    storage.update();
+    TEST_ASSERT_TRUE(storage.hasPendingSave()); // still inside 5 s throttle
+    advanceMockMillis(3500UL);
+    storage.update();
+    TEST_ASSERT_FALSE(storage.hasPendingSave()); // retried & persisted
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::INTENSO, gState.mode);
+
+    // Failed importConfigHex() must not arm _savePending when previous state was clean
+    Preferences::writeFail = true;
+    TEST_ASSERT_FALSE(storage.importConfigHex(hexIntenso));
+    TEST_ASSERT_FALSE(storage.hasPendingSave());
+    Preferences::writeFail = false;
 }
 
 int main(void) {

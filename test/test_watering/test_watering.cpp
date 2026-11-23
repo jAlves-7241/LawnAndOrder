@@ -1001,6 +1001,36 @@ void test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history
     TEST_ASSERT_EQUAL(WaterTrigger::AUTO, partial[0].trigger);
     TEST_ASSERT_EQUAL_UINT8(8, partial[0].zone_dur[0]);
     TEST_ASSERT_EQUAL_UINT8(4, partial[0].zone_dur[1]);
+
+    // 3. Recovery must refuse to energize relays if persisting incremented retry_count to NVS fails
+    history.clear();
+    gState.rtc_valid = true;
+    gState.mode = AppMode::DESATIVADO;
+    gState.suspended = false;
+    gState.now = { 2026, 6, 15, 8, 10, 0, 1, RTClock::localToUtc(DateTime(2026, 6, 15, 8, 10, 0)).unixtime() };
+    RecoveryState nvsFailRs = {};
+    nvsFailRs.version = NVS_VERSION;
+    nvsFailRs.active = true;
+    nvsFailRs.start_unix_time = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
+    nvsFailRs.queuePos = 0;
+    nvsFailRs.queueLen = 1;
+    nvsFailRs.queue[0] = { 0, 6UL * 60000UL };
+    nvsFailRs.zone_dur_min[0] = 4;
+    nvsFailRs.trigger = WaterTrigger::MANUAL;
+    nvsFailRs.retry_count = 0;
+    TEST_ASSERT_TRUE(storage.saveRecoveryState(nvsFailRs));
+
+    Preferences::writeFail = true;
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    Preferences::writeFail = false;
+
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    HistoryEntry savedPartial[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, savedPartial));
+    TEST_ASSERT_EQUAL_UINT8(4, savedPartial[0].zone_dur[0]);
 }
 
 int main(void) {

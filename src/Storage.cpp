@@ -11,7 +11,7 @@ static const char* KEY_CFG      = "cfg";
 static const char* KEY_HBLOB    = "hblob";
 static const char* KEY_SCHED_TR = "sched_tr";
 static const char* KEY_RECV     = "recv";
-static const size_t HIST_CACHE_MAX_BYTES = 256;
+static const size_t HIST_CACHE_MAX_BYTES = 64;
 
 struct __attribute__((packed)) HistoryNvsHeader {
     uint8_t  version;
@@ -33,6 +33,8 @@ Storage storage;
 // ─────────────────────────────────────────────────────────
 void Storage::begin() {
     if (_ready) return;
+    _savePending = false;
+    _lastSaveRetryMs = 0;
     prefs.end(); // Ensure a clean NVS handle if re-initializing after a reset
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
@@ -180,6 +182,8 @@ bool Storage::load() {
 // ─────────────────────────────────────────────────────────
 bool Storage::save() {
     if (!_ready) {
+        _savePending = true;
+        _lastSaveRetryMs = millis();
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
@@ -197,19 +201,31 @@ bool Storage::save() {
     AppConfigBlob current = {};
     if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) == sizeof(current) &&
         memcmp(&blob, &current, sizeof(blob)) == 0) {
+        _savePending = false;
         return true;
     }
 
     size_t written = prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
     if (written != sizeof(blob)) {
+        _savePending = true;
+        _lastSaveRetryMs = millis();
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
 
+    _savePending = false;
     LOG_D(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_UPDATED, serialModeName(gState.mode));
     return true;
 }
 
+void Storage::update() {
+    if (!_savePending || !_ready) return;
+    uint32_t nowMs = millis();
+    if ((nowMs - _lastSaveRetryMs) >= 5000UL) {
+        _lastSaveRetryMs = nowMs;
+        save();
+    }
+}
 
 // ─────────────────────────────────────────────────────────
 bool Storage::clear() {
@@ -221,6 +237,7 @@ bool Storage::clear() {
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
+    _savePending = false;
     LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_MEM_CLEARED);
     return true;
 }
@@ -408,8 +425,8 @@ bool Storage::loadRecoveryState(RecoveryState& rs) {
     return true;
 }
 
-void Storage::saveRecoveryState(const RecoveryState& rs) {
-    if (!_ready) return;
+bool Storage::saveRecoveryState(const RecoveryState& rs) {
+    if (!_ready) return false;
     RecoveryState copy;
     memset(&copy, 0, sizeof(RecoveryState));
     copy = rs;
@@ -422,8 +439,10 @@ void Storage::saveRecoveryState(const RecoveryState& rs) {
         memcmp(&copy, &current, sizeof(copy)) != 0) {
         if (prefs.putBytes(KEY_RECV, &copy, sizeof(copy)) != sizeof(copy)) {
             LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_RECV);
+            return false;
         }
     }
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -512,9 +531,11 @@ bool Storage::importConfigHex(const char* hexIn) {
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_EXP_CLR);
     }
 
+    const bool prevSavePending = _savePending;
     if (!save()) {
         gState = previousState;
         MODE_SCHEDULES[customMode] = previousCustomSchedule;
+        _savePending = prevSavePending;
         return false;
     }
 

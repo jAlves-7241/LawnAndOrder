@@ -153,6 +153,9 @@ static void stepLoopOnce(uint32_t stepMs) {
     wateringCtrl.update();
     history.update();
     terminal.update();
+    if (!ui.inSetup()) {
+        storage.update();
+    }
 }
 
 static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t stepSec, uint8_t& lastActiveZone) {

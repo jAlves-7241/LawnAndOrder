@@ -145,46 +145,47 @@ void WateringController::begin() {
             if (!scheduler.isCycleExpired(rs.start_unix_time, gState.now, (uint32_t)(remaining_ms / 1000ULL))) {
                 // Persistir incremento de tentativas ANTES de energizar reles (evita loop de brownout)
                 rs.retry_count++;
-                _recoveryRetryCount = rs.retry_count;
-                storage.saveRecoveryState(rs);
+                if (storage.saveRecoveryState(rs)) {
+                    _recoveryRetryCount = rs.retry_count;
 
-                // Recuperar estado
-                _active = true;
-                _cycleStartValid = true;
-                _runTrigger = rs.trigger;
-                // Reconstruir queue
-                _queueLen = rs.queueLen;
-                for (uint8_t i = 0; i < _queueLen; i++) {
-                    _queue[i].zone_idx = rs.queue[i].zone_idx;
-                    _queue[i].duration_ms = rs.queue[i].duration_ms;
-                }
-                _queuePos = rs.queuePos;
-                memcpy(_zoneDurMin, rs.zone_dur_min, sizeof(_zoneDurMin));
-                
-                // Timestamp original do arranque do ciclo (convertido para local time)
-                DateTime utcDT(rs.start_unix_time);
-                DateTime startDT = RTClock::utcToLocal(utcDT);
-                _cycleStart.year = startDT.year();
-                _cycleStart.month = startDT.month();
-                _cycleStart.day = startDT.day();
-                _cycleStart.hour = startDT.hour();
-                _cycleStart.min = startDT.minute();
-                _cycleStart.sec = startDT.second();
-                _cycleStart.dow = startDT.dayOfTheWeek();
-                _cycleStart.unix = utcDT.unixtime();
+                    // Recuperar estado
+                    _active = true;
+                    _cycleStartValid = true;
+                    _runTrigger = rs.trigger;
+                    // Reconstruir queue
+                    _queueLen = rs.queueLen;
+                    for (uint8_t i = 0; i < _queueLen; i++) {
+                        _queue[i].zone_idx = rs.queue[i].zone_idx;
+                        _queue[i].duration_ms = rs.queue[i].duration_ms;
+                    }
+                    _queuePos = rs.queuePos;
+                    memcpy(_zoneDurMin, rs.zone_dur_min, sizeof(_zoneDurMin));
+                    
+                    // Timestamp original do arranque do ciclo (convertido para local time)
+                    DateTime utcDT(rs.start_unix_time);
+                    DateTime startDT = RTClock::utcToLocal(utcDT);
+                    _cycleStart.year = startDT.year();
+                    _cycleStart.month = startDT.month();
+                    _cycleStart.day = startDT.day();
+                    _cycleStart.hour = startDT.hour();
+                    _cycleStart.min = startDT.minute();
+                    _cycleStart.sec = startDT.second();
+                    _cycleStart.dow = startDT.dayOfTheWeek();
+                    _cycleStart.unix = utcDT.unixtime();
 
-                _zoneIdx = _queue[_queuePos].zone_idx;
-                LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_RESUME_ZONE,
-                      (unsigned)_zoneIdx + 1U,
-                      (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-");
-                if (_queuePos > 0) {
-                    _isWaiting = true;
-                    _waitStartMs = millis();
-                    _syncState();
-                } else {
-                    _startNextZone();
+                    _zoneIdx = _queue[_queuePos].zone_idx;
+                    LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_RESUME_ZONE,
+                          (unsigned)_zoneIdx + 1U,
+                          (_zoneIdx < NUM_ZONES) ? gState.zones[_zoneIdx].name : "-");
+                    if (_queuePos > 0) {
+                        _isWaiting = true;
+                        _waitStartMs = millis();
+                        _syncState();
+                    } else {
+                        _startNextZone();
+                    }
+                    return; // Impede _syncState de limpar tudo
                 }
-                return; // Impede _syncState de limpar tudo
             }
         }
         // Se chegou aqui, nao e valido retomar: preservar minutos ja regados no historico e limpar NVS
