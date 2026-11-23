@@ -2,11 +2,21 @@
 #include <stdint.h>
 
 class Display;
+class Encoder;
 class RTClock;
+class UI;
 
 struct I2CRecoveryState {
     uint32_t lastRecoverMs = 0;
     bool     hasRecovered  = false;
+};
+
+struct SystemBootContext {
+    Display& display;
+    Encoder& encoder;
+    UI&      ui;
+    void   (*recoverI2c)();
+    void   (*afterI2cInit)(); // optional hook invoked after Wire.begin() + LCD power-up delay
 };
 
 // Pre-load RELAY_OFF in hardware GPIO latches before configuring OUTPUT pins
@@ -25,3 +35,7 @@ void recoverI2CWith(Display& disp, RTClock& clk, I2CRecoveryState& state);
 
 // Evaluate persisted suspension state against live RTC time on boot.
 void evaluateBootSuspension();
+
+// Canonical full-system initialization and cooperative loop tick shared by main.cpp and tests.
+void bootSystem(const SystemBootContext& ctx);
+void tickSystem(UI& ui);

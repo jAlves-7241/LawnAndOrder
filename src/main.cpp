@@ -73,6 +73,44 @@ void recoverI2C() {
     recoverI2CWith(display, rtclock, gI2cRecState);
 }
 
+#if LOG_LEVEL >= LVL_DEBUG
+static void debugI2cScan() {
+    // Full I2C bus diagnostic scan (debug builds only; LCD/RTC probe their own addresses below)
+    byte i2cCount = 0;
+    char i2cList[192] = "";
+    size_t i2cPos = 0;
+    bool i2cTruncated = false;
+    for (byte i = 8; i < 120; i++) {
+        esp_task_wdt_reset();
+        Wire.beginTransmission(i);
+        if (Wire.endTransmission() == 0) {
+            if (!i2cTruncated) {
+                int n = snprintf(i2cList + i2cPos, sizeof(i2cList) - i2cPos,
+                                 "%s0x%02X (%s)",
+                                 (i2cCount > 0 ? ", " : ""),
+                                 i, i2cDeviceName(i));
+                if (n > 0 && i2cPos + (size_t)n < sizeof(i2cList)) {
+                    i2cPos += (size_t)n;
+                } else {
+                    if (sizeof(i2cList) >= 4U) {
+                        strcpy(i2cList + sizeof(i2cList) - 4U, "...");
+                    }
+                    i2cTruncated = true;
+                }
+            }
+            i2cCount++;
+            delay(1);
+        }
+    }
+    if (i2cCount == 0) {
+        LOG_E(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_NONE);
+    } else {
+        LOG_D(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_SUMMARY,
+              (unsigned)i2cCount, i2cList);
+    }
+}
+#endif
+
 void setup() {
     // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else.
     initRelayPinsSafe();
@@ -116,75 +154,17 @@ void setup() {
     esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
 #endif
 
-    initAppState();       // load firmware defaults into RAM
-
-    storage.begin();      // open NVS namespace
-    storage.load();       // overwrite defaults with persisted values
-
-    esp_task_wdt_reset();
-    history.begin();      // mount LittleFS, open/create history file
-    esp_task_wdt_reset();
-
-    clearI2CBus();
-    Wire.begin(PIN_SDA, PIN_SCL);
-    configureI2CTimeout();
-    delay(200); // Allow LCD to boot fully
-
+    bootSystem({
+        display,
+        encoder,
+        ui,
+        recoverI2C,
 #if LOG_LEVEL >= LVL_DEBUG
-    // Full I2C bus diagnostic scan (debug builds only; LCD/RTC probe their own addresses below)
-    byte i2cCount = 0;
-    char i2cList[192] = "";
-    size_t i2cPos = 0;
-    bool i2cTruncated = false;
-    for (byte i = 8; i < 120; i++) {
-        esp_task_wdt_reset();
-        Wire.beginTransmission(i);
-        if (Wire.endTransmission() == 0) {
-            if (!i2cTruncated) {
-                int n = snprintf(i2cList + i2cPos, sizeof(i2cList) - i2cPos,
-                                 "%s0x%02X (%s)",
-                                 (i2cCount > 0 ? ", " : ""),
-                                 i, i2cDeviceName(i));
-                if (n > 0 && i2cPos + (size_t)n < sizeof(i2cList)) {
-                    i2cPos += (size_t)n;
-                } else {
-                    if (sizeof(i2cList) >= 4U) {
-                        strcpy(i2cList + sizeof(i2cList) - 4U, "...");
-                    }
-                    i2cTruncated = true;
-                }
-            }
-            i2cCount++;
-            delay(1);
-        }
-    }
-    if (i2cCount == 0) {
-        LOG_E(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_NONE);
-    } else {
-        LOG_D(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_SUMMARY,
-              (unsigned)i2cCount, i2cList);
-    }
+        debugI2cScan
+#else
+        nullptr
 #endif
-    esp_task_wdt_reset();
-    display.begin();
-    esp_task_wdt_reset();
-    display.setErrorCallback(recoverI2C);
-    encoder.begin();
-
-    rtclock.setErrorCallback(recoverI2C);
-    rtclock.begin();
-
-    // Evaluate active suspension against the real RTC time before resuming interrupted cycles
-    evaluateBootSuspension();
-
-    scheduler.loadTriggers(); // Load persisted DST fall-back guards before recovery checks next slot
-    wateringCtrl.begin();
-
-    scheduler.begin();    // computes next_hour/min from live RTC + current mode
-    ui.begin();
-    terminal.begin();
-
-    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
+    });
 }
 
 // ─────────────────────────────────────────────────────────
@@ -194,16 +174,7 @@ void loop() {
     static uint32_t lastSlowLogMs = 0;
     static bool hasSlowLogged = false;
 #endif
-    esp_task_wdt_reset();   // Alimentar o Watchdog em cada ciclo do loop
-    rtclock.update();       // advances software clock once/sec and polls DS3231 every 30 s
-    scheduler.update();     // checks trigger, advances next_*, fires watering
-    ui.update();            // handles encoder, redraws LCD
-    wateringCtrl.update();  // advances zone timer, drives relays
-    history.update();       // processes background file rotations
-    terminal.update();
-    if (!ui.inSetup()) {
-        storage.update();   // retries transient NVS config write failures
-    }
+    tickSystem(ui);
 #if LOG_LEVEL >= LVL_WARN
     uint32_t loopEndMs = millis();
     uint32_t loopDurMs = loopEndMs - loopStartMs;

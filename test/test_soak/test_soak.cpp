@@ -54,7 +54,6 @@ static void resetSystem() {
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
-    initRelayPinsSafe();
 
     rtclock = RTClock();
     storage = Storage();
@@ -68,20 +67,7 @@ static void resetSystem() {
     ui.~UI();
     new (&ui) UI(display, encoder);
 
-    initAppState();
-    storage.begin();
-    storage.load();
-    history.begin();
-    display.begin();
-    display.setErrorCallback(soakRecoverI2C);
-    encoder.begin();
-    rtclock.setErrorCallback(soakRecoverI2C);
-    rtclock.begin();
-    scheduler.loadTriggers();
-    wateringCtrl.begin();
-    scheduler.begin();
-    ui.begin();
-    terminal.begin();
+    bootSystem({ display, encoder, ui, soakRecoverI2C, nullptr });
 }
 
 // Simulates a full ESP32 power cycle preserving NVS (Preferences) and LittleFS,
@@ -94,7 +80,6 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
-    initRelayPinsSafe();
     Serial.reset();
     Wire.reset();
     ESP.reset();
@@ -123,23 +108,7 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     ui.~UI();
     new (&ui) UI(display, encoder);
 
-    initAppState();
-    storage.begin();
-    storage.load();
-    history.begin();
-    display.begin();
-    display.setErrorCallback(soakRecoverI2C);
-    encoder.begin();
-    rtclock.setErrorCallback(soakRecoverI2C);
-    rtclock.begin();
-
-    evaluateBootSuspension();
-
-    scheduler.loadTriggers();
-    wateringCtrl.begin();
-    scheduler.begin();
-    ui.begin();
-    terminal.begin();
+    bootSystem({ display, encoder, ui, soakRecoverI2C, nullptr });
 }
 
 static void stepLoopOnce(uint32_t stepMs) {
@@ -147,15 +116,7 @@ static void stepLoopOnce(uint32_t stepMs) {
     advanceMockMicros(stepMs * 1000UL);
     // Advance mock DS3231 hardware clock in sync with simulated time
     // (handled by caller updating rtclock._rtc when needed or via _rtcUnix tracking)
-    rtclock.update();
-    scheduler.update();
-    ui.update();
-    wateringCtrl.update();
-    history.update();
-    terminal.update();
-    if (!ui.inSetup()) {
-        storage.update();
-    }
+    tickSystem(ui);
 }
 
 static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t stepSec, uint8_t& lastActiveZone) {

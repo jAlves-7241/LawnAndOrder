@@ -8,8 +8,14 @@
 #include "config.h"
 #include "AppState.h"
 #include "Display.h"
+#include "Encoder.h"
+#include "History.h"
 #include "RTClock.h"
+#include "Scheduler.h"
 #include "Storage.h"
+#include "Terminal.h"
+#include "UI.h"
+#include "WateringController.h"
 #include "log.h"
 #include "i18n.h"
 
@@ -117,5 +123,61 @@ void evaluateBootSuspension() {
         }
     } else {
         gState.suspended = false;
+    }
+}
+
+void bootSystem(const SystemBootContext& ctx) {
+    initRelayPinsSafe();
+
+    initAppState();       // load firmware defaults into RAM
+
+    storage.begin();      // open NVS namespace
+    storage.load();       // overwrite defaults with persisted values
+
+    esp_task_wdt_reset();
+    history.begin();      // mount LittleFS, open/create history file
+    esp_task_wdt_reset();
+
+    clearI2CBus();
+    Wire.begin(PIN_SDA, PIN_SCL);
+    configureI2CTimeout();
+    delay(200);           // Allow LCD to boot fully
+
+    if (ctx.afterI2cInit) {
+        ctx.afterI2cInit();
+    }
+
+    esp_task_wdt_reset();
+    ctx.display.begin();
+    esp_task_wdt_reset();
+    ctx.display.setErrorCallback(ctx.recoverI2c);
+    ctx.encoder.begin();
+
+    rtclock.setErrorCallback(ctx.recoverI2c);
+    rtclock.begin();
+
+    // Evaluate active suspension against the real RTC time before resuming interrupted cycles
+    evaluateBootSuspension();
+
+    scheduler.loadTriggers(); // Load persisted DST fall-back guards before recovery checks next slot
+    wateringCtrl.begin();
+
+    scheduler.begin();    // computes next_hour/min from live RTC + current mode; reads wateringCtrl.isActive()
+    ctx.ui.begin();
+    terminal.begin();
+
+    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
+}
+
+void tickSystem(UI& ui) {
+    esp_task_wdt_reset();   // Alimentar o Watchdog em cada ciclo do loop
+    rtclock.update();       // advances software clock once/sec and polls DS3231 every 30 s
+    scheduler.update();     // checks trigger, advances next_*, fires watering
+    ui.update();            // handles encoder, redraws LCD
+    wateringCtrl.update();  // advances zone timer, drives relays
+    history.update();       // processes background file rotations
+    terminal.update();
+    if (!ui.inSetup()) {
+        storage.update();   // retries transient NVS config write failures
     }
 }

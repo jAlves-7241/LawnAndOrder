@@ -1,4 +1,6 @@
+#define HAS_TERMINAL_AWARE_LOG 1
 #include <unity.h>
+#include <new>
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
 #include "../../src/AppState.cpp"
@@ -6,25 +8,64 @@
 
 #define private public
 #include "Display.h"
+#include "Encoder.h"
 #include "RTClock.h"
+#include "History.h"
+#include "WateringController.h"
+#include "Scheduler.h"
+#include "UI.h"
+#include "Terminal.h"
 #undef private
 
+static Display sysDisp;
+static Encoder sysEnc(PIN_CLK, PIN_DT, PIN_SW);
+UI ui(sysDisp, sysEnc);
+
 #include "../../src/Display.cpp"
+#include "../../src/Encoder.cpp"
 #include "../../src/RTClock.cpp"
+#include "../../src/History.cpp"
+#include "../../src/WateringController.cpp"
+#include "../../src/Scheduler.cpp"
+#include "../../src/ui/MenuBuilder.cpp"
+#include "../../src/ui/ScreenCommon.cpp"
+#include "../../src/ui/ScreenEditors.cpp"
+#include "../../src/ui/ScreenIdle.cpp"
+#include "../../src/ui/ScreenMenu.cpp"
+#include "../../src/ui/ScreenSetup.cpp"
+#include "../../src/UI.cpp"
+#include "../../src/Terminal.cpp"
 #include "../../src/SystemBoot.cpp"
 
-static Display sysDisp;
+static I2CRecoveryState _sysI2cState = {};
+static void sysRecoverI2C() {
+    recoverI2CWith(sysDisp, rtclock, _sysI2cState);
+}
 
 void setUp(void) {
     resetAllTestMocks();
+    _sysI2cState = {};
+    digitalWrite(PIN_CLK, HIGH);
+    digitalWrite(PIN_DT, HIGH);
+    digitalWrite(PIN_SW, HIGH);
     rtclock = RTClock();
     storage = Storage();
+    history = History();
+    wateringCtrl = WateringController();
+    scheduler = Scheduler();
+    terminal = Terminal();
     storage.begin();
     sysDisp = Display();
     sysDisp.begin();
+    sysEnc.~Encoder();
+    new (&sysEnc) Encoder(PIN_CLK, PIN_DT, PIN_SW);
+    ui.~UI();
+    new (&ui) UI(sysDisp, sysEnc);
 }
 
-void tearDown(void) {}
+void tearDown(void) {
+    wateringCtrl.stop();
+}
 
 void test_init_relay_pins_safe_core3_periman(void) {
     memset(_mock_gpio, LOW, sizeof(_mock_gpio));
@@ -158,11 +199,103 @@ void test_evaluate_boot_suspension_all_paths(void) {
     TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
 }
 
+static bool _afterI2cHookCalled = false;
+static void testAfterI2cHook() {
+    _afterI2cHookCalled = true;
+}
+
+void test_boot_system_full_order_and_recovery_invariants(void) {
+    // 1. Seed a saved config + active recovery state + future suspension in NVS,
+    //    then run real bootSystem() and verify order-sensitive invariants:
+    //    Wire.begin() called, afterI2cInit invoked, suspension evaluated BEFORE recovery,
+    //    AUTO recovery blocked by active suspension, and UI starts on Idle.
+    gState.setup_done = true;
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    const uint32_t bootUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 5, 0)).unixtime();
+    gState.suspended = true;
+    gState.suspended_until = bootUtc + 3600UL;
+    TEST_ASSERT_TRUE(storage.save());
+
+    RecoveryState rs = {};
+    rs.active = true;
+    rs.start_unix_time = bootUtc - 300UL;
+    rs.queueLen = 1;
+    rs.queuePos = 0;
+    rs.queue[0] = { 0, 5UL * 60000UL };
+    rs.trigger = WaterTrigger::AUTO;
+    TEST_ASSERT_TRUE(storage.saveRecoveryState(rs));
+
+    // Reconstruct RAM singletons to simulate power-on while preserving NVS
+    Wire.reset();
+    _afterI2cHookCalled = false;
+    rtclock = RTClock();
+    rtclock._rtc.adjust(DateTime(bootUtc));
+    storage = Storage();
+    history = History();
+    wateringCtrl = WateringController();
+    scheduler = Scheduler();
+    terminal = Terminal();
+    sysDisp = Display();
+    ui.~UI();
+    new (&ui) UI(sysDisp, sysEnc);
+
+    bootSystem({ sysDisp, sysEnc, ui, sysRecoverI2C, testAfterI2cHook });
+
+    TEST_ASSERT_TRUE(_afterI2cHookCalled);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1, Wire.beginCalls);
+    TEST_ASSERT_TRUE(gState.suspended);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive()); // suspension evaluated BEFORE recovery
+    TEST_ASSERT_EQUAL_PTR(&ui.getScreenIdle(), ui._currentScreen);
+
+    // 2. Active recovery suppresses scheduler._catchUpPending (scheduler.begin() runs AFTER wateringCtrl.begin())
+    gState.suspended = false;
+    gState.suspended_until = 0;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_TRUE(storage.saveRecoveryState(rs));
+
+    rtclock = RTClock();
+    rtclock._rtc.adjust(DateTime(bootUtc));
+    storage = Storage();
+    wateringCtrl = WateringController();
+    scheduler = Scheduler();
+    ui.~UI();
+    new (&ui) UI(sysDisp, sysEnc);
+
+    bootSystem({ sysDisp, sysEnc, ui, sysRecoverI2C, nullptr });
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_FALSE(scheduler._catchUpPending);
+    wateringCtrl.stop();
+
+    // 3. Corrupt both NVS config slots -> bootSystem() surfaces persistent config-lost alert in UI
+    uint8_t bad[44];
+    memset(bad, 0xCC, sizeof(bad));
+    prefs.putBytes("cfg", bad, sizeof(bad));
+    prefs.putBytes("cfg_b", bad, sizeof(bad));
+    storage = Storage();
+    ui.~UI();
+    new (&ui) UI(sysDisp, sysEnc);
+
+    bootSystem({ sysDisp, sysEnc, ui, sysRecoverI2C, nullptr });
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+    TEST_ASSERT_TRUE(ui.inSetup());
+    TEST_ASSERT_EQUAL_PTR(&ui.getScreenInfo(), ui._currentScreen);
+    TEST_ASSERT_TRUE(strstr(sysDisp._lcd.getRow(0), TXT_ERR_CFG_LOST_TITLE) != nullptr);
+
+    // 4. tickSystem() advances subsystems without error
+    advanceMockMillis(1000);
+    tickSystem(ui);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_init_relay_pins_safe_core3_periman);
     RUN_TEST(test_clear_i2c_bus_preloads_scl_and_generates_stop);
     RUN_TEST(test_recover_i2c_with_throttle_and_wraparound);
     RUN_TEST(test_evaluate_boot_suspension_all_paths);
+    RUN_TEST(test_boot_system_full_order_and_recovery_invariants);
     return UNITY_END();
 }
