@@ -40,8 +40,12 @@ public:
     void update();
 
     // Call this whenever the active mode changes (from UI dispatch) or schedule must recompute.
-    // Recomputes next_* immediately so the IDLE screen updates.
+    // Clears persisted DST trigger guards and recomputes next_* immediately so the IDLE screen updates.
     void onModeChanged(bool announceMode = true);
+
+    // Recompute next_* immediately without clearing persisted DST fall-back trigger guards
+    // (used for non-schedule actions such as cancelling a pause or skipping initial clock setup).
+    bool refreshNext();
 
     // Clear persisted/cached DST fall-back trigger guards (on mode change or manual set_time).
     void clearLastTriggers();

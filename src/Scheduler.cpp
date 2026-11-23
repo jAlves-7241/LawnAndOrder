@@ -282,9 +282,8 @@ bool Scheduler::_tryCatchUp(const SystemTime& t) {
 }
 
 // ─────────────────────────────────────────────────────────
-void Scheduler::onModeChanged(bool announceMode) {
-    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
-    clearLastTriggers();
+bool Scheduler::refreshNext() {
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return false;
     _lastClockRev = rtclock.revision();
     _lastManualClockRev = rtclock.manualRevision();
     _lastSec = 0xFF;
@@ -296,25 +295,36 @@ void Scheduler::onModeChanged(bool announceMode) {
         _lastMin = 0xFF;
     }
     if (!gState.rtc_valid) {
-        // RTC not ready - seed next_* from the first slot of the new mode
+        // RTC not ready - seed next_* from the first slot of the current mode
         const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
         if (sched.slot_count > 0) {
             gState.next_hour = sched.slots[0].hour;
             gState.next_min  = sched.slots[0].minute;
-        } else {
-            gState.next_hour = 0;
-            gState.next_min  = 0;
+            return true;
         }
+        gState.next_hour = 0;
+        gState.next_min  = 0;
+        return false;
+    }
+    uint32_t old_ref = gState.custom_ref_day;
+    bool hasNext = computeNext(gState.mode, gState.now,
+                               gState.next_hour, gState.next_min);
+    if (gState.custom_ref_day != old_ref) storage.save();
+    return hasNext;
+}
+
+// ─────────────────────────────────────────────────────────
+void Scheduler::onModeChanged(bool announceMode) {
+    if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return;
+    clearLastTriggers();
+    bool hasNext = refreshNext();
+    if (!gState.rtc_valid) {
         if (announceMode) {
             LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_WAIT_CLK,
                   serialModeName(gState.mode));
         }
         return;
     }
-    uint32_t old_ref = gState.custom_ref_day;
-    bool hasNext = computeNext(gState.mode, gState.now,
-                               gState.next_hour, gState.next_min);
-    if (gState.custom_ref_day != old_ref) storage.save();
     if (announceMode) {
         if (hasNext) {
             LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_MODE_CHG,
@@ -420,7 +430,7 @@ bool Scheduler::isCycleExpired(uint32_t start_unix, const SystemTime& current_ti
     // Overlap / Missed Cycle
     // Check if there was a scheduled slot between start and now
     // Create a mock SystemTime at start_unix to find the very next slot
-    DateTime localDT = rtclock.utcToLocal(DateTime(start_unix));
+    DateTime localDT = RTClock::utcToLocal(DateTime(start_unix));
     SystemTime startST = {};
     startST.year = localDT.year();
     startST.month = localDT.month();

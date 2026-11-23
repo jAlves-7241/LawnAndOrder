@@ -1366,6 +1366,44 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     TEST_ASSERT_FALSE(testDisp._lcd.displayState);
     testDisp.recover(true, false);
     TEST_ASSERT_FALSE(testDisp._lcd.displayState);
+
+    // 9. Failed backlightOn()/displayOn() arms sync retry so Display::sync() turns hardware back ON once I2C clears
+    testDisp.displayOn();
+    testDisp.backlightOff();
+    testDisp.displayOff();
+    TEST_ASSERT_FALSE(testDisp._lcd.backlightState);
+    TEST_ASSERT_FALSE(testDisp._lcd.displayState);
+    testDisp._lcd.mockI2cError = 1;
+    testDisp.displayOn();
+    testDisp.backlightOn();
+    TEST_ASSERT_TRUE(testDisp.hasBusFault());
+    TEST_ASSERT_FALSE(testDisp._lcd.displayState);
+    TEST_ASSERT_FALSE(testDisp._lcd.backlightState);
+
+    testDisp._lcd.mockI2cError = 0;
+    advanceMockMillis(1000UL);
+    testDisp.sync();
+    TEST_ASSERT_FALSE(testDisp.hasBusFault());
+    TEST_ASSERT_TRUE(testDisp._lcd.displayState);
+    TEST_ASSERT_TRUE(testDisp._lcd.backlightState);
+
+    // 10. cancel_susp refreshes next_* WITHOUT clearing persisted DST fall-back trigger guards
+    gState.mode = AppMode::MEDIO;
+    gState.suspended = true;
+    gState.suspended_until = gState.now.unix + 86400UL;
+    const uint32_t savedTrigger = gState.now.unix - 1800UL;
+    scheduler._lastTriggerUnix[0] = savedTrigger;
+    storage.saveLastTriggers(scheduler._lastTriggerUnix, MAX_SLOTS_PER_MODE);
+    testUi.dispatchAction("cancel_susp");
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(savedTrigger, scheduler._lastTriggerUnix[0]);
+    uint32_t persistedTr[MAX_SLOTS_PER_MODE] = {};
+    TEST_ASSERT_TRUE(storage.loadLastTriggers(persistedTr, MAX_SLOTS_PER_MODE));
+    TEST_ASSERT_EQUAL_UINT32(savedTrigger, persistedTr[0]);
+
+    // 11. ScreenConfirm::setup() handles nullptr tag safely
+    testUi.getScreenConfirm().setup("Line1", "Line2", MenuID::MAIN, nullptr);
+    TEST_ASSERT_EQUAL_STRING("", testUi.getScreenConfirm()._tag);
 }
 
 int main(void) {

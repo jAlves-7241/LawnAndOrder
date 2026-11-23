@@ -45,6 +45,7 @@ void ScreenConfirm::setup(const char* l1, const char* l2, MenuID backMenu, const
     snprintf(_rows[0], sizeof(_rows[0]), "%s", Display::cx(buf, TXT_CONFIRM_TITLE));
     snprintf(_rows[1], sizeof(_rows[1]), "%s", Display::fx(buf, l1));
     snprintf(_rows[2], sizeof(_rows[2]), "%s", Display::fx(buf, l2));
+    if (!tag) tag = "";
     strncpy(_tag, tag, sizeof(_tag) - 1);
     _tag[sizeof(_tag) - 1] = '\0';
     _backMenu = backMenu;

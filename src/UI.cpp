@@ -252,7 +252,7 @@ bool UI::executeConfirmed(const char* tag) {
 
     if (!strcmp(tag, "skip_clock")) {
         LOG_I(TXT_LOG_TAG_UI, TXT_LOG_UI_SKIP_CLOCK);
-        scheduler.onModeChanged(false);
+        scheduler.refreshNext();
         advanceSetup();
         return true;
     }
@@ -456,7 +456,7 @@ void UI::dispatchAction(const char* action) {
         gState.suspended_until = 0;
         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SUSP_CANCELED);
         flagConfigChanged();
-        scheduler.onModeChanged(false);
+        scheduler.refreshNext();
         _screenDone.setup(TXT_PAUSE_CANCELED, "");
         _screenDone.setBackMenu(MenuID::MAIN);
         changeScreen(&_screenDone);
