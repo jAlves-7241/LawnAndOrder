@@ -155,14 +155,24 @@ void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_BTN_STUCK_BOOT) != std::string::npos);
 #endif
 
-    // Destructor clears _inst safely without leaving a dangling pointer; begin() re-binds active instance
+    // Unstarted temporary Encoder must NOT hijack _inst or detach active instance on destruction
+    {
+        Encoder unstarted(PIN_CLK, PIN_DT, PIN_SW);
+        TEST_ASSERT_EQUAL_PTR(&encoder, Encoder::_inst);
+        TEST_ASSERT_FALSE(unstarted._attached);
+    }
+    TEST_ASSERT_EQUAL_PTR(&encoder, Encoder::_inst);
+
+    // Active temporary Encoder's destructor clears _inst safely without leaving a dangling pointer
+    digitalWrite(PIN_SW, HIGH);
     {
         Encoder tempEnc(PIN_CLK, PIN_DT, PIN_SW);
+        tempEnc.begin();
         TEST_ASSERT_EQUAL_PTR(&tempEnc, Encoder::_inst);
+        TEST_ASSERT_TRUE(tempEnc._attached);
     }
     TEST_ASSERT_NULL(Encoder::_inst);
     Encoder::_isr(); // must be a safe no-op when _inst == nullptr
-    digitalWrite(PIN_SW, HIGH);
     encoder.begin();
     TEST_ASSERT_EQUAL_PTR(&encoder, Encoder::_inst);
 }

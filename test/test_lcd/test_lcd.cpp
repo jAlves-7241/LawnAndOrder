@@ -263,11 +263,68 @@ void test_lcd_set_cursor_bounds_uninitialized_guard_and_create_char(void) {
     TEST_ASSERT_EQUAL_HEX8(LCD_DISPLAYCONTROL | LCD_DISPLAYOFF | LCD_CURSOROFF | LCD_BLINKOFF, sleepCmds[1].second);
 }
 
+void test_lcd_state_rollback_on_i2c_error_preserves_backlight_and_display(void) {
+    Wire.detectedAddresses.push_back(TEST_LCD_ADDR);
+    LiquidCrystal_I2C lcd(TEST_LCD_ADDR, 20, 4);
+    lcd.init(false, true);
+    lcd.backlight();
+    TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+
+    // 1. Failed noBacklight() must roll back _backlightval so subsequent prints keep LCD_BACKLIGHT ON
+    gPcf.reset();
+    gPcf.failAfterTx = 1;
+    gPcf.failCode = 4;
+    lcd.noBacklight();
+    TEST_ASSERT_EQUAL_UINT8(4, lcd.lastError());
+
+    gPcf.reset();
+    lcd.clearError();
+    lcd.setCursor(0, 0);
+    TEST_ASSERT_EQUAL_UINT32(2, (uint32_t)lcd.print("OK"));
+    TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+    TEST_ASSERT_FALSE(gPcf.rawBytes.empty());
+    for (uint8_t b : gPcf.rawBytes) {
+        TEST_ASSERT_TRUE((b & LCD_BACKLIGHT) != 0);
+    }
+
+    // 2. Failed noDisplay() must roll back _displaycontrol so a subsequent cursor() keeps LCD_DISPLAYON set
+    gPcf.reset();
+    gPcf.failAfterTx = 1;
+    lcd.noDisplay();
+    TEST_ASSERT_EQUAL_UINT8(4, lcd.lastError());
+
+    gPcf.reset();
+    lcd.clearError();
+    lcd.cursor();
+    TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+    auto ctrlCmds = decodeBytesFrom(decodeLatchedNibbles(gPcf.rawBytes), 0);
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)ctrlCmds.size());
+    TEST_ASSERT_EQUAL_HEX8(LCD_DISPLAYCONTROL | LCD_DISPLAYON | LCD_CURSORON | LCD_BLINKOFF, ctrlCmds[0].second);
+
+    // 3. Failed backlight() from dark state must roll back _backlightval to LCD_NOBACKLIGHT
+    lcd.noBacklight();
+    TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+    gPcf.reset();
+    gPcf.failAfterTx = 1;
+    lcd.backlight();
+    TEST_ASSERT_EQUAL_UINT8(4, lcd.lastError());
+
+    gPcf.reset();
+    lcd.clearError();
+    lcd.setCursor(0, 1);
+    TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+    TEST_ASSERT_FALSE(gPcf.rawBytes.empty());
+    for (uint8_t b : gPcf.rawBytes) {
+        TEST_ASSERT_TRUE((b & LCD_BACKLIGHT) == 0);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_lcd_init_fast_abort_on_nack_and_wire_begin_control);
     RUN_TEST(test_lcd_init_4bit_sequence_commands_and_backlight_flag);
     RUN_TEST(test_lcd_mid_print_i2c_error_short_circuits_and_clear_error);
     RUN_TEST(test_lcd_set_cursor_bounds_uninitialized_guard_and_create_char);
+    RUN_TEST(test_lcd_state_rollback_on_i2c_error_preserves_backlight_and_display);
     return UNITY_END();
 }

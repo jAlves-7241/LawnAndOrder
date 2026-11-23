@@ -63,6 +63,8 @@ private:
     bool _errorDeferred = false;
     bool _backlightOffFailed = false;
     bool _displayOffFailed = false;
+    bool _backlightSyncNeeded = false;
+    bool _displaySyncNeeded = false;
     uint8_t _consecErrors = 0;
     uint8_t _recoverAttempts = 0;
     uint32_t _recoverExecSeq = 0;

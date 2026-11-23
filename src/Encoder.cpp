@@ -11,14 +11,16 @@ static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 // ─────────────────────────────────────────────────────────
 Encoder::Encoder(uint8_t pin_clk, uint8_t pin_dt, uint8_t pin_sw)
     : _clk(pin_clk), _dt(pin_dt), _sw(pin_sw), _delta(0),
-      _btn_prev(false), _last_reading(false), _btn_last_ms(0),
+      _btn_prev(false), _last_reading(false), _attached(false), _btn_last_ms(0),
       _last_isr_us(0), _has_last_isr(false)
 {
-    _inst = this;
 }
 
 Encoder::~Encoder() {
-    detachInterrupt(digitalPinToInterrupt(_clk));
+    if (_attached) {
+        detachInterrupt(digitalPinToInterrupt(_clk));
+        _attached = false;
+    }
     portENTER_CRITICAL(&mux);
     if (_inst == this) {
         _inst = nullptr;
@@ -47,6 +49,7 @@ void Encoder::begin() {
     portEXIT_CRITICAL(&mux);
 
     attachInterrupt(digitalPinToInterrupt(_clk), _isr, FALLING);
+    _attached = true;
 }
 
 void IRAM_ATTR Encoder::_isr() {

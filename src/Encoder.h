@@ -10,6 +10,11 @@ public:
     Encoder(uint8_t pin_clk, uint8_t pin_dt, uint8_t pin_sw);
     ~Encoder();
 
+    Encoder(const Encoder&) = delete;
+    Encoder& operator=(const Encoder&) = delete;
+    Encoder(Encoder&&) = delete;
+    Encoder& operator=(Encoder&&) = delete;
+
     void begin();
 
     // Returns accumulated rotation delta since last call (clamped to ±127). Resets on read.
@@ -25,6 +30,7 @@ private:
 
     bool     _btn_prev;
     bool     _last_reading;
+    bool     _attached;
     uint32_t _btn_last_ms;
     volatile uint64_t _last_isr_us;
     volatile bool     _has_last_isr;

@@ -36,6 +36,8 @@ void Display::begin() {
     _errorDeferred = false;
     _backlightOffFailed = false;
     _displayOffFailed = false;
+    _backlightSyncNeeded = _busFault;
+    _displaySyncNeeded = _busFault;
     _recoverCooldownMs = 10000UL;
     _commErrWarned = false;
     if (_busFault) {
@@ -78,6 +80,8 @@ void Display::recover(bool quiet, bool flushShadow) {
     _lastAttemptMs = millis();
     _lastPeriodicRecoverMs = _lastAttemptMs;
     if (_busFault) {
+        _backlightSyncNeeded = _backlightOn;
+        _displaySyncNeeded = _displayOn;
         LOG_E(TXT_LOG_TAG_LCD, TXT_LOG_LCD_REC_FAIL);
     } else {
         _commErrWarned = false;
@@ -86,6 +90,8 @@ void Display::recover(bool quiet, bool flushShadow) {
         _recoverCooldownMs = 10000UL;
         _backlightOffFailed = false;
         _displayOffFailed = false;
+        _backlightSyncNeeded = false;
+        _displaySyncNeeded = false;
         if (!quiet) {
             LOG_I(TXT_LOG_TAG_LCD, TXT_LOG_LCD_RECOVERED);
         }
@@ -107,11 +113,12 @@ bool Display::needsPeriodicRecover(uint32_t intervalMs) const {
 }
 
 void Display::backlightOn() {
-    if (_backlightOn) return;
+    if (_backlightOn && !_backlightSyncNeeded) return;
     _backlightOffFailed = false;
     _lcd.clearError();
     _lcd.backlight();
     _busFault = (_lcd.lastError() != 0);
+    _backlightSyncNeeded = _busFault;
     _backlightOn = true;
     _invalidateShadow(); // Forçar redesenho completo ao acordar para corrigir glitches físicos
 }
@@ -128,15 +135,17 @@ void Display::backlightOff() {
         return;
     }
     _backlightOffFailed = false;
+    _backlightSyncNeeded = false;
     _backlightOn = false;
 }
 
 void Display::displayOn() {
-    if (_displayOn) return;
+    if (_displayOn && !_displaySyncNeeded) return;
     _displayOffFailed = false;
     _lcd.clearError();
     _lcd.display();
     _busFault = (_lcd.lastError() != 0);
+    _displaySyncNeeded = _busFault;
     _displayOn = true;
     // Force redraw because state might be stale
     _invalidateShadow();
@@ -154,6 +163,7 @@ void Display::displayOff() {
         return;
     }
     _displayOffFailed = false;
+    _displaySyncNeeded = false;
     _displayOn = false;
 }
 
@@ -209,29 +219,49 @@ void Display::setRows(const char* r0, const char* r1,
     _lcd.clearError();
     bool frameError = false;
     bool wroteAny = false;
+    if (_displaySyncNeeded && _displayOn) {
+        wroteAny = true;
+        _lcd.display();
+        if (_lcd.lastError() != 0) {
+            frameError = true;
+        } else {
+            _displaySyncNeeded = false;
+        }
+    }
+    if (!frameError && _backlightSyncNeeded && _backlightOn) {
+        wroteAny = true;
+        _lcd.backlight();
+        if (_lcd.lastError() != 0) {
+            frameError = true;
+        } else {
+            _backlightSyncNeeded = false;
+        }
+    }
     bool fullRowWritten[LCD_ROWS] = { false, false, false, false };
     int failedRow = -1;
-    for (int r = 0; r < LCD_ROWS; r++) {
-        if (rows[r]) {
-            bool rowDidI2c = false;
-            if (!_writeRow((uint8_t)r, rows[r], &fullRowWritten[r], &rowDidI2c)) {
-                frameError = true;
-                failedRow = r;
-                break;
+    if (!frameError) {
+        for (int r = 0; r < LCD_ROWS; r++) {
+            if (rows[r]) {
+                bool rowDidI2c = false;
+                if (!_writeRow((uint8_t)r, rows[r], &fullRowWritten[r], &rowDidI2c)) {
+                    frameError = true;
+                    failedRow = r;
+                    break;
+                }
+                if (rowDidI2c) wroteAny = true;
+            } else if (_dirty[r]) {
+                wroteAny = true;
+                if (!_flushRow((uint8_t)r)) {
+                    frameError = true;
+                    failedRow = r;
+                    break;
+                }
+                fullRowWritten[r] = true;
             }
-            if (rowDidI2c) wroteAny = true;
-        } else if (_dirty[r]) {
-            wroteAny = true;
-            if (!_flushRow((uint8_t)r)) {
-                frameError = true;
-                failedRow = r;
-                break;
-            }
-            fullRowWritten[r] = true;
         }
     }
 
-    if (frameError && failedRow >= 0) {
+    if (frameError) {
         // Stage remaining non-null rows so subsequent sync()/recover() flushes a coherent frame
         for (int r = failedRow + 1; r < LCD_ROWS; r++) {
             if (rows[r]) _stageRow((uint8_t)r, rows[r]);
