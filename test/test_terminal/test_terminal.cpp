@@ -1039,6 +1039,41 @@ void test_terminal_lone_esc_preserves_next_char(void) {
     TEST_ASSERT_EQUAL_MEMORY("abc", terminal._buffer, 3);
 }
 
+void test_terminal_status_reports_config_lost_and_skipped_slot(void) {
+    // 1. Trigger a real MANUAL collision at 08:00 via public APIs
+    gState.rtc_valid = true;
+    gState.setup_done = true;
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 7, 59, 0);
+    scheduler.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+    rtclock.set(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
+
+    // 2. Corrupt NVS so storage.configLoadFailed() latches true
+    uint8_t garbage[44];
+    memset(garbage, 0xEE, sizeof(garbage));
+    prefs.putBytes("cfg", garbage, sizeof(garbage));
+    prefs.putBytes("cfg_b", garbage, sizeof(garbage));
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    Serial.reset();
+    Serial.feedInput("status\r\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_CFG_LOST) != std::string::npos);
+    char expectedSkip[96];
+    snprintf(expectedSkip, sizeof(expectedSkip), TXT_TERM_STAT_SKIPPED, 8, 0);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedSkip) != std::string::npos);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -1070,5 +1105,6 @@ int main(void) {
     RUN_TEST(test_terminal_import_config_clears_expired_suspension_immediately);
     RUN_TEST(test_terminal_ansi_control_abort_and_zero_zones_status);
     RUN_TEST(test_terminal_lone_esc_preserves_next_char);
+    RUN_TEST(test_terminal_status_reports_config_lost_and_skipped_slot);
     return UNITY_END();
 }

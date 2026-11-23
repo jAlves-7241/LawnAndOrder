@@ -701,6 +701,9 @@ void Terminal::_cmdStatus(char* /*args*/) {
             Serial.println(TXT_TERM_STAT_INACTIVE);
         }
     }
+    if (storage.configLoadFailed()) {
+        Serial.println(TXT_TERM_STAT_CFG_LOST);
+    }
     if (scheduler.hasSkippedSlot()) {
         Serial.printf(TXT_TERM_STAT_SKIPPED,
                       (int)scheduler.skippedHour(), (int)scheduler.skippedMin());

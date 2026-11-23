@@ -8,9 +8,11 @@
 // ── NVS namespace (max 15 chars) ──────────────────────────
 static const char* NVS_NS       = "rega";
 static const char* KEY_CFG      = "cfg";
+static const char* KEY_CFG_B    = "cfg_b";
 static const char* KEY_HBLOB    = "hblob";
 static const char* KEY_SCHED_TR = "sched_tr";
 static const char* KEY_RECV     = "recv";
+static const uint8_t CFG_SLOT_MAGIC = 0xA5;
 static const size_t HIST_CACHE_MAX_BYTES = 64;
 
 struct __attribute__((packed)) HistoryNvsHeader {
@@ -35,6 +37,10 @@ void Storage::begin() {
     if (_ready) return;
     _savePending = false;
     _lastSaveRetryMs = 0;
+    _lastLoadResult = ConfigLoadResult::EMPTY;
+    _configSeq = 0;
+    _activeSlot = 0;
+    _backupSeeded = false;
     prefs.end(); // Ensure a clean NVS handle if re-initializing after a reset
     // Open in read-write mode; creates namespace if it doesn't exist.
     _ready = prefs.begin(NVS_NS, false);
@@ -133,44 +139,226 @@ static int _hexNibble(char c) {
 }
 
 
+// One-step N-1 schema migration hook.
+// When bumping NVS_VERSION (e.g. v5 -> v6), decode the previous version's packed
+// blob here and populate outBlob (version = NVS_VERSION, recomputed CRC-16) so
+// firmware updates preserve user settings instead of wiping to defaults.
+// v4 used individual NVS keys rather than a packed blob and has no migration.
+bool Storage::_migratePrevVersionBlob(const uint8_t* raw, size_t len, AppConfigBlob& outBlob) {
+    (void)raw;
+    (void)len;
+    (void)outBlob;
+    return false;
+}
+
+bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
+                              uint32_t& outSeq, bool& outEnveloped,
+                              ConfigLoadResult& outErr) {
+    static_assert(sizeof(AppConfigSlot) == 44, "AppConfigSlot must be 44 bytes");
+    static_assert(offsetof(AppConfigSlot, slot_crc16) == 42,
+                  "AppConfigSlot must have no padding before slot_crc16");
+    outSeq = 0;
+    outEnveloped = false;
+    outErr = ConfigLoadResult::EMPTY;
+
+    const size_t storedLen = prefs.getBytesLength(key);
+    if (storedLen == 0) {
+        return false;
+    }
+
+    auto validateBlob = [&](const AppConfigBlob& b, ConfigLoadResult& err) -> bool {
+        if (b.version != NVS_VERSION) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_VER_MISMATCH,
+                  (unsigned)b.version, (unsigned)NVS_VERSION);
+            err = ConfigLoadResult::VERSION_MISMATCH;
+            return false;
+        }
+        if (!_blobHasValidBooleans(b)) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_BOOL_INV);
+            err = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&b),
+                                      offsetof(AppConfigBlob, crc16));
+        if (b.crc16 != expectedCrc) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_CFG);
+            err = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        return true;
+    };
+
+    if (storedLen == sizeof(AppConfigSlot)) {
+        AppConfigSlot slot = {};
+        if (prefs.getBytes(key, &slot, sizeof(slot)) != sizeof(slot)) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
+            outErr = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        if (slot.magic != CFG_SLOT_MAGIC) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_CFG);
+            outErr = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        uint16_t expectedSlotCrc = _crc16(reinterpret_cast<const uint8_t*>(&slot),
+                                          offsetof(AppConfigSlot, slot_crc16));
+        if (slot.slot_crc16 != expectedSlotCrc) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_CFG);
+            outErr = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        if (slot.version != NVS_VERSION) {
+            if (slot.version == (uint8_t)(NVS_VERSION - 1U) &&
+                _migratePrevVersionBlob(reinterpret_cast<const uint8_t*>(&slot.blob),
+                                        sizeof(slot.blob), outBlob)) {
+                outSeq = slot.seq;
+                outEnveloped = true;
+                outErr = ConfigLoadResult::OK;
+                return true;
+            }
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_VER_MISMATCH,
+                  (unsigned)slot.version, (unsigned)NVS_VERSION);
+            outErr = ConfigLoadResult::VERSION_MISMATCH;
+            return false;
+        }
+        if (slot.seq == 0 || !validateBlob(slot.blob, outErr)) {
+            if (slot.seq == 0) outErr = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        outBlob = slot.blob;
+        outSeq = slot.seq;
+        outEnveloped = true;
+        outErr = ConfigLoadResult::OK;
+        return true;
+    }
+
+    if (storedLen == sizeof(AppConfigBlob)) {
+        AppConfigBlob blob = {};
+        if (prefs.getBytes(key, &blob, sizeof(blob)) != sizeof(blob)) {
+            LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
+            outErr = ConfigLoadResult::CORRUPT;
+            return false;
+        }
+        if (blob.version == (uint8_t)(NVS_VERSION - 1U) &&
+            _migratePrevVersionBlob(reinterpret_cast<const uint8_t*>(&blob),
+                                    sizeof(blob), outBlob)) {
+            outSeq = 0;
+            outEnveloped = false;
+            outErr = ConfigLoadResult::OK;
+            return true;
+        }
+        if (!validateBlob(blob, outErr)) {
+            return false;
+        }
+        outBlob = blob;
+        outSeq = 0;
+        outEnveloped = false;
+        outErr = ConfigLoadResult::OK;
+        return true;
+    }
+
+    // Attempt N-1 migration for future schema size changes before failing size check
+    if (storedLen <= 128U) {
+        uint8_t rawBuf[128];
+        if (prefs.getBytes(key, rawBuf, storedLen) == storedLen &&
+            _migratePrevVersionBlob(rawBuf, storedLen, outBlob)) {
+            outSeq = 0;
+            outEnveloped = false;
+            outErr = ConfigLoadResult::OK;
+            return true;
+        }
+    }
+
+    LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
+    outErr = ConfigLoadResult::CORRUPT;
+    return false;
+}
+
 // ─────────────────────────────────────────────────────────
 bool Storage::load() {
-    if (!_ready) return false;
-
-    AppConfigBlob blob = {};
-    const size_t storedLen = prefs.getBytesLength(KEY_CFG);
-    if (storedLen == 0) {
-        LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_EMPTY);
-        return false;
-    }
-    if (storedLen != sizeof(blob)) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
-        return false;
-    }
-    size_t readBytes = prefs.getBytes(KEY_CFG, &blob, sizeof(blob));
-    if (readBytes != sizeof(blob)) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_SIZE_MISMATCH);
-        return false;
-    }
-    if (blob.version != NVS_VERSION) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_VER_MISMATCH,
-              (unsigned)blob.version, (unsigned)NVS_VERSION);
-        return false;
-    }
-    if (!_blobHasValidBooleans(blob)) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_BOOL_INV);
+    if (!_ready) {
+        _lastLoadResult = ConfigLoadResult::NOT_READY;
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_LOAD_FAILED);
         return false;
     }
 
-    uint16_t expectedCrc = _crc16(reinterpret_cast<const uint8_t*>(&blob),
-                                  offsetof(AppConfigBlob, crc16));
-    if (blob.crc16 != expectedCrc) {
-        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_CRC_FAIL, TXT_LOG_NVS_PART_CFG);
+    AppConfigBlob blobA = {}, blobB = {};
+    uint32_t seqA = 0, seqB = 0;
+    bool envA = false, envB = false;
+    ConfigLoadResult errA = ConfigLoadResult::EMPTY, errB = ConfigLoadResult::EMPTY;
+
+    const bool okA = _readConfigSlot(KEY_CFG,   blobA, seqA, envA, errA);
+    const bool okB = _readConfigSlot(KEY_CFG_B, blobB, seqB, envB, errB);
+
+    if (!okA && !okB) {
+        _configSeq = 0;
+        _activeSlot = 0;
+        _backupSeeded = false;
+        if (errA == ConfigLoadResult::EMPTY && errB == ConfigLoadResult::EMPTY) {
+            _lastLoadResult = ConfigLoadResult::EMPTY;
+            LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_EMPTY);
+            return false;
+        }
+        _lastLoadResult = (errA == ConfigLoadResult::VERSION_MISMATCH ||
+                           errB == ConfigLoadResult::VERSION_MISMATCH) &&
+                          (errA != ConfigLoadResult::CORRUPT && errB != ConfigLoadResult::CORRUPT)
+                          ? ConfigLoadResult::VERSION_MISMATCH
+                          : ConfigLoadResult::CORRUPT;
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_LOAD_FAILED);
         return false;
     }
 
-    if (!_blobToState(blob)) {
+    // Choose order: newer sequence first (wrap-safe signed delta); enveloped preferred over legacy
+    uint8_t firstIdx = 0;
+    if (okA && okB) {
+        if (envA != envB) {
+            firstIdx = envB ? 1 : 0;
+        } else if ((int32_t)(seqB - seqA) > 0) {
+            firstIdx = 1;
+        } else {
+            firstIdx = 0;
+        }
+    } else {
+        firstIdx = okA ? 0 : 1;
+    }
+
+    const bool slotOk[2] = { okA, okB };
+    const uint32_t slotSeq[2] = { seqA, seqB };
+    const AppConfigBlob* slotBlob[2] = { &blobA, &blobB };
+    const ConfigLoadResult slotErr[2] = { errA, errB };
+
+    uint8_t chosen = 0xFF;
+    bool usedBackup = false;
+    for (uint8_t attempt = 0; attempt < 2; attempt++) {
+        uint8_t idx = (attempt == 0) ? firstIdx : (uint8_t)(1U - firstIdx);
+        if (!slotOk[idx]) continue;
+        if (_blobToState(*slotBlob[idx])) {
+            chosen = idx;
+            const uint8_t other = (uint8_t)(1U - idx);
+            if (attempt == 1 || (slotErr[other] != ConfigLoadResult::OK &&
+                                 slotErr[other] != ConfigLoadResult::EMPTY)) {
+                usedBackup = true;
+            }
+            break;
+        }
+    }
+
+    if (chosen == 0xFF) {
+        _configSeq = 0;
+        _activeSlot = 0;
+        _backupSeeded = false;
+        _lastLoadResult = ConfigLoadResult::CORRUPT;
+        LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_LOAD_FAILED);
         return false;
+    }
+
+    _activeSlot = chosen;
+    _configSeq = slotSeq[chosen];
+    _backupSeeded = (okA && okB && envA && envB && !usedBackup);
+    _lastLoadResult = ConfigLoadResult::OK;
+
+    if (usedBackup) {
+        LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_BACKUP_USED);
     }
 
     LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_LOADED,
@@ -191,23 +379,64 @@ bool Storage::save() {
     AppConfigBlob blob = {};
     _stateToBlob(blob);
 
-    // Read current to avoid unnecessary write
-    AppConfigBlob current = {};
-    if (prefs.getBytes(KEY_CFG, &current, sizeof(current)) == sizeof(current) &&
-        memcmp(&blob, &current, sizeof(blob)) == 0) {
-        _savePending = false;
-        return true;
+    const char* slotKeys[2] = { KEY_CFG, KEY_CFG_B };
+
+    // Avoid unnecessary flash writes if active slot already holds identical enveloped config
+    // and the backup slot is already seeded.
+    if (_backupSeeded) {
+        AppConfigSlot current = {};
+        if (prefs.getBytes(slotKeys[_activeSlot], &current, sizeof(current)) == sizeof(current) &&
+            current.magic == CFG_SLOT_MAGIC &&
+            current.version == NVS_VERSION &&
+            memcmp(&blob, &current.blob, sizeof(blob)) == 0) {
+            _savePending = false;
+            _lastLoadResult = ConfigLoadResult::OK;
+            return true;
+        }
     }
 
-    size_t written = prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
-    if (written != sizeof(blob)) {
+    uint32_t nextSeq = _configSeq + 1UL;
+    if (nextSeq == 0) nextSeq = 1UL;
+
+    AppConfigSlot slot = {};
+    slot.magic   = CFG_SLOT_MAGIC;
+    slot.version = NVS_VERSION;
+    slot.seq     = nextSeq;
+    slot.blob    = blob;
+    slot.slot_crc16 = _crc16(reinterpret_cast<const uint8_t*>(&slot),
+                             offsetof(AppConfigSlot, slot_crc16));
+
+    // Alternate slots so the previous valid copy stays intact while writing the new one.
+    uint8_t target = 0;
+    if (_backupSeeded) {
+        target = (uint8_t)(1U - _activeSlot);
+    } else if (_activeSlot == 0 && prefs.getBytesLength(KEY_CFG) > 0) {
+        target = 1; // Keep existing KEY_CFG intact while seeding KEY_CFG_B first
+    } else {
+        target = 0;
+    }
+
+    if (prefs.putBytes(slotKeys[target], &slot, sizeof(slot)) != sizeof(slot)) {
         _savePending = true;
         _lastSaveRetryMs = millis();
         LOG_E(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
         return false;
     }
 
+    _configSeq = nextSeq;
+    _activeSlot = target;
     _savePending = false;
+    _lastLoadResult = ConfigLoadResult::OK;
+
+    // Seed the alternate slot on first save (or after recovering from a damaged slot)
+    // so two valid copies exist immediately without waiting for a second user edit.
+    if (!_backupSeeded) {
+        uint8_t mirror = (uint8_t)(1U - target);
+        if (prefs.putBytes(slotKeys[mirror], &slot, sizeof(slot)) == sizeof(slot)) {
+            _backupSeeded = true;
+        }
+    }
+
     LOG_D(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_UPDATED, serialModeName(gState.mode));
     return true;
 }
@@ -232,6 +461,10 @@ bool Storage::clear() {
         return false;
     }
     _savePending = false;
+    _configSeq = 0;
+    _activeSlot = 0;
+    _backupSeeded = false;
+    _lastLoadResult = ConfigLoadResult::EMPTY;
     LOG_I(TXT_LOG_TAG_STORAGE, TXT_LOG_MEM_CLEARED);
     return true;
 }

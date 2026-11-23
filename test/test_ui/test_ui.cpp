@@ -1472,6 +1472,38 @@ void test_ui_idle_displays_skipped_slot_notice(void) {
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expected) != nullptr);
 }
 
+void test_ui_shows_config_lost_alert_only_on_load_failure(void) {
+    // 1. Fresh empty NVS -> Setup Welcome directly (no false error screen)
+    storage.clear();
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+    testUi.begin();
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+
+    // 2. Corrupt NVS load failure -> persistent ScreenInfo alert before Setup Welcome
+    uint8_t garbage[44];
+    memset(garbage, 0xEE, sizeof(garbage));
+    prefs.putBytes("cfg", garbage, sizeof(garbage));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    testUi.begin();
+    TEST_ASSERT_TRUE(testUi.inSetup());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), TXT_ERR_CFG_LOST_TITLE) != nullptr);
+
+    // Must remain visible past IDLE_TIMEOUT_MS until acknowledged
+    advanceMockMillis(IDLE_TIMEOUT_MS + 5000UL);
+    testUi.update();
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+
+    // Clicking advances into Setup Welcome
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
@@ -1497,5 +1529,6 @@ int main(void) {
     RUN_TEST(test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry);
     RUN_TEST(test_ui_blocks_manual_and_test_while_watering_active);
     RUN_TEST(test_ui_idle_displays_skipped_slot_notice);
+    RUN_TEST(test_ui_shows_config_lost_alert_only_on_load_failure);
     return UNITY_END();
 }

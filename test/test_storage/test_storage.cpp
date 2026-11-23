@@ -390,23 +390,101 @@ void test_storage_nvs_load_crc_rejection_and_clamping(void) {
     gState.zones[0].duration_min = 12;
     TEST_ASSERT_TRUE(storage.save());
 
-    AppConfigBlob blob = {};
-    TEST_ASSERT_EQUAL_UINT32(sizeof(blob), prefs.getBytes(KEY_CFG, &blob, sizeof(blob)));
+    AppConfigSlot slot = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(slot), prefs.getBytes(KEY_CFG, &slot, sizeof(slot)));
 
-    // 1. Corrupt byte in NVS without updating CRC -> load() rejects
-    blob.zones[0].duration_min = 9;
-    prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    // 1. Corrupt byte in BOTH slots without updating CRC -> load() rejects with CORRUPT
+    slot.blob.zones[0].duration_min = 9;
+    prefs.putBytes(KEY_CFG, &slot, sizeof(slot));
+    prefs.putBytes(KEY_CFG_B, &slot, sizeof(slot));
     initAppState();
+    Serial.reset();
     TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::CORRUPT, storage.lastLoadResult());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
     TEST_ASSERT_EQUAL(AppMode::DESATIVADO, gState.mode);
+#if LOG_LEVEL >= LVL_ERROR
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_LOAD_FAILED) != std::string::npos);
+#endif
 
-    // 2. Corrupted duration > 20 in NVS WITH valid CRC -> load() defensively clamps to 8
-    blob.zones[0].duration_min = 30;
-    blob.crc16 = Storage::_crc16((const uint8_t*)&blob, offsetof(AppConfigBlob, crc16));
-    prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    // 2. Corrupted duration > 20 in NVS WITH valid inner & outer CRC -> load() defensively clamps to 8
+    slot.blob.zones[0].duration_min = 30;
+    slot.blob.crc16 = Storage::_crc16((const uint8_t*)&slot.blob, offsetof(AppConfigBlob, crc16));
+    slot.slot_crc16 = Storage::_crc16((const uint8_t*)&slot, offsetof(AppConfigSlot, slot_crc16));
+    prefs.putBytes(KEY_CFG, &slot, sizeof(slot));
+    prefs.putBytes(KEY_CFG_B, &slot, sizeof(slot));
     initAppState();
     TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::OK, storage.lastLoadResult());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
     TEST_ASSERT_EQUAL_UINT8(8, gState.zones[0].duration_min);
+}
+
+void test_storage_dual_slot_ping_pong_backup_and_legacy_compat(void) {
+    // 1. Empty NVS (first boot) is EMPTY, NOT a load failure
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::EMPTY, storage.lastLoadResult());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+
+    // 2. First save seeds both cfg and cfg_b (seq=1); second save alternates to newer seq=2
+    gState.mode = AppMode::MEDIO;
+    gState.setup_done = true;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_EQUAL_UINT32(sizeof(AppConfigSlot), prefs.getBytesLength(KEY_CFG));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(AppConfigSlot), prefs.getBytesLength(KEY_CFG_B));
+
+    gState.mode = AppMode::INTENSO;
+    TEST_ASSERT_TRUE(storage.save());
+
+    AppConfigSlot sA = {}, sB = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(sA), prefs.getBytes(KEY_CFG, &sA, sizeof(sA)));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(sB), prefs.getBytes(KEY_CFG_B, &sB, sizeof(sB)));
+    TEST_ASSERT_TRUE((sA.seq == 2 && sB.seq == 1) || (sB.seq == 2 && sA.seq == 1));
+
+    // Reload picks newer seq=2 (INTENSO)
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::INTENSO, gState.mode);
+
+    // 3. Corrupt newer slot -> automatically recovers older valid slot (MEDIO) with warning
+    const char* newerKey = (sA.seq > sB.seq) ? KEY_CFG : KEY_CFG_B;
+    AppConfigSlot badNewer = (sA.seq > sB.seq) ? sA : sB;
+    badNewer.blob.mode ^= 0xFF; // breaks both inner & outer CRC
+    prefs.putBytes(newerKey, &badNewer, sizeof(badNewer));
+
+    initAppState();
+    Serial.reset();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::MEDIO, gState.mode);
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_BACKUP_USED) != std::string::npos);
+#endif
+
+    // 4. Version mismatch on stored config reports VERSION_MISMATCH (configLoadFailed == true)
+    storage.clear();
+    AppConfigSlot oldVer = sA;
+    oldVer.version = NVS_VERSION - 1;
+    oldVer.blob.version = NVS_VERSION - 1;
+    oldVer.blob.crc16 = Storage::_crc16((const uint8_t*)&oldVer.blob, offsetof(AppConfigBlob, crc16));
+    oldVer.slot_crc16 = Storage::_crc16((const uint8_t*)&oldVer, offsetof(AppConfigSlot, slot_crc16));
+    prefs.putBytes(KEY_CFG, &oldVer, sizeof(oldVer));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::VERSION_MISMATCH, storage.lastLoadResult());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    // 5. Legacy single-slot 36-byte v5 AppConfigBlob in KEY_CFG still loads cleanly
+    storage.clear();
+    AppConfigBlob legacy = sA.blob;
+    legacy.mode = (uint8_t)AppMode::FRACO;
+    legacy.crc16 = Storage::_crc16((const uint8_t*)&legacy, offsetof(AppConfigBlob, crc16));
+    prefs.putBytes(KEY_CFG, &legacy, sizeof(legacy));
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::FRACO, gState.mode);
+    TEST_ASSERT_EQUAL(ConfigLoadResult::OK, storage.lastLoadResult());
 }
 
 void test_storage_history_blob_atomic_and_filesize(void) {
@@ -644,6 +722,7 @@ int main(void) {
     RUN_TEST(test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected);
     RUN_TEST(test_storage_zero_duration_normalizes_enabled_false);
     RUN_TEST(test_storage_nvs_load_crc_rejection_and_clamping);
+    RUN_TEST(test_storage_dual_slot_ping_pong_backup_and_legacy_compat);
     RUN_TEST(test_storage_history_blob_atomic_and_filesize);
     RUN_TEST(test_storage_last_triggers_roundtrip);
     RUN_TEST(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);

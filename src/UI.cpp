@@ -54,6 +54,15 @@ void UI::begin() {
     _lastActivity = millis();
     if (!gState.setup_done) {
         _startSetup();
+        if (storage.configLoadFailed()) {
+            _screenInfo.setup(TXT_ERR_CFG_LOST_TITLE,
+                              TXT_ERR_CFG_LOST_L1,
+                              TXT_ERR_CFG_LOST_L2,
+                              TXT_ERR_CFG_LOST_L3,
+                              MenuID::MAIN,
+                              &_screenSetupWelcome);
+            changeScreen(&_screenInfo);
+        }
     } else {
         _inSetup = false;
         goIdle();

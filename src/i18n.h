@@ -121,6 +121,10 @@
 #define TXT_ERR_FOR_CYCLES "for custom cycles."
 #define TXT_ERR_REDUCE "Reduce zones/cycles"
 #define TXT_ERR_TITLE "! ERROR !"
+#define TXT_ERR_CFG_LOST_TITLE "! CONFIG RESET !"
+#define TXT_ERR_CFG_LOST_L1 "Saved settings lost"
+#define TXT_ERR_CFG_LOST_L2 "Defaults restored."
+#define TXT_ERR_CFG_LOST_L3 "Click to setup"
 #define TXT_ERR_TOTAL_DUR "Total duration"
 #define TXT_ERR_EXCEEDS_24H "exceeds 24h."
 #define TXT_ERR_NO_RTC "! NO RTC !"
@@ -318,6 +322,10 @@
 #define TXT_ERR_FOR_CYCLES "para ciclos pers."
 #define TXT_ERR_REDUCE "Reduza zonas/ciclos"
 #define TXT_ERR_TITLE "! ERRO !"
+#define TXT_ERR_CFG_LOST_TITLE "! CONFIG REPOSTA !"
+#define TXT_ERR_CFG_LOST_L1 "Definicoes perdidas"
+#define TXT_ERR_CFG_LOST_L2 "Sistema desativado."
+#define TXT_ERR_CFG_LOST_L3 "Clique p/ configurar"
 #define TXT_ERR_TOTAL_DUR "Duracao total"
 #define TXT_ERR_EXCEEDS_24H "excede 24h."
 #define TXT_ERR_NO_RTC "! SEM RTC !"
@@ -540,6 +548,8 @@
   "  Watering State: ACTIVE (Next watering scheduled for %04d-%02d-%02d %02d:%02d)\r\n"
 #define TXT_TERM_STAT_SKIPPED                                                  \
   "  Last Notice:    Skipped %02d:%02d schedule (watering was active)\r\n"
+#define TXT_TERM_STAT_CFG_LOST                                                 \
+  "  Settings:       WARNING - Saved config failed to load (reverted to defaults)"
 #define TXT_TERM_STAT_ZONES "  Watering Zones:"
 #define TXT_TERM_STAT_Z_FMT "    Zone %d: [%s] Duration: %d min - Name: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Active Watering: "
@@ -720,6 +730,8 @@
 #define TXT_LOG_NVS_VER_MISMATCH "Saved settings format v%u differs from v%u - using defaults"
 #define TXT_LOG_NVS_BOOL_INV "Saved settings had invalid on/off flags - using defaults"
 #define TXT_LOG_NVS_LOADED "Loaded settings (Mode: %s, Paused: %s)"
+#define TXT_LOG_NVS_BACKUP_USED "Primary settings copy damaged - recovered from backup slot"
+#define TXT_LOG_NVS_LOAD_FAILED "Failed to load saved settings - reverted to safe defaults (Disabled)"
 #define TXT_LOG_NVS_UPDATED "Settings saved (Mode: %s)"
 #define TXT_LOG_NVS_WRITE_FAIL "Failed to save %s"
 #define TXT_LOG_NVS_PART_CFG "settings"
@@ -894,6 +906,8 @@
   "  Estado Rega: ATIVA (Proxima rega agendada para %04d-%02d-%02d %02d:%02d)\r\n"
 #define TXT_TERM_STAT_SKIPPED                                                  \
   "  Ultimo Aviso:   Horario %02d:%02d ignorado (rega ja estava ativa)\r\n"
+#define TXT_TERM_STAT_CFG_LOST                                                 \
+  "  Definicoes:     AVISO - Falha ao carregar configuracao (reposto em predefinicoes)"
 #define TXT_TERM_STAT_ZONES "  Zonas de Rega:"
 #define TXT_TERM_STAT_Z_FMT "    Zona %d: [%s] Duracao: %d min - Nome: %.11s\r\n"
 #define TXT_TERM_STAT_ACT "  Rega Ativa:  "
@@ -1133,6 +1147,10 @@
 #define TXT_LOG_NVS_BOOL_INV                                                   \
   "Definicoes tinham opcoes invalidas - a usar predefinicoes"
 #define TXT_LOG_NVS_LOADED "Definicoes carregadas (Modo: %s, Pausa: %s)"
+#define TXT_LOG_NVS_BACKUP_USED                                                \
+  "Copia principal danificada - definicoes recuperadas da copia de reserva"
+#define TXT_LOG_NVS_LOAD_FAILED                                                \
+  "Falha ao carregar definicoes guardadas - sistema reposto em predefinicoes (Desativado)"
 #define TXT_LOG_NVS_UPDATED "Definicoes guardadas (Modo: %s)"
 #define TXT_LOG_NVS_WRITE_FAIL "Falha ao guardar %s"
 #define TXT_LOG_NVS_PART_CFG "definicoes"
