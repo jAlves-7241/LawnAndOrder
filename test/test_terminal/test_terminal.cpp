@@ -795,8 +795,7 @@ static void test_terminal_clear_history_force_args_timeout_and_empty_repair(void
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
 }
 
-static void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date(void) {
-    // 1. export_history on unmounted FS reports unavailable (not "History is empty.")
+static void test_terminal_export_history_unmounted_fs_reports_unavailable(void) {
     HistoryEntry seed = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
     history.record(seed);
     LittleFS.mountFail = true;
@@ -810,10 +809,9 @@ static void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_sta
 #if LOG_LEVEL >= LVL_ERROR
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_HIST_NOT_READY) != std::string::npos);
 #endif
-    LittleFS.mountFail = false;
-    history.begin();
+}
 
-    // 2. i2c_scan while watering is active is rejected cleanly
+static void test_terminal_i2c_scan_rejected_while_watering_active(void) {
     gState.watering.active = true;
     Wire.detectedAddresses.push_back(0x27);
     Serial.reset();
@@ -825,8 +823,9 @@ static void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_sta
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_I2C_SCAN_ACTIVE) != std::string::npos);
 #endif
     gState.watering.active = false;
+}
 
-    // 3. reboot during Setup Wizard does NOT call ui.goIdle()
+static void test_terminal_reboot_during_setup_does_not_go_idle(void) {
     _ui_in_setup = true;
     _ui_went_idle = false;
     ESP.reset();
@@ -836,8 +835,9 @@ static void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_sta
     TEST_ASSERT_TRUE(ESP.rebooted);
     TEST_ASSERT_FALSE(_ui_went_idle);
     _ui_in_setup = false;
+}
 
-    // 4. status prints full YYYY-MM-DD HH:MM for next scheduled watering (multi-day custom mode)
+static void test_terminal_status_shows_full_next_date_and_setup_standby(void) {
     gState.setup_done = true;
     gState.mode = AppMode::PERSONALIZADO;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
@@ -854,16 +854,16 @@ static void test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_sta
     terminal.update();
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-18 07:30") != std::string::npos);
 
-    // 4b. status reports setup standby instead of ACTIVE while initial setup wizard is incomplete
+    // status reports setup standby instead of ACTIVE while initial setup wizard is incomplete
     gState.setup_done = false;
     Serial.reset();
     Serial.feedInput("status\r\n");
     terminal.update();
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_SETUP) != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-18 07:30") == std::string::npos);
-    gState.setup_done = true;
+}
 
-    // 5. Expired clear_history confirmation appends blank line
+static void test_terminal_expired_clear_history_appends_blank_line(void) {
     HistoryEntry he = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
     history.record(he);
     Serial.reset();
@@ -1101,7 +1101,11 @@ int main(void) {
     RUN_UT(test_terminal_sw_clock_status_pipelined_export_and_wipe_failure);
     RUN_UT(test_terminal_status_reports_and_clears_rtc_battery_warning);
     RUN_UT(test_terminal_clear_history_force_args_timeout_and_empty_repair);
-    RUN_UT(test_terminal_phase4_export_unmounted_i2c_guard_reboot_setup_and_status_date);
+    RUN_UT(test_terminal_export_history_unmounted_fs_reports_unavailable);
+    RUN_UT(test_terminal_i2c_scan_rejected_while_watering_active);
+    RUN_UT(test_terminal_reboot_during_setup_does_not_go_idle);
+    RUN_UT(test_terminal_status_shows_full_next_date_and_setup_standby);
+    RUN_UT(test_terminal_expired_clear_history_appends_blank_line);
     RUN_UT(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
     RUN_UT(test_terminal_import_config_clears_expired_suspension_immediately);
     RUN_UT(test_terminal_ansi_control_abort_and_zero_zones_status);
