@@ -63,11 +63,7 @@ bool clearI2CBus() {
 }
 
 void configureI2CTimeout() {
-#if defined(WIRE_HAS_TIMEOUT)
-    Wire.setWireTimeout(50000, true); // 50 ms com auto-reset do barramento por hardware
-#else
     Wire.setTimeOut(50);
-#endif
 }
 
 void recoverI2CWith(Display& disp, RTClock& clk, I2CRecoveryState& state) {

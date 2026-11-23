@@ -33,6 +33,8 @@ bool RTClock::_probeRtcI2c() {
 bool RTClock::_ensureRtcDriver() {
     if (!_probeRtcI2c()) return false;
     if (!_rtcDriverReady) {
+        // Adafruit_I2CDevice::begin() calls Wire.begin(), which on ESP32 Arduino Core
+        // returns immediately when Wire.begin(PIN_SDA, PIN_SCL) has already initialized the bus.
         _rtcDriverReady = _rtc.begin();
     }
     return _rtcDriverReady;

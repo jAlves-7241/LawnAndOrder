@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <esp_task_wdt.h>
-#if __has_include(<esp_idf_version.h>)
-  #include <esp_idf_version.h>
+#include <esp_idf_version.h>
+#if !defined(ESP_IDF_VERSION) || !defined(ESP_IDF_VERSION_VAL) || \
+    (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0))
+  #error "Lawn & Order requires ESP-IDF >= 5.0.0 (Arduino-ESP32 Core 3.x)"
 #endif
 #if __has_include(<esp_system.h>)
   #include <esp_system.h>
@@ -80,37 +82,19 @@ void setup() {
     LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_BOOT,
           FW_VERSION, FW_BUILD_DATE, resetReasonStr());
 
-    // Inicializar o Watchdog com timeout parametrizado e reset automatico (compativel com ESP-IDF v4 e v5)
-#if LOG_LEVEL >= LVL_ERROR
-    esp_err_t wdt_err;
-#endif
-#if defined(ESP_IDF_VERSION) && defined(ESP_IDF_VERSION_VAL) && \
-    (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0))
+    // Inicializar o Watchdog com timeout parametrizado e reset automatico (ESP-IDF 5 / Arduino Core 3.x)
     esp_task_wdt_config_t wdt_config = {
         .timeout_ms = WDT_TIMEOUT_S * 1000,
         .idle_core_mask = (1 << 0), // Watch Core 0 idle (Arduino-ESP32 default); Core 1 loopTask is watched via esp_task_wdt_add(NULL)
         .trigger_panic = true
     };
-  #if LOG_LEVEL >= LVL_ERROR
-    wdt_err = esp_task_wdt_init(&wdt_config);
+#if LOG_LEVEL >= LVL_ERROR
+    esp_err_t wdt_err = esp_task_wdt_init(&wdt_config);
     if (wdt_err == ESP_ERR_INVALID_STATE) {
         // No Arduino Core 3.x (ESP-IDF 5), o TWDT ja vem pre-inicializado pelo core.
         // Reconfigurar para aplicar o timeout customizado de 8s.
         wdt_err = esp_task_wdt_reconfigure(&wdt_config);
     }
-  #else
-    if (esp_task_wdt_init(&wdt_config) == ESP_ERR_INVALID_STATE) {
-        esp_task_wdt_reconfigure(&wdt_config);
-    }
-  #endif
-#else
-  #if LOG_LEVEL >= LVL_ERROR
-    wdt_err = esp_task_wdt_init(WDT_TIMEOUT_S, true);
-  #else
-    esp_task_wdt_init(WDT_TIMEOUT_S, true);
-  #endif
-#endif
-#if LOG_LEVEL >= LVL_ERROR
     if (wdt_err != ESP_OK) {
         char errBuf[40];
         espErrDesc(wdt_err, errBuf, sizeof(errBuf));
@@ -125,6 +109,9 @@ void setup() {
         LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_ADD_FAIL, errBuf);
     }
 #else
+    if (esp_task_wdt_init(&wdt_config) == ESP_ERR_INVALID_STATE) {
+        esp_task_wdt_reconfigure(&wdt_config);
+    }
     esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
 #endif
 
