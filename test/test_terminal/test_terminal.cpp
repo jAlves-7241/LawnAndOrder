@@ -658,14 +658,13 @@ void test_terminal_sw_clock_status_pipelined_export_and_wipe_failure(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedInfoSup) != std::string::npos);
 #endif
 
-    // 4. clear_history when History is not ready prints TXT_TERM_WIPE_FAIL instead of TXT_TERM_WIPE_OK
+    // 4. clear_history without force when History is not ready prints TXT_TERM_HIST_UNAVAIL immediately without prompting
     history._ready = false;
     Serial.reset();
     Serial.feedInput("clear_history\n");
     terminal.update();
-    Serial.feedInput("y\n");
-    terminal.update();
-    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_FAIL) != std::string::npos);
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_HIST_UNAVAIL) != std::string::npos);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) == std::string::npos);
 
     // 5. clear_history force repairs failed LittleFS mount after confirmation
@@ -757,16 +756,14 @@ void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
     TEST_ASSERT_FALSE(terminal._pendingClearForce);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_EXPIRED) != std::string::npos);
 
-    // Subsequent plain clear_history without force still fails on unmounted FS
+    // Subsequent plain clear_history without force rejects unmounted FS upfront without prompting
     Serial.reset();
     Serial.feedInput("clear_history\n");
     terminal.update();
-    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+    TEST_ASSERT_FALSE(terminal._pendingClearHistory);
     TEST_ASSERT_FALSE(terminal._pendingClearForce);
-    Serial.feedInput("y\n");
-    terminal.update();
     TEST_ASSERT_FALSE(history.isReady());
-    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_FAIL) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_HIST_UNAVAIL) != std::string::npos);
 
     // 4. "--force" repairs mount and also succeeds when mounted FS is already empty
     LittleFS.mountFail = false;
@@ -781,6 +778,21 @@ void test_terminal_clear_history_force_args_timeout_and_empty_repair(void) {
     Serial.feedInput("y\n");
     terminal.update();
     TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
+
+    // 5. Plain clear_history removes a corrupt-only /history.csv even when entryCount() settled to 0
+    LittleFS.files[HISTORY_FILE] = "CORRUPT_ONLY_LINE\r\n";
+    history = History();
+    TEST_ASSERT_TRUE(history.begin());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+    TEST_ASSERT_TRUE(history.hasFileData());
+    Serial.reset();
+    Serial.feedInput("clear_history\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._pendingClearHistory);
+    Serial.feedInput("y\n");
+    terminal.update();
+    TEST_ASSERT_FALSE(history.hasFileData());
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WIPE_OK) != std::string::npos);
 }
 

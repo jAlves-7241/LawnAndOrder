@@ -695,7 +695,7 @@ void Terminal::_cmdStatus(char* /*args*/) {
     Serial.println(TXT_TERM_STAT_ZONES);
     for (int i = 0; i < NUM_ZONES; i++) {
         Serial.printf(TXT_TERM_STAT_Z_FMT, i + 1,
-                      gState.zones[i].enabled ? TXT_ON : TXT_OFF,
+                      gState.zones[i].enabled ? TXT_SER_ON : TXT_SER_OFF,
                       gState.zones[i].duration_min, gState.zones[i].name);
     }
     Serial.println();
@@ -844,7 +844,12 @@ void Terminal::_cmdClearHistory(char* args) {
             return;
         }
     }
-    if (!force && history.isReady() && history.entryCount() == 0) {
+    if (!force && !history.isReady()) {
+        LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
+        Serial.println(TXT_TERM_HIST_UNAVAIL);
+        return;
+    }
+    if (!force && history.isReady() && history.entryCount() == 0 && !history.hasFileData()) {
         Serial.println(TXT_TERM_HIST_EMPTY);
         return;
     }
