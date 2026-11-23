@@ -77,6 +77,7 @@ void setup() {
     // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else.
     initRelayPinsSafe();
 
+    Serial.setRxBufferSize(1024);
     Serial.begin(115200);
     Serial.println();
     LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_BOOT,

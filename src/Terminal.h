@@ -19,6 +19,7 @@ private:
 
     bool _in_ansi = false;
     uint8_t _ansi_bytes = 0;
+    uint32_t _ansiStartMs = 0;
     bool _ignore_rest = false;
     bool _tailDirty = false;
     char _last_c = 0;

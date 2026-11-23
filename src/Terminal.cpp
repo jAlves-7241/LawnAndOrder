@@ -134,7 +134,7 @@ static bool parseExactSetTime(const char* s, int& yr, int& mo, int& dy,
 Terminal::Terminal()
     : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _pendingClearForce(false),
       _pendingClearAtMs(0),
-      _ansi_buf{}, _in_ansi(false), _ansi_bytes(0), _ignore_rest(false),
+      _ansi_buf{}, _in_ansi(false), _ansi_bytes(0), _ansiStartMs(0), _ignore_rest(false),
       _tailDirty(false), _last_c(0)
 {
     memset(_buffer, 0, sizeof(_buffer));
@@ -148,6 +148,7 @@ void Terminal::begin() {
     _pendingClearAtMs = 0;
     _in_ansi = false;
     _ansi_bytes = 0;
+    _ansiStartMs = 0;
     _ignore_rest = false;
     _tailDirty = false;
     _last_c = 0;
@@ -251,6 +252,8 @@ void Terminal::_drainInput() {
     _pendingClearForce = false;
     _pendingClearAtMs = 0;
     _in_ansi = false;
+    _ansi_bytes = 0;
+    _ansiStartMs = 0;
     _ignore_rest = false;
     _tailDirty = false;
 }
@@ -265,17 +268,31 @@ bool Terminal::_feedAnsi(char c) {
     if (c == 27) {
         _in_ansi = true;
         _ansi_bytes = 0;
+        _ansiStartMs = millis();
         _last_c = c;
         return true;
     }
 
     if (!_in_ansi) return false;
 
+    // Expire a lone ESC if no sequence introducer arrived promptly
+    if (_ansi_bytes == 0 && (uint32_t)(millis() - _ansiStartMs) >= 50UL) {
+        _in_ansi = false;
+        return false;
+    }
+
     // Abort incomplete/malformed ANSI sequences on C0 control chars or DEL
     // so Enter, Backspace, Ctrl+C, and Ctrl+U are never swallowed.
     if ((unsigned char)c < 32 || (unsigned char)c == 127) {
         _in_ansi = false;
         _ansi_bytes = 0;
+        return false;
+    }
+
+    // After ESC, only '[' (CSI) and 'O' (SS3) start sequences we handle;
+    // any other byte aborts ANSI mode and passes through untouched (Esc + 'h' keeps 'h').
+    if (_ansi_bytes == 0 && c != '[' && c != 'O') {
+        _in_ansi = false;
         return false;
     }
 
@@ -293,19 +310,9 @@ bool Terminal::_feedAnsi(char c) {
 
     _ansi_bytes++;
 
-    // Check for sequence terminator
-    bool is_terminator = false;
-    if (_ansi_bytes == 1) {
-        // After ESC, expect '[' or 'O'; anything else terminates immediately
-        if (c != '[' && c != 'O') {
-            is_terminator = true;
-        }
-    } else {
-        // CSI / SS3 sequences terminate on ECMA-48 final bytes (0x40..0x7E)
-        if ((unsigned char)c >= 0x40 && (unsigned char)c <= 0x7E) {
-            is_terminator = true;
-        }
-    }
+    // CSI / SS3 sequences terminate on ECMA-48 final bytes (0x40..0x7E)
+    bool is_terminator = (_ansi_bytes >= 2 &&
+                          (unsigned char)c >= 0x40 && (unsigned char)c <= 0x7E);
 
     if (is_terminator) {
         _in_ansi = false;
@@ -500,6 +507,11 @@ void Terminal::update() {
     if (history.isExporting()) {
         _drainInput();
         return;
+    }
+
+    // Expirar ESC isolado se nenhum introdutor CSI/SS3 chegar em 50 ms
+    if (_in_ansi && _ansi_bytes == 0 && (uint32_t)(millis() - _ansiStartMs) >= 50UL) {
+        _in_ansi = false;
     }
 
     // Expirar confirmação pendente de limpeza após 30 s de inatividade

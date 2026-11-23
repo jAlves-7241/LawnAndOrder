@@ -1009,6 +1009,36 @@ void test_terminal_ansi_control_abort_and_zero_zones_status(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_STAT_NO_ZONES) != std::string::npos);
 }
 
+void test_terminal_lone_esc_preserves_next_char(void) {
+    // 1. Lone ESC followed immediately by a printable non-CSI/SS3 char must not swallow it
+    Serial.reset();
+    Serial.feedInput("\033help\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+
+    // 2. Lone ESC followed by >= 50 ms pause before 'O' or '[' expires ANSI state cleanly
+    Serial.reset();
+    Serial.feedInput("\033");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._in_ansi);
+    advanceMockMillis(60);
+    Serial.feedInput("Open");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_EQUAL_UINT16(4, terminal._bufLen);
+    TEST_ASSERT_EQUAL_MEMORY("Open", terminal._buffer, 4);
+    Serial.feedInput("\x03");
+    terminal.update();
+
+    // 3. Real SS3 Home (ESC O H) arriving promptly still executes cursor move
+    Serial.reset();
+    Serial.feedInput("bc\033OHa");
+    terminal.update();
+    TEST_ASSERT_EQUAL_UINT16(3, terminal._bufLen);
+    TEST_ASSERT_EQUAL_MEMORY("abc", terminal._buffer, 3);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_terminal_help_command);
@@ -1039,5 +1069,6 @@ int main(void) {
     RUN_TEST(test_terminal_set_time_reports_effective_dst_gap_and_utc_range_rejection);
     RUN_TEST(test_terminal_import_config_clears_expired_suspension_immediately);
     RUN_TEST(test_terminal_ansi_control_abort_and_zero_zones_status);
+    RUN_TEST(test_terminal_lone_esc_preserves_next_char);
     return UNITY_END();
 }
