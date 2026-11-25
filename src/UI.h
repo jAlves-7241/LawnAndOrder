@@ -78,8 +78,6 @@ private:
     bool _inSetup;
     SetupStep _setupStep;
     bool _configChanged;
-    bool _hasSaveRetry;
-    uint32_t _lastSaveRetryMs;
     uint32_t _lastActivity;
 
     uint16_t _dateYear;

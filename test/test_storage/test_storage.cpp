@@ -707,6 +707,63 @@ static void test_storage_begin_idempotent_oversized_blobs_write_rollback_and_ran
     Preferences::writeFail = false;
 }
 
+static void test_storage_dedup_checks_slot_crc_and_max_seq_on_backup_fallback(void) {
+    // 1. Corrupting slot_crc16 on the active slot prevents save() from falsely deduplicating
+    storage.clear();
+    gState.mode = AppMode::MEDIO;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_TRUE(storage._backupSeeded);
+
+    const char* activeKey = (storage._activeSlot == 0) ? KEY_CFG : KEY_CFG_B;
+    AppConfigSlot corrupted = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(corrupted), prefs.getBytes(activeKey, &corrupted, sizeof(corrupted)));
+    uint32_t seqBefore = storage._configSeq;
+    corrupted.slot_crc16 ^= 0x00FFU; // flip outer CRC while keeping magic/version/blob identical
+    prefs.putBytes(activeKey, &corrupted, sizeof(corrupted));
+
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_EQUAL_UINT32(seqBefore + 1UL, storage._configSeq); // rewrote instead of dedup skipping
+
+    // 2. When a higher-seq slot fails _blobToState() (custom overlap) and load() falls back to backup,
+    //    _configSeq adopts the max valid-envelope seq so the next save() strictly supersedes it
+    storage.clear();
+    gState.mode = AppMode::FRACO;
+    AppConfigSlot backupSlot = {};
+    backupSlot.magic = CFG_SLOT_MAGIC;
+    backupSlot.version = NVS_VERSION;
+    backupSlot.seq = 3;
+    storage._stateToBlob(backupSlot.blob);
+    backupSlot.slot_crc16 = Storage::_crc16(reinterpret_cast<const uint8_t*>(&backupSlot),
+                                            offsetof(AppConfigSlot, slot_crc16));
+
+    // Newer slot (seq=10) has valid CRCs but overlapping active PERSONALIZADO slots
+    gState.mode = AppMode::PERSONALIZADO;
+    gState.zones[0] = { "Z1", true, 10 };
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 2 }; // overlaps 10 min duration
+    AppConfigSlot newerBadSlot = {};
+    newerBadSlot.magic = CFG_SLOT_MAGIC;
+    newerBadSlot.version = NVS_VERSION;
+    newerBadSlot.seq = 10;
+    storage._stateToBlob(newerBadSlot.blob);
+    newerBadSlot.slot_crc16 = Storage::_crc16(reinterpret_cast<const uint8_t*>(&newerBadSlot),
+                                              offsetof(AppConfigSlot, slot_crc16));
+
+    prefs.putBytes(KEY_CFG, &newerBadSlot, sizeof(newerBadSlot));
+    prefs.putBytes(KEY_CFG_B, &backupSlot, sizeof(backupSlot));
+
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::FRACO, gState.mode);
+    TEST_ASSERT_EQUAL_UINT32(10UL, storage._configSeq);
+
+    gState.mode = AppMode::MEDIO;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_EQUAL_UINT32(11UL, storage._configSeq);
+}
+
 };
 
 void setUp(void) {
@@ -738,5 +795,6 @@ int main(void) {
     RUN_UT(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);
     RUN_UT(test_storage_backlight_upper_bound_import_and_load);
     RUN_UT(test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp);
+    RUN_UT(test_storage_dedup_checks_slot_crc_and_max_seq_on_backup_fallback);
     return UNITY_END();
 }

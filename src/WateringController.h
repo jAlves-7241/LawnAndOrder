@@ -40,6 +40,7 @@ private:
     bool     _isWaiting;
     bool     _isRelayDeadTimeWaiting;
     bool     _cycleStartValid;
+    bool     _recoveryClearPending;
     uint8_t  _recoveryRetryCount;
     uint8_t  _zoneIdx;
     uint32_t _zoneStartMs;
@@ -47,6 +48,7 @@ private:
     uint32_t _waitStartMs;
     uint32_t _relayWaitStartMs;
     uint32_t _lastPinRefreshMs;
+    uint32_t _lastRecoveryClearRetryMs;
 
     // ── History tracking ──────────────────────────────────
     WaterTrigger _runTrigger;              // trigger type of current cycle
@@ -64,6 +66,7 @@ private:
     void _deactivateAll();
     void _syncState();
     void _saveRecoveryState(bool active);
+    bool _clearRecoveryState();
 
     static const uint8_t _relayPins[NUM_ZONES];
 };

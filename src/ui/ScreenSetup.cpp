@@ -6,9 +6,6 @@
 #include "../Scheduler.h"
 #include "../log.h"
 
-extern Storage storage;
-extern Scheduler scheduler;
-
 void ScreenSetupWelcome::setup(bool isCompleteScreen) {
     _isComplete = isCompleteScreen;
 }

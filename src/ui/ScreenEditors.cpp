@@ -8,9 +8,6 @@
 #include <stdio.h>
 #include <string.h>
 
-extern Scheduler scheduler;
-extern RTClock rtclock;
-
 // ─────────────────────────────────────────────────────────
 // ScreenDurPick
 // ─────────────────────────────────────────────────────────

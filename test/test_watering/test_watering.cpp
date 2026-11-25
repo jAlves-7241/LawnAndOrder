@@ -1065,6 +1065,62 @@ static void test_watering_refuses_preemption_while_active(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::AUTO, rs.trigger);
 }
 
+static void test_watering_retries_failed_recovery_clear_even_after_test_run(void) {
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime() };
+    gState.zones[0] = { "Z1", true, 1 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+
+    // Simulate transient NVS write failure right when cycle stops and tries to clear RecoveryState
+    Preferences::writeFail = true;
+    wateringCtrl.stop();
+    Preferences::writeFail = false;
+
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_TRUE(wateringCtrl._recoveryClearPending);
+    RecoveryState rs = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_TRUE(rs.active); // still stuck active in NVS
+
+    // Intervening TEST run sets _runTrigger=TEST; clear retry must still work afterwards
+    TEST_ASSERT_TRUE(wateringCtrl.startTest(0));
+    wateringCtrl.stop();
+    TEST_ASSERT_TRUE(wateringCtrl._recoveryClearPending);
+
+    // Within 5 s throttle: still pending
+    advanceMockMillis(2000UL);
+    wateringCtrl.update();
+    TEST_ASSERT_TRUE(wateringCtrl._recoveryClearPending);
+
+    // After 5 s throttle: retries and clears NVS recovery state cleanly
+    advanceMockMillis(3500UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl._recoveryClearPending);
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_FALSE(rs.active);
+
+    // begin() abort path with NVS writeFail also arms _recoveryClearPending
+    rs.active = true;
+    rs.queueLen = 0; // invalid
+    TEST_ASSERT_TRUE(storage.saveRecoveryState(rs));
+    Preferences::writeFail = true;
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    Preferences::writeFail = false;
+    TEST_ASSERT_TRUE(wateringCtrl._recoveryClearPending);
+    advanceMockMillis(5500UL);
+    wateringCtrl.update();
+    TEST_ASSERT_FALSE(wateringCtrl._recoveryClearPending);
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_FALSE(rs.active);
+}
+
 };
 
 int main(void) {
@@ -1091,5 +1147,6 @@ int main(void) {
     RUN_UT(test_watering_begin_core3_periman_glitch_free_relay_off);
     RUN_UT(test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history);
     RUN_UT(test_watering_refuses_preemption_while_active);
+    RUN_UT(test_watering_retries_failed_recovery_clear_even_after_test_run);
     return UNITY_END();
 }

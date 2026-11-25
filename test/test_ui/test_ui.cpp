@@ -1405,23 +1405,33 @@ static void test_ui_setup_mode_includes_disabled_option(void) {
 
 static void test_ui_setup_completion_retries_failed_save_on_throttle(void) {
     initUiIdleFixture();
-    // Setup completion & UI::update() retry failed storage.save() cleanly on 5 s throttle
+    // Setup completion delegates failed-save retry solely to Storage (single save attempt, no duplicate goIdle() save)
     Preferences::writeFail = true;
     gState.setup_done = false;
     testUi.setInSetup(true);
     testUi.getScreenSetupWelcome().setup(true);
     testUi.changeScreen(&testUi.getScreenSetupWelcome());
-    simulateClick(testUi); // sets setup_done=true, save fails -> _configChanged stays true
+    Serial.reset();
+    simulateClick(testUi); // sets setup_done=true, single save() fails -> Storage arms _savePending
     TEST_ASSERT_TRUE(gState.setup_done);
-    TEST_ASSERT_TRUE(testUi._configChanged);
+    TEST_ASSERT_FALSE(testUi._configChanged);
+    TEST_ASSERT_TRUE(storage.hasPendingSave());
+#if LOG_LEVEL >= LVL_ERROR
+    // Verify only one write-failure log was emitted (goIdle() did not re-call storage.save())
+    char errMsg[96];
+    snprintf(errMsg, sizeof(errMsg), TXT_LOG_NVS_WRITE_FAIL, TXT_LOG_NVS_PART_CFG);
+    size_t firstPos = Serial.outputBuffer.find(errMsg);
+    TEST_ASSERT_TRUE(firstPos != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(errMsg, firstPos + 1) == std::string::npos);
+#endif
 
     Preferences::writeFail = false;
     advanceMockMillis(2000); // still within 5 s retry throttle
-    testUi.update();
-    TEST_ASSERT_TRUE(testUi._configChanged);
-    advanceMockMillis(3500); // >= 5 s -> retries and succeeds
-    testUi.update();
-    TEST_ASSERT_FALSE(testUi._configChanged);
+    storage.update();
+    TEST_ASSERT_TRUE(storage.hasPendingSave());
+    advanceMockMillis(3500); // >= 5 s -> Storage retries and succeeds
+    storage.update();
+    TEST_ASSERT_FALSE(storage.hasPendingSave());
     initAppState();
     TEST_ASSERT_TRUE(storage.load());
     TEST_ASSERT_TRUE(gState.setup_done);

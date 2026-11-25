@@ -25,7 +25,8 @@ static bool _isValidCachedEntry(const HistoryEntry& e) {
 }
 
 template <typename Fn>
-static void _forEachTrimmedLine(File& f, Fn&& fn) {
+static void _forEachTrimmedLine(File& f, Fn&& fn, bool* outReadErr = nullptr) {
+    if (outReadErr) *outReadErr = false;
     char lineBuf[LINE_BUF];
     size_t linePos = 0;
     bool overflow = false;
@@ -49,7 +50,10 @@ static void _forEachTrimmedLine(File& f, Fn&& fn) {
     while (f.available()) {
         esp_task_wdt_reset();
         int cInt = f.read();
-        if (cInt < 0) break;
+        if (cInt < 0) {
+            if (outReadErr) *outReadErr = true;
+            return;
+        }
         char c = (char)cInt;
         if (c == '\n') {
             flushLine();
@@ -145,18 +149,20 @@ bool History::begin(bool formatOnFail) {
             // Check whether the final valid pending line is already at the tail of HISTORY_FILE
             // (indicates power loss right after rename() succeeded and before remove(HIST_PENDING_FILE)).
             char lastValidPend[LINE_BUF] = {};
+            bool scanReadErr = false;
             _forEachTrimmedLine(pendFile, [&](char* p) {
                 HistoryEntry tmp = {};
                 if (_lineToEntry(p, tmp)) {
                     strlcpy(lastValidPend, p, sizeof(lastValidPend));
                 }
-            });
+            }, &scanReadErr);
 
-            bool replayWriteFailed = false;
+            bool replayWriteFailed = scanReadErr;
             int replayed = 0;
-            if (lastValidPend[0] != '\0' && _lastNonEmptyLineEquals(lastValidPend)) {
+            if (!scanReadErr && lastValidPend[0] != '\0' && _lastNonEmptyLineEquals(lastValidPend)) {
                 pendingAlreadyPresent = true;
-            } else {
+            } else if (!scanReadErr) {
+                bool replayReadErr = false;
                 pendFile.seek(0, SeekSet);
                 _forEachTrimmedLine(pendFile, [&](char* p) {
                     HistoryEntry tmp = {};
@@ -171,7 +177,8 @@ bool History::begin(bool formatOnFail) {
                             replayWriteFailed = true;
                         }
                     }
-                });
+                }, &replayReadErr);
+                if (replayReadErr) replayWriteFailed = true;
             }
             pendFile.close();
             if (replayWriteFailed) {
@@ -983,6 +990,7 @@ void History::update() {
             if (_rotHadPriorPending || _rotPendingInFile) {
                 File pf = LittleFS.open(HIST_PENDING_FILE, "r");
                 if (pf) {
+                    bool pendReadErr = false;
                     _forEachTrimmedLine(pf, [&](char* p) {
                         if (_rotWriteErr) return;
                         HistoryEntry tmp = {};
@@ -994,10 +1002,21 @@ void History::update() {
                                 pendingWritten++;
                             }
                         }
-                    });
+                    }, &pendReadErr);
                     pf.close();
+                    if (pendReadErr || (_rotPendingInFile && pendingWritten == 0)) {
+                        if (_rotHadPriorPending) {
+                            _rotWriteErr = true; // Preserve original file and prior pending journal
+                        } else {
+                            _rotPendingInFile = false; // Fall back to in-RAM _rotPendingLine
+                        }
+                    }
                 } else {
-                    _rotPendingInFile = false;
+                    if (_rotHadPriorPending) {
+                        _rotWriteErr = true;
+                    } else {
+                        _rotPendingInFile = false;
+                    }
                 }
             }
             if (!_rotWriteErr && !_rotPendingInFile) {
@@ -1041,13 +1060,15 @@ void History::update() {
             if (_rotHadPriorPending) {
                 File pf = LittleFS.open(HIST_PENDING_FILE, "r");
                 if (pf) {
+                    bool pendReadErr = false;
                     _forEachTrimmedLine(pf, [&](char* p) {
                         HistoryEntry tmp = {};
                         if (_lineToEntry(p, tmp) && !_appendCsvLine(p)) {
                             allFallbackOk = false;
                         }
-                    });
+                    }, &pendReadErr);
                     pf.close();
+                    if (pendReadErr) allFallbackOk = false;
                 } else {
                     allFallbackOk = false;
                 }

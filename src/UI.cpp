@@ -45,7 +45,7 @@ UI::UI(Display& disp, Encoder& enc)
     : _d(disp), _enc(enc),
       _currentScreen(nullptr),
       _inSetup(false), _setupStep(SetupStep::WELCOME),
-      _configChanged(false), _hasSaveRetry(false), _lastSaveRetryMs(0), _lastActivity(0),
+      _configChanged(false), _lastActivity(0),
       _dateYear(2026), _dateMonth(1), _dateDay(1)
 {
 }
@@ -84,13 +84,8 @@ void UI::changeScreen(UIScreen* screen) {
 
 void UI::goIdle() {
     if (_configChanged && !_inSetup) {
-        _configChanged = !storage.save();
-        if (_configChanged) {
-            _hasSaveRetry = true;
-            _lastSaveRetryMs = millis();
-        } else {
-            _hasSaveRetry = false;
-        }
+        _configChanged = false;
+        storage.save(); // Storage owns 5 s retry throttling on transient write failure
     }
     changeScreen(&_screenIdle);
 }
@@ -104,15 +99,6 @@ void UI::goMenu(MenuID mid, bool preserveCursor) {
 // update()
 // ─────────────────────────────────────────────────────────
 void UI::update() {
-    if (_currentScreen == &_screenIdle && _configChanged && !_inSetup) {
-        uint32_t nowMs = millis();
-        if (!_hasSaveRetry || (nowMs - _lastSaveRetryMs) >= 5000UL) {
-            _configChanged = !storage.save();
-            _hasSaveRetry = _configChanged;
-            _lastSaveRetryMs = nowMs;
-        }
-    }
-
     int8_t rot   = _enc.getRotation();
     bool   click = _enc.getClick();
 
@@ -218,16 +204,12 @@ void UI::flagConfigChanged() {
         _configChanged = true;
         return;
     }
-    _configChanged = !storage.save();
-    _hasSaveRetry = _configChanged;
-    if (_configChanged) {
-        _lastSaveRetryMs = millis();
-    }
+    _configChanged = false;
+    storage.save(); // Storage arms _savePending on failure for 5 s throttled retries
 }
 
 void UI::syncSetupState() {
     _configChanged = false;
-    _hasSaveRetry = false;
     if (!gState.setup_done) {
         _startSetup();
     } else {

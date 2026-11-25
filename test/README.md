@@ -103,6 +103,7 @@ test/
 * `test_rtclock_battery_low_latch_periodic_recheck_and_clear`: Verifies `isBatteryLow()` latches on OSF, re-checks periodically, and clears cleanly once time is saved to hardware.
 * `test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback`: Exercises real DS3231 raw Wire/BCD decoding (12-hour AM/PM conversion, `0xFF` floating-bus fault rejection vs genuine OSF), `_adjustAndVerify()` write-value verification (`<= 2 s`), `allowSwFallback = false` non-mutation on hardware failure, immediate post-`set()` poll suppression, and `suspended_until` `4102444799UL` clamping.
 * `test_rtclock_osf_recovery_advances_sw_clock_before_restore`: Verifies mid-run DS3231 OSF recovery in `begin()`, hotplug `update()`, and periodic `update()` advances the software clock first so elapsed time is not lost when restoring hardware time, and verifies cold-boot `!rtc_valid -> valid` transitions increment `revision()`.
+* `test_rtclock_failed_set_aligns_hotplug_retry_interval`: Verifies a failed hardware `set()` aligns `_lastReadMs` with `_lastRtcRetryMs` so hotplug recovery fires cleanly after 30 s without slipping to ~60 s.
 
 ### `test_scheduler`
 * `test_scheduler_medio_next_slot`: Slot selection for 2-slot daily schedule across morning, midday, and night rollovers.
@@ -130,6 +131,7 @@ test/
 * `test_scheduler_cycle_expired_respects_suspension_and_zero_zones`: Verifies `isCycleExpired()` ignores overlap/safety-gap checks against automatic slots that are suppressed by active suspension or disabled zones (`!hasEnabledZones()`), while still enforcing gaps against the first active post-suspension slot.
 * `test_scheduler_collision_defers_after_test_and_custom_runs`: Verifies slots missed during `TEST` or `CUSTOM` runs defer across minute rollovers and catch up immediately once watering ends (or latch the skipped-slot indicator if >30 min elapsed).
 * `test_scheduler_collision_manual_sets_skipped_indicator_no_double_water`: Verifies full `MANUAL` runs overlapping an `AUTO` slot mark `_lastTriggerUnix` (preventing double watering), latch the skipped-slot indicator, and clear it on the next `AUTO` run.
+* `test_scheduler_dst_catchup_collision_and_superseded_defer_logging`: Verifies spring-forward DST catch-up collisions defer after `TEST`/`CUSTOM` or latch the skipped indicator on `MANUAL`, and consecutive `CUSTOM` collisions log superseded deferred slots.
 
 ### `test_storage`
 * `test_storage_export_hex_length_and_format`: Verifies exported string length equals `sizeof(AppConfigBlob) * 2` (72 hex chars for NVS v5 + CRC16) with valid uppercase hexadecimal representation.
@@ -152,6 +154,7 @@ test/
 * `test_storage_backlight_upper_bound_import_and_load`: Verifies `importConfigHex()` rejects `backlight_timeout_ms > 3600000UL` (unless `BACKLIGHT_TIMEOUT_NEVER`) and `load()` defensively falls back to `120000UL`.
 * `test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp`: Verifies idempotent `Storage::begin()`, `Preferences::beginFail` handling, oversized NVS blob (`> sizeof(struct)`) mismatch detection via `getBytesLength()`, atomic RAM rollback on `writeFail` during `importConfigHex()`, and defensive `load()` clamping for `suspended_until`/`custom_ref_day`.
 * `test_storage_dual_slot_ping_pong_backup_and_legacy_compat`: Verifies dual-slot `cfg`/`cfg_b` ping-pong sequencing, automatic fallback when the newer slot is corrupted, legacy 36-byte `cfg` backwards compatibility, `ConfigLoadResult` classification (`EMPTY`, `CORRUPT`, `VERSION_MISMATCH`, `OK`), and `configLoadFailed()` signaling.
+* `test_storage_dedup_checks_slot_crc_and_max_seq_on_backup_fallback`: Verifies `save()` checks `slot_crc16` before skipping unchanged writes, and `load()` adopts the maximum valid-envelope sequence across both slots when falling back to backup.
 
 ### `test_history`
 * `test_history_entry_to_line_format`: Validates ISO 8601 formatting (`YYYY-MM-DDTHH:MM,<trigger>,d0,d1,d2,d3`) across `AUTO` ('A'), `MANUAL` ('M'), and `CUSTOM` ('C') triggers.
@@ -177,6 +180,7 @@ test/
 * `test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv`: Verifies post-close `fileSize` accuracy under ESP32 buffered-stdio emulation (`LittleFS.bufferedSize`), partial-write rejection (`partialWriteFail`), rotation tail preservation when file exceeds `_lineCount`, and strict calendar/delimiter CSV parsing.
 * `test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback`: Verifies newline isolation after unterminated partial writes, post-rename `/hist_pend.txt` deduplication on reboot, corrupt-only file NVS rebuild-loop settlement (`_lineCount == 0`), overlong (`>= LINE_BUF`) line discard during serial CSV export, `_populateCache()` full-file fallback past >512 bytes of tail corruption, and rename-only failure recovery (`LittleFS.renameFail`).
 * `test_history_clear_failure_preserves_pending_and_calendar_validation`: Verifies failed non-forced `clear(false)` preserves `/hist_pend.txt` when `/history.csv` removal fails (and restores RAM cache when aborting mid-rotation), validates strict calendar dates in `record()` (rejecting Feb 30), and allows `requireLiveRtc = false` pre-validated blackout partial records when `!gState.rtc_valid`.
+* `test_history_rotation_finishing_pending_read_failure_preserves_entries`: Verifies `/hist_pend.txt` read failures during rotation `FINISHING` fall back to RAM `_rotPendingLine` for single entries, preserve `/history.csv` + `/hist_pend.txt` when prior pending entries exist, and never delete `/hist_pend.txt` on boot replay read errors.
 
 ### `test_terminal`
 * `test_terminal_help_command`: Help menu formatting and command presence.
@@ -262,6 +266,7 @@ test/
 * `test_watering_begin_core3_periman_glitch_free_relay_off`: Simulates ESP32 Arduino Core 3.x `periman` behavior (unconfigured GPIO writes dropped by `digitalWrite()`, reset-default LOW output latches) and verifies `WateringController::begin()` pre-loads `RELAY_OFF` via `gpio_set_level()` before `pinMode(..., OUTPUT)` with zero spurious active-LOW relay energization glitches.
 * `test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history`: Verifies `MANUAL` blackout recovery resumes near suspended automatic slots without false safety-gap abort, and valid pre-blackout partial minutes are preserved in history even when reboot has `!gState.rtc_valid`.
 * `test_watering_refuses_preemption_while_active`: Verifies `startGeneral()`, `startCustom()`, and `startTest()` all return `false` and leave the active cycle and relays untouched when watering is already active.
+* `test_watering_retries_failed_recovery_clear_even_after_test_run`: Verifies failed NVS `RecoveryState` clear writes (at `_finishCycle()` or `begin()` abort) arm 5 s throttled retries in `WateringController::update()` that survive intervening `TEST` runs.
 
 ### `test_system`
 * `test_init_relay_pins_safe_core3_periman`: Exercises real `SystemBoot::initRelayPinsSafe()` under simulated ESP32 Core 3.x `periman` reset state with zero active-LOW boot glitches.
@@ -291,7 +296,7 @@ test/
 ## 4. Usage & Execution Commands
 
 ```bash
-# Execute fast unit suites (233 test cases across 11 suites; skips test_soak)
+# Execute fast unit suites (238 test cases across 11 suites; skips test_soak)
 pio test -e native
 
 # Execute soak & wraparound suite last, only if the 11 unit suites pass (-O2, 13 test cases)
@@ -386,7 +391,7 @@ RUN_UT(test_specific_condition);
   4. **Status Bar Switcher**: Click the environment name in the bottom status bar, select `env:native` to run tests via the status bar beaker icon, then switch back to `Default` or `esp32dev` for firmware compilation and flashing.
 
 ### CI/CD Pipeline (GitHub Actions)
-Continuous integration is defined in `.github/workflows/ci.yml` and executes on every push to active branches (`main`, `master`, `test-suite`, `migration/*`) and pull requests:
+Continuous integration is defined in `.github/workflows/ci.yml` and executes on every push to active branches (`main`, `master`, `test-suite`, `migration/*`, `hardening/*`) and pull requests:
 * **Job 1 (`test-native`)**: Sets up Python, installs pinned PlatformIO (`6.2.0`), restores package cache, executes all 11 fast unit suites with `-Werror` in the default configuration (`LANG_UI_PT` + `LANG_SERIAL_EN`), again under AddressSanitizer + UndefinedBehaviorSanitizer (`-fsanitize=address,undefined -fno-omit-frame-pointer -g -Werror`), again with alternate flags (`LANG_UI_EN` + `LANG_SERIAL_PT` + `LOG_LEVEL=LVL_NONE` + `MENU_WRAP_AROUND=0`), verifies `LOG_LEVEL=LVL_ERROR` + `AUTO_DST_DEFAULT=false`, verifies timezone-sensitive suites (`test_rtclock`, `test_scheduler`, `test_watering`, `test_terminal`, `test_ui`, `test_system`) under both `-DTIMEZONE_OFFSET=1` and `-DTIMEZONE_OFFSET=-1`, and only if they pass runs `pio test -e native_soak` across `TIMEZONE_OFFSET=0`, `+1`, and `-1` on an `ubuntu-latest` runner.
 * **Job 2 (`build-esp32`)**: Restores toolchain/platform cache and verifies full embedded firmware compilation across alternate debug flags (`EN` + `PT` + `LVL_DEBUG` + `MENU_WRAP_AROUND=0`), `LOG_LEVEL=LVL_WARN` + `AUTO_DST_DEFAULT=false`, `LOG_LEVEL=LVL_NONE`, and the default release configuration via `pio run -e esp32dev`.
 
@@ -394,7 +399,7 @@ Continuous integration is defined in `.github/workflows/ci.yml` and executes on 
 
 ## 7. Code Coverage (`gcov`)
 
-Measured across the 11 fast unit suites (`env:native`, 233 tests) with GCC 14.2.0 (`--coverage -O0 -lgcov`, default flags `LANG_UI_PT` / `LANG_SERIAL_EN` / `LOG_LEVEL=LVL_INFO`) using `test/coverage.py` (which aggregates the union of executed lines/functions across all translation units via `gcov --json-format --stdout`):
+Measured across the 11 fast unit suites (`env:native`, 238 tests) with GCC 14.2.0 (`--coverage -O0 -lgcov`, default flags `LANG_UI_PT` / `LANG_SERIAL_EN` / `LOG_LEVEL=LVL_INFO`) using `test/coverage.py` (which aggregates the union of executed lines/functions across all translation units via `gcov --json-format --stdout`):
 
 ```bash
 # Linux / macOS:
@@ -411,17 +416,17 @@ python test/coverage.py
 | File | Lines | Line % | Functions | Func % |
 |---|---:|---:|---:|---:|
 | `lib/LiquidCrystal_I2C/LiquidCrystal_I2C.cpp` | 154 / 236 | 65.3% | 22 / 47 | 46.8% |
-| `src/AppState.cpp` | 100 / 104 | 96.2% | 9 / 9 | 100.0% |
+| `src/AppState.cpp` | 101 / 105 | 96.2% | 9 / 9 | 100.0% |
 | `src/Display.cpp` | 339 / 357 | 95.0% | 21 / 21 | 100.0% |
 | `src/Encoder.cpp` | 66 / 66 | 100.0% | 6 / 6 | 100.0% |
-| `src/History.cpp` | 702 / 795 | 88.3% | 39 / 42 | 92.9% |
-| `src/RTClock.cpp` | 397 / 461 | 86.1% | 21 / 21 | 100.0% |
-| `src/Scheduler.cpp` | 404 / 425 | 95.1% | 15 / 15 | 100.0% |
-| `src/Storage.cpp` | 471 / 540 | 87.2% | 23 / 23 | 100.0% |
+| `src/History.cpp` | 725 / 810 | 89.5% | 40 / 42 | 95.2% |
+| `src/RTClock.cpp` | 399 / 463 | 86.2% | 21 / 21 | 100.0% |
+| `src/Scheduler.cpp` | 427 / 450 | 94.9% | 17 / 17 | 100.0% |
+| `src/Storage.cpp` | 487 / 573 | 85.0% | 23 / 23 | 100.0% |
 | `src/SystemBoot.cpp` | 103 / 110 | 93.6% | 7 / 7 | 100.0% |
 | `src/Terminal.cpp` | 422 / 536 | 78.7% | 27 / 30 | 90.0% |
-| `src/UI.cpp` | 309 / 421 | 73.4% | 15 / 16 | 93.8% |
-| `src/WateringController.cpp` | 420 / 433 | 97.0% | 18 / 18 | 100.0% |
+| `src/UI.cpp` | 296 / 409 | 72.4% | 15 / 16 | 93.8% |
+| `src/WateringController.cpp` | 435 / 441 | 98.6% | 19 / 19 | 100.0% |
 | `src/main.cpp` | 0 / 0 | 0.0% (not compiled) | 0 / 0 | 0.0% |
 | `src/ui/MenuBuilder.cpp` | 163 / 225 | 72.4% | 7 / 10 | 70.0% |
 | `src/ui/ScreenCommon.cpp` | 68 / 82 | 82.9% | 13 / 15 | 86.7% |
@@ -429,13 +434,13 @@ python test/coverage.py
 | `src/ui/ScreenIdle.cpp` | 140 / 151 | 92.7% | 5 / 7 | 71.4% |
 | `src/ui/ScreenMenu.cpp` | 82 / 98 | 83.7% | 8 / 8 | 100.0% |
 | `src/ui/ScreenSetup.cpp` | 28 / 30 | 93.3% | 4 / 5 | 80.0% |
-| **Total `src/` (compiled)** | **4445 / 5137** | **86.5%** | **254 / 271** | **93.7%** |
-| **Total `src/` + `lib/` (compiled)** | **4599 / 5373** | **85.6%** | **276 / 318** | **86.8%** |
+| **Total `src/` (compiled)** | **4512 / 5209** | **86.6%** | **258 / 274** | **94.2%** |
+| **Total `src/` + `lib/` (compiled)** | **4666 / 5445** | **85.7%** | **280 / 321** | **87.2%** |
 
 **Coverage gaps to keep in mind**:
 * `src/main.cpp` is intentionally not compiled in host-native tests (ESP32 WDT setup, `Serial.setRxBufferSize`, and `debugI2cScan`). Boot ordering and the cooperative tick loop live in `src/SystemBoot.cpp` (`bootSystem()` / `tickSystem()`, 93.6% line / 100.0% function coverage) and are shared directly with `test_system` and `test_soak`.
 * `lib/LiquidCrystal_I2C/LiquidCrystal_I2C.cpp` (65.3% lines, 46.8% functions) retains unused upstream HD44780 API methods (cursor blink, display scroll, autoscroll).
-* `src/ui/MenuBuilder.cpp` (72.4%) and `src/UI.cpp` (73.4%) contain interactive menu branches and editor rotation paths that are only partially traversed by automated tests.
+* `src/ui/MenuBuilder.cpp` (72.4%) and `src/UI.cpp` (72.4%) contain interactive menu branches and editor rotation paths that are only partially traversed by automated tests.
 
 ---
 

@@ -455,6 +455,7 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
 
     if (!hwOk && !allowSwFallback) {
         _lastRtcRetryMs = millis();
+        _lastReadMs = _lastRtcRetryMs;
         return false;
     }
 
@@ -465,6 +466,7 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         _lastReadMs = millis();
     } else {
         _lastRtcRetryMs = millis();
+        _lastReadMs = _lastRtcRetryMs;
     }
     gState.rtc_valid = true;
 

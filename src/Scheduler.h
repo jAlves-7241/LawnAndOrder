@@ -80,6 +80,9 @@ private:
     UNIT_TEST_FRIEND
     // Returns true if the schedule is active on the given calendar day (since 1970).
     bool _dayMatches(const ModeSchedule& sched, uint32_t candidate_day_1970, bool writeBack = true);
+    bool _findCatchUpSlot(const SystemTime& t, bool allowExactSecond,
+                          uint8_t& outIdx, uint8_t& outHour, uint8_t& outMin);
+    void _handleSlotCollision(uint8_t slotIdx, uint8_t hour, uint8_t min, uint32_t nowUnix);
     bool _tryCatchUp(const SystemTime& t, bool allowExactSecond = false);
     static uint32_t _resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc, bool* outDstSkipped = nullptr);
 
