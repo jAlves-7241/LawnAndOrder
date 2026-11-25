@@ -214,7 +214,8 @@ bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
         if (slot.version != NVS_VERSION) {
             if (slot.version == (uint8_t)(NVS_VERSION - 1U) &&
                 _migratePrevVersionBlob(reinterpret_cast<const uint8_t*>(&slot.blob),
-                                        sizeof(slot.blob), outBlob)) {
+                                        sizeof(slot.blob), outBlob) &&
+                validateBlob(outBlob, outErr)) {
                 outSeq = slot.seq;
                 outEnveloped = true;
                 outErr = ConfigLoadResult::OK;
@@ -244,7 +245,8 @@ bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
         }
         if (blob.version == (uint8_t)(NVS_VERSION - 1U) &&
             _migratePrevVersionBlob(reinterpret_cast<const uint8_t*>(&blob),
-                                    sizeof(blob), outBlob)) {
+                                    sizeof(blob), outBlob) &&
+            validateBlob(outBlob, outErr)) {
             outSeq = 0;
             outEnveloped = false;
             outErr = ConfigLoadResult::OK;
@@ -276,13 +278,15 @@ bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
                 if (seq != 0 &&
                     storedSlotCrc == _crc16(rawBuf, storedLen - sizeof(uint16_t)) &&
                     _migratePrevVersionBlob(rawBuf + kEnvelopeHeader,
-                                            storedLen - kEnvelopeOverhead, outBlob)) {
+                                            storedLen - kEnvelopeOverhead, outBlob) &&
+                    validateBlob(outBlob, outErr)) {
                     outSeq = seq;
                     outEnveloped = true;
                     outErr = ConfigLoadResult::OK;
                     return true;
                 }
-            } else if (_migratePrevVersionBlob(rawBuf, storedLen, outBlob)) {
+            } else if (_migratePrevVersionBlob(rawBuf, storedLen, outBlob) &&
+                       validateBlob(outBlob, outErr)) {
                 outSeq = 0;
                 outEnveloped = false;
                 outErr = ConfigLoadResult::OK;
@@ -375,7 +379,13 @@ bool Storage::load() {
     }
 
     _activeSlot = chosen;
-    _configSeq = slotSeq[chosen];
+    uint32_t maxSeq = slotSeq[chosen];
+    const uint8_t otherSlot = (uint8_t)(1U - chosen);
+    if (slotOk[otherSlot] && slotSeq[otherSlot] != 0 &&
+        (maxSeq == 0 || (int32_t)(slotSeq[otherSlot] - maxSeq) > 0)) {
+        maxSeq = slotSeq[otherSlot];
+    }
+    _configSeq = maxSeq;
     _backupSeeded = (okA && okB && envA && envB && !usedBackup);
     _lastLoadResult = ConfigLoadResult::OK;
 
@@ -403,13 +413,16 @@ bool Storage::save() {
 
     const char* slotKeys[2] = { KEY_CFG, KEY_CFG_B };
 
-    // Avoid unnecessary flash writes if active slot already holds identical enveloped config
+    // Avoid unnecessary flash writes if active slot already holds identical, valid enveloped config
     // and the backup slot is already seeded.
     if (_backupSeeded) {
         AppConfigSlot current = {};
         if (prefs.getBytes(slotKeys[_activeSlot], &current, sizeof(current)) == sizeof(current) &&
             current.magic == CFG_SLOT_MAGIC &&
             current.version == NVS_VERSION &&
+            current.seq != 0 &&
+            current.slot_crc16 == _crc16(reinterpret_cast<const uint8_t*>(&current),
+                                         offsetof(AppConfigSlot, slot_crc16)) &&
             memcmp(&blob, &current.blob, sizeof(blob)) == 0) {
             _savePending = false;
             _lastLoadResult = ConfigLoadResult::OK;

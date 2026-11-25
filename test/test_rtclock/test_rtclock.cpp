@@ -696,6 +696,24 @@ static void test_rtclock_osf_recovery_advances_sw_clock_before_restore(void) {
     TEST_ASSERT_EQUAL_UINT32(manSmall, rtclock.manualRevision());
 }
 
+static void test_rtclock_failed_set_aligns_hotplug_retry_interval(void) {
+    setMockMillis(1000);
+    rtclock._rtc.mockPresent = false;
+    TEST_ASSERT_FALSE(rtclock.begin());
+
+    // Failed set() mid-interval aligns _lastReadMs with _lastRtcRetryMs
+    advanceMockMillis(15000UL); // millis = 16000
+    TEST_ASSERT_FALSE(rtclock.set(2026, 6, 15, 10, 0, 0, false));
+
+    // Reconnect hardware; hotplug must succeed promptly at +30 s (millis = 46000), not slip to 60 s
+    rtclock._rtc.mockPresent = true;
+    rtclock._rtc.adjust(DateTime(2026, 6, 15, 10, 0, 0));
+    advanceMockMillis(30000UL); // millis = 46000
+    rtclock.update();
+    TEST_ASSERT_TRUE(rtclock.isPresent());
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+}
+
 };
 
 int main(void) {
@@ -718,5 +736,6 @@ int main(void) {
     RUN_UT(test_rtclock_manual_revision_only_tracks_valid_sets);
     RUN_UT(test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback);
     RUN_UT(test_rtclock_osf_recovery_advances_sw_clock_before_restore);
+    RUN_UT(test_rtclock_failed_set_aligns_hotplug_retry_interval);
     return UNITY_END();
 }
