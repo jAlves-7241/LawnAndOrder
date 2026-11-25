@@ -151,7 +151,7 @@ test/
 * `test_storage_clear_guard_invalid_hist_cache_and_respace_logs`: Verifies `storage.clear()` failure guard when NVS is uninitialized, `loadHistoryCache()` invalid-header warning (`TXT_LOG_NVS_HIST_INV`), and dormant custom slot auto-respace warning (`TXT_LOG_NVS_CUSTOM_RESPACED`).
 * `test_storage_backlight_upper_bound_import_and_load`: Verifies `importConfigHex()` rejects `backlight_timeout_ms > 3600000UL` (unless `BACKLIGHT_TIMEOUT_NEVER`) and `load()` defensively falls back to `120000UL`.
 * `test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp`: Verifies idempotent `Storage::begin()`, `Preferences::beginFail` handling, oversized NVS blob (`> sizeof(struct)`) mismatch detection via `getBytesLength()`, atomic RAM rollback on `writeFail` during `importConfigHex()`, and defensive `load()` clamping for `suspended_until`/`custom_ref_day`.
-* `test_storage_dual_slot_redundancy_fallback_and_load_result`: Verifies dual-slot `cfg`/`cfg_b` ping-pong sequencing, automatic fallback when the newer slot is corrupted, legacy 36-byte `cfg` backwards compatibility, `ConfigLoadResult` classification (`EMPTY`, `CORRUPT`, `VERSION_MISMATCH`, `OK`), and `configLoadFailed()` signaling.
+* `test_storage_dual_slot_ping_pong_backup_and_legacy_compat`: Verifies dual-slot `cfg`/`cfg_b` ping-pong sequencing, automatic fallback when the newer slot is corrupted, legacy 36-byte `cfg` backwards compatibility, `ConfigLoadResult` classification (`EMPTY`, `CORRUPT`, `VERSION_MISMATCH`, `OK`), and `configLoadFailed()` signaling.
 
 ### `test_history`
 * `test_history_entry_to_line_format`: Validates ISO 8601 formatting (`YYYY-MM-DDTHH:MM,<trigger>,d0,d1,d2,d3`) across `AUTO` ('A'), `MANUAL` ('M'), and `CUSTOM` ('C') triggers.
@@ -433,7 +433,7 @@ python test/coverage.py
 | **Total `src/` + `lib/` (compiled)** | **4599 / 5373** | **85.6%** | **276 / 318** | **86.8%** |
 
 **Coverage gaps to keep in mind**:
-* `src/main.cpp` is intentionally not compiled in host-native tests (ESP32 WDT setup, `Serial.setRxBufferSize`, `Wire.begin`, and `debugI2cScan`). Boot ordering and the cooperative tick loop live in `src/SystemBoot.cpp` (`bootSystem()` / `tickSystem()`, 93.6% line / 100.0% function coverage) and are shared directly with `test_system` and `test_soak`.
+* `src/main.cpp` is intentionally not compiled in host-native tests (ESP32 WDT setup, `Serial.setRxBufferSize`, and `debugI2cScan`). Boot ordering and the cooperative tick loop live in `src/SystemBoot.cpp` (`bootSystem()` / `tickSystem()`, 93.6% line / 100.0% function coverage) and are shared directly with `test_system` and `test_soak`.
 * `lib/LiquidCrystal_I2C/LiquidCrystal_I2C.cpp` (65.3% lines, 46.8% functions) retains unused upstream HD44780 API methods (cursor blink, display scroll, autoscroll).
 * `src/ui/MenuBuilder.cpp` (72.4%) and `src/UI.cpp` (73.4%) contain interactive menu branches and editor rotation paths that are only partially traversed by automated tests.
 
