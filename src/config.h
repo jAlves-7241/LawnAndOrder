@@ -45,7 +45,9 @@
 // ── Relay pins (active-LOW - relay board pulls IN to GND to close) ───────────
 // Adjust to your wiring. GPIO 26-27-18-13 are free on a standard DevKit
 // (GPIO 18 avoids GPIO 14's ROM-boot PWM burst and stays safe on PSRAM/WROVER boards;
-// external 10k pull-ups on active-LOW relay inputs are still recommended).
+// note that GPIO 13 / MTCK enables an internal weak pull-down ~45k during hardware reset
+// before setup() runs, so external 10k pull-ups on active-LOW relay inputs are recommended,
+// or reassign PIN_RELAY_4 to e.g. GPIO 19/23 if omitting external pull-ups).
 #ifndef PIN_RELAY_1
 #define PIN_RELAY_1 26
 #endif

@@ -55,7 +55,7 @@ A simulação Wokwi usa o modelo RTC disponível no simulador e não reproduz to
 
 > O ficheiro `diagram.json` contém o esquema de ligações pronto a usar no simulador Wokwi (incluindo 4 LEDs indicadores ativos em LOW para as zonas Z1–Z4).
 >
-> **Atenção (hardware real):** Os GPIOs do ESP32 operam a **3,3 V** e não são tolerantes a 5 V. Ao ligar um LCD 2004 ou módulo RTC alimentado a 5 V com resistências de pull-up a 5 V no barramento I2C (`SDA`/`SCL`), utilize um conversor bidirecional de níveis lógicos (3,3 V ↔ 5 V) ou alimente o DS3231 a 3,3 V com pull-ups ligados a 3,3 V.
+> **Atenção (hardware real):** Os GPIOs do ESP32 operam a **3,3 V** e não são tolerantes a 5 V. Ao ligar um LCD 2004 ou módulo RTC alimentado a 5 V com resistências de pull-up a 5 V no barramento I2C (`SDA`/`SCL`), utilize um conversor bidirecional de níveis lógicos (3,3 V ↔ 5 V) ou alimente o DS3231 a 3,3 V com pull-ups ligados a 3,3 V. Para placas de relés ativas em LOW, recomendam-se resistências de pull-up externas de 10 kΩ nas entradas (em particular no GPIO 13 / `MTCK`, que ativa um pull-down interno fraco durante o reset/ROM boot antes de `setup()` correr; em alternativa, reatribuir `PIN_RELAY_4` em `src/config.h`, p. ex. GPIO 19 ou 23).
 
 ---
 
@@ -134,7 +134,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute fast unit suites (233 tests across 11 suites)
+# Execute fast unit suites (238 tests across 11 suites)
 pio test -e native
 
 # Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2, 13 tests)
