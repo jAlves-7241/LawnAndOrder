@@ -957,6 +957,69 @@ static void test_history_clear_failure_preserves_pending_and_calendar_validation
     TEST_ASSERT_EQUAL_UINT16(countBefore, history.entryCount());
 }
 
+static void test_history_rotation_finishing_pending_read_failure_preserves_entries(void) {
+    // 1. Single-entry rotation: read failure on /hist_pend.txt during FINISHING falls back to _rotPendingLine
+    history.clear();
+    HistoryEntry base = { 2026, 6, 1, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(base);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    HistoryEntry newest = { 2026, 6, 10, 8, 0, { 9, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(newest);
+    TEST_ASSERT_TRUE(history.isRotating());
+
+    // Advance COPYING until FINISHING
+    int guard = 100;
+    while (history._rotState == History::RotState::COPYING && guard-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_EQUAL((int)History::RotState::FINISHING, (int)history._rotState);
+
+    // Inject read failure on /hist_pend.txt during FINISHING
+    LittleFS.readFail = true;
+    history.update();
+    LittleFS.readFail = false;
+
+    TEST_ASSERT_FALSE(history.isRotating());
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-10T08:00,M,9,0,0,0") != std::string::npos);
+
+    // 2. Prior-pending rotation: read failure on /hist_pend.txt during FINISHING preserves original + journal
+    history.clear();
+    history.record(base);
+    LittleFS.files["/hist_pend.txt"] = "2026-06-05T08:00,C,4,0,0,0\r\n";
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    history.record(newest);
+    TEST_ASSERT_TRUE(history.isRotating());
+    TEST_ASSERT_TRUE(history._rotHadPriorPending);
+
+    guard = 100;
+    while (history._rotState == History::RotState::COPYING && guard-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_EQUAL((int)History::RotState::FINISHING, (int)history._rotState);
+
+    LittleFS.readFail = true;
+    history.update();
+    LittleFS.readFail = false;
+
+    TEST_ASSERT_FALSE(history.isRotating());
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt")); // must NOT be deleted when unreadable
+
+    // 3. Boot replay with readFail on /hist_pend.txt must NOT delete /hist_pend.txt
+    LittleFS.readFail = true;
+    history = History();
+    TEST_ASSERT_TRUE(history.begin());
+    LittleFS.readFail = false;
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+
+    // Next clean boot replays both pending entries without loss
+    history = History();
+    TEST_ASSERT_TRUE(history.begin());
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-05T08:00,C,4,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-10T08:00,M,9,0,0,0") != std::string::npos);
+}
+
 };
 
 int main(void) {
@@ -984,5 +1047,6 @@ int main(void) {
     RUN_UT(test_history_buffered_filesize_partial_writes_rotation_tail_and_strict_csv);
     RUN_UT(test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback);
     RUN_UT(test_history_clear_failure_preserves_pending_and_calendar_validation);
+    RUN_UT(test_history_rotation_finishing_pending_read_failure_preserves_entries);
     return UNITY_END();
 }
