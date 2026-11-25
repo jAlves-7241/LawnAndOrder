@@ -3,15 +3,14 @@
 #include "../../test/mocks/TestCommon.cpp"
 #include "../../src/AppState.cpp"
 
-#define private public
 #include "Encoder.h"
-#undef private
 
 #include "../../src/Encoder.cpp"
 
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
 
-void setUp(void) {
+struct UnitTestAccess {
+static void setUpImpl(void) {
     resetAllTestMocks();
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
@@ -20,9 +19,7 @@ void setUp(void) {
     encoder._delta = 0;
 }
 
-void tearDown(void) {}
-
-void test_encoder_click_debounce_and_single_trigger(void) {
+static void test_encoder_click_debounce_and_single_trigger(void) {
     // Initial state: button released (HIGH)
     TEST_ASSERT_FALSE(encoder.getClick());
 
@@ -59,7 +56,7 @@ void test_encoder_click_debounce_and_single_trigger(void) {
     TEST_ASSERT_TRUE(encoder.getClick());
 }
 
-void test_encoder_rotation_delta_and_clamping(void) {
+static void test_encoder_rotation_delta_and_clamping(void) {
     // Initial delta should be 0
     TEST_ASSERT_EQUAL_INT8(0, encoder.getRotation());
 
@@ -99,7 +96,7 @@ void test_encoder_rotation_delta_and_clamping(void) {
     TEST_ASSERT_EQUAL_INT16(0, encoder._delta);
 }
 
-void test_encoder_isr_rate_limiting(void) {
+static void test_encoder_isr_rate_limiting(void) {
     digitalWrite(PIN_DT, LOW);
     encoder._delta = 0;
 
@@ -124,7 +121,7 @@ void test_encoder_isr_rate_limiting(void) {
     TEST_ASSERT_EQUAL_INT16(2, encoder._delta);
 }
 
-void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
+static void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
     // Simulate boot at micros() = 500 (< 2000us rate-limit window)
     setMockMillis(50);
     setMockMicros(500);
@@ -177,11 +174,16 @@ void test_encoder_begin_resets_isr_and_accepts_early_boot_pulse(void) {
     TEST_ASSERT_EQUAL_PTR(&encoder, Encoder::_inst);
 }
 
+};
+
+void setUp(void) { UnitTestAccess::setUpImpl(); }
+void tearDown(void) {}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_encoder_click_debounce_and_single_trigger);
-    RUN_TEST(test_encoder_rotation_delta_and_clamping);
-    RUN_TEST(test_encoder_isr_rate_limiting);
-    RUN_TEST(test_encoder_begin_resets_isr_and_accepts_early_boot_pulse);
+    RUN_UT(test_encoder_click_debounce_and_single_trigger);
+    RUN_UT(test_encoder_rotation_delta_and_clamping);
+    RUN_UT(test_encoder_isr_rate_limiting);
+    RUN_UT(test_encoder_begin_resets_isr_and_accepts_early_boot_pulse);
     return UNITY_END();
 }

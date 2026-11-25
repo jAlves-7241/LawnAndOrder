@@ -7,7 +7,6 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-#define private public
 #include "RTClock.h"
 #include "History.h"
 #include "WateringController.h"
@@ -16,7 +15,6 @@
 #include "Encoder.h"
 #include "UI.h"
 #include "Terminal.h"
-#undef private
 
 Display display;
 static Encoder encoder(PIN_CLK, PIN_DT, PIN_SW);
@@ -48,13 +46,13 @@ static void soakRecoverI2C() {
     recoverI2CWith(display, rtclock, _soakI2cState);
 }
 
+struct UnitTestAccess {
 static void resetSystem() {
     resetAllTestMocks();
     _soakI2cState = {};
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
-    initRelayPinsSafe();
 
     rtclock = RTClock();
     storage = Storage();
@@ -68,20 +66,7 @@ static void resetSystem() {
     ui.~UI();
     new (&ui) UI(display, encoder);
 
-    initAppState();
-    storage.begin();
-    storage.load();
-    history.begin();
-    display.begin();
-    display.setErrorCallback(soakRecoverI2C);
-    encoder.begin();
-    rtclock.setErrorCallback(soakRecoverI2C);
-    rtclock.begin();
-    scheduler.loadTriggers();
-    wateringCtrl.begin();
-    scheduler.begin();
-    ui.begin();
-    terminal.begin();
+    bootSystem({ display, encoder, ui, soakRecoverI2C, nullptr });
 }
 
 // Simulates a full ESP32 power cycle preserving NVS (Preferences) and LittleFS,
@@ -94,7 +79,6 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     digitalWrite(PIN_CLK, HIGH);
     digitalWrite(PIN_DT, HIGH);
     digitalWrite(PIN_SW, HIGH);
-    initRelayPinsSafe();
     Serial.reset();
     Wire.reset();
     ESP.reset();
@@ -123,23 +107,7 @@ static void simulateReboot(uint32_t rtcUtcAtBoot, bool rtcPresent = true, bool r
     ui.~UI();
     new (&ui) UI(display, encoder);
 
-    initAppState();
-    storage.begin();
-    storage.load();
-    history.begin();
-    display.begin();
-    display.setErrorCallback(soakRecoverI2C);
-    encoder.begin();
-    rtclock.setErrorCallback(soakRecoverI2C);
-    rtclock.begin();
-
-    evaluateBootSuspension();
-
-    scheduler.loadTriggers();
-    wateringCtrl.begin();
-    scheduler.begin();
-    ui.begin();
-    terminal.begin();
+    bootSystem({ display, encoder, ui, soakRecoverI2C, nullptr });
 }
 
 static void stepLoopOnce(uint32_t stepMs) {
@@ -147,15 +115,7 @@ static void stepLoopOnce(uint32_t stepMs) {
     advanceMockMicros(stepMs * 1000UL);
     // Advance mock DS3231 hardware clock in sync with simulated time
     // (handled by caller updating rtclock._rtc when needed or via _rtcUnix tracking)
-    rtclock.update();
-    scheduler.update();
-    ui.update();
-    wateringCtrl.update();
-    history.update();
-    terminal.update();
-    if (!ui.inSetup()) {
-        storage.update();
-    }
+    tickSystem(ui);
 }
 
 static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t stepSec, uint8_t& lastActiveZone) {
@@ -186,18 +146,10 @@ static void assertRelaySafetyInvariants(uint32_t& activeZoneTicksSec, uint32_t s
     }
 }
 
-void setUp(void) {
-    resetSystem();
-}
-
-void tearDown(void) {
-    wateringCtrl.stop();
-}
-
 // ─────────────────────────────────────────────────────────
 // 1. Exhaustive 32-bit millis() wraparound across all modules
 // ─────────────────────────────────────────────────────────
-void test_wraparound_49_day_millis_all_subsystems(void) {
+static void test_wraparound_49_day_millis_all_subsystems(void) {
     gState.setup_done = true;
     gState.backlight_timeout_ms = 120000UL;
     gState.zones[0] = { "Z1", true, 1 };
@@ -453,7 +405,7 @@ void test_wraparound_49_day_millis_all_subsystems(void) {
 //    leap day, DST fall-back & spring-forward, 10x millis() wrap,
 //    and LittleFS history rotation > 1500 entries)
 // ─────────────────────────────────────────────────────────
-void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
+static void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
     gState.setup_done = true;
     gState.auto_dst = true;
     gState.zones[0] = { "Z1", true, 5 };
@@ -646,402 +598,389 @@ void test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations(void) {
 }
 
 // ─────────────────────────────────────────────────────────
-// 3. Exhaustive double-watering & edge-case matrix
+// 3. Double-watering & edge-case regression scenarios (isolated)
 // ─────────────────────────────────────────────────────────
-void test_soak_double_watering_and_edge_case_matrix(void) {
-    // Common zone setup: 3 zones x 6 min
-    auto setupCommonZones = []() {
-        gState.setup_done = true;
-        gState.auto_dst = true;
-        gState.zones[0] = { "Z1", true, 6 };
-        gState.zones[1] = { "Z2", true, 6 };
-        gState.zones[2] = { "Z3", true, 6 };
-        gState.zones[3] = { "Z4", false, 0 };
-        storage.save();
-    };
+static void setupCommonZones(void) {
+    gState.setup_done = true;
+    gState.auto_dst = true;
+    gState.zones[0] = { "Z1", true, 6 };
+    gState.zones[1] = { "Z2", true, 6 };
+    gState.zones[2] = { "Z3", true, 6 };
+    gState.zones[3] = { "Z4", false, 0 };
+    storage.save();
+}
 
-    // A. October DST fall-back repeated hour + reboot inside repeated hour must NOT double-water
-    {
-        resetSystem();
-        setupCommonZones();
-        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        cs.slot_count = 1;
-        cs.interval_days = 1;
-        cs.day_pattern = DayPattern::DAILY;
-        const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
-        cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
-        gState.mode = AppMode::PERSONALIZADO;
-        storage.save();
+// A. October DST fall-back repeated hour + reboot inside repeated hour must NOT double-water
+static void test_soak_dst_fallback_reboot_no_double_water(void) {
+    setupCommonZones();
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.interval_days = 1;
+    cs.day_pattern = DayPattern::DAILY;
+    const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+    cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
+    gState.mode = AppMode::PERSONALIZADO;
+    storage.save();
 
-        // 2026-10-25 00:29:59 UTC == 1 second before 1st pass (DST) in any TIMEZONE_OFFSET
-        uint32_t utc = DateTime(2026, 10, 25, 0, 29, 59).unixtime();
-        simulateReboot(utc);
+    // 2026-10-25 00:29:59 UTC == 1 second before 1st pass (DST) in any TIMEZONE_OFFSET
+    uint32_t utc = DateTime(2026, 10, 25, 0, 29, 59).unixtime();
+    simulateReboot(utc);
+    utc++;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(1000); // 1st pass (DST) -> fires
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    wateringCtrl.stop();
+
+    // Reboot inside repeated hour at 01:45:00 UTC (15 min after 2nd pass STD)
+    uint32_t rebootUtc = DateTime(2026, 10, 25, 1, 45, 0).unixtime();
+    simulateReboot(rebootUtc);
+    stepLoopOnce(1000);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive()); // blocked by persisted sched_tr!
+}
+
+// B. Outage spanning 1st pass (DST) and 2nd pass (STD) -> reboot at 01:45 UTC catches up ONCE
+static void test_soak_dst_fallback_outage_catches_up_once(void) {
+    setupCommonZones();
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.interval_days = 1;
+    cs.day_pattern = DayPattern::DAILY;
+    const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+    cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
+    gState.mode = AppMode::PERSONALIZADO;
+    storage.save();
+
+    uint32_t rebootUtc = DateTime(2026, 10, 25, 1, 45, 0).unixtime();
+    simulateReboot(rebootUtc);
+    stepLoopOnce(1000);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    wateringCtrl.stop();
+
+    // Reboot again at 01:55 UTC -> must NOT fire a 2nd time
+    simulateReboot(DateTime(2026, 10, 25, 1, 55, 0).unixtime());
+    stepLoopOnce(1000);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+}
+
+// C. Brownout retry loop hits MAX_RECOVERY_RETRIES (3) -> aborts AND catch-up must NOT restart it
+static void test_soak_brownout_retry_limit_blocks_catchup(void) {
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    storage.save();
+
+    uint32_t slotUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
+    simulateReboot(slotUtc);
+    slotUtc++;
+    rtclock._rtc.adjust(DateTime(slotUtc));
+    stepLoopOnce(1000); // 08:00:00 -> AUTO starts
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+
+    // 3 consecutive brownout reboots within 2 min (08:01, 08:02, 08:03)
+    for (int r = 1; r <= MAX_RECOVERY_RETRIES; r++) {
+        simulateReboot(slotUtc + (uint32_t)r * 60UL);
+        stepLoopOnce(1000);
+        TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    }
+    // 4th boot at 08:04 -> recovery aborts AND Scheduler catch-up stays blocked by sched_tr!
+    simulateReboot(slotUtc + 240UL);
+    stepLoopOnce(1000);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+}
+
+// D. Multi-zone blackout recovery: mid-Z1 checkpoint + outage during inter-zone wait -> exact Z1/Z2/Z3 mins
+static void test_soak_multizone_blackout_checkpoint_and_interzone_resume(void) {
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO;
+    storage.save();
+
+    uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
+    simulateReboot(utc);
+    utc++;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(1000); // 08:00:00 -> AUTO starts
+    stepLoopOnce(RELAY_DEADTIME_MS + 5);
+    // Run Z1 for 3 minutes (triggers 2-min checkpoint: Z1 recorded=2, remaining=4m)
+    for (int s = 0; s < 180; s++) {
         utc++;
         rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(1000); // 1st pass (DST) -> fires
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        wateringCtrl.stop();
-
-        // Reboot inside repeated hour at 01:45:00 UTC (15 min after 2nd pass STD)
-        uint32_t rebootUtc = DateTime(2026, 10, 25, 1, 45, 0).unixtime();
-        simulateReboot(rebootUtc);
         stepLoopOnce(1000);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive()); // blocked by persisted sched_tr!
     }
 
-    // B. Outage spanning 1st pass (DST) and 2nd pass (STD) -> reboot at 01:45 UTC catches up ONCE
-    {
-        resetSystem();
-        setupCommonZones();
-        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        cs.slot_count = 1;
-        cs.interval_days = 1;
-        cs.day_pattern = DayPattern::DAILY;
-        const DateTime fallSlot30Local = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
-        cs.slots[0] = { fallSlot30Local.hour(), fallSlot30Local.minute() };
-        gState.mode = AppMode::PERSONALIZADO;
-        storage.save();
-
-        uint32_t rebootUtc = DateTime(2026, 10, 25, 1, 45, 0).unixtime();
-        simulateReboot(rebootUtc);
-        stepLoopOnce(1000);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        wateringCtrl.stop();
-
-        // Reboot again at 01:55 UTC -> must NOT fire a 2nd time
-        simulateReboot(DateTime(2026, 10, 25, 1, 55, 0).unixtime());
-        stepLoopOnce(1000);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
-    }
-
-    // C. Brownout retry loop hits MAX_RECOVERY_RETRIES (3) -> aborts AND catch-up must NOT restart it
-    {
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO; // 08:00, 20:00
-        storage.save();
-
-        uint32_t slotUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
-        simulateReboot(slotUtc);
-        slotUtc++;
-        rtclock._rtc.adjust(DateTime(slotUtc));
-        stepLoopOnce(1000); // 08:00:00 -> AUTO starts
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-
-        // 3 consecutive brownout reboots within 2 min (08:01, 08:02, 08:03)
-        for (int r = 1; r <= MAX_RECOVERY_RETRIES; r++) {
-            simulateReboot(slotUtc + (uint32_t)r * 60UL);
-            stepLoopOnce(1000);
-            TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        }
-        // 4th boot at 08:04 -> recovery aborts AND Scheduler catch-up stays blocked by sched_tr!
-        simulateReboot(slotUtc + 240UL);
-        stepLoopOnce(1000);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
-    }
-
-    // D. Multi-zone blackout recovery: mid-Z1 checkpoint + outage during inter-zone wait -> exact Z1/Z2/Z3 mins
-    {
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO;
-        storage.save();
-
-        uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
-        simulateReboot(utc);
+    // Power outage for 1 minute -> reboot at 08:04
+    utc += 60;
+    simulateReboot(utc);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(0, wateringCtrl.currentZone());
+    stepLoopOnce(RELAY_DEADTIME_MS + 5);
+    // Run remaining 4 minutes of Z1 until inter-zone wait starts
+    for (int s = 0; s < 240; s++) {
         utc++;
         rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(1000); // 08:00:00 -> AUTO starts
-        stepLoopOnce(RELAY_DEADTIME_MS + 5);
-        // Run Z1 for 3 minutes (triggers 2-min checkpoint: Z1 recorded=2, remaining=4m)
-        for (int s = 0; s < 180; s++) {
-            utc++;
-            rtclock._rtc.adjust(DateTime(utc));
-            stepLoopOnce(1000);
-        }
-
-        // Power outage for 1 minute -> reboot at 08:04
-        utc += 60;
-        simulateReboot(utc);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        TEST_ASSERT_EQUAL_UINT8(0, wateringCtrl.currentZone());
-        stepLoopOnce(RELAY_DEADTIME_MS + 5);
-        // Run remaining 4 minutes of Z1 until inter-zone wait starts
-        for (int s = 0; s < 240; s++) {
-            utc++;
-            rtclock._rtc.adjust(DateTime(utc));
-            stepLoopOnce(1000);
-        }
-        TEST_ASSERT_TRUE(gState.watering.is_waiting);
-        TEST_ASSERT_EQUAL_UINT8(1, wateringCtrl.currentZone()); // upcoming Z2
-
-        // Second blackout DURING inter-zone wait -> reboot resumes at Z2 (never re-runs Z1!)
-        utc += 30;
-        simulateReboot(utc);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        TEST_ASSERT_TRUE(gState.watering.is_waiting);
-        TEST_ASSERT_EQUAL_UINT8(1, wateringCtrl.currentZone());
-
-        // Drain rest of cycle (Z2 + Z3)
-        while (wateringCtrl.isActive()) {
-            uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting ? 20UL : 1000UL;
-            if (sMs == 1000UL) utc++;
-            rtclock._rtc.adjust(DateTime(utc));
-            stepLoopOnce(sMs);
-        }
-        HistoryEntry latest[1] = {};
-        TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, latest));
-        TEST_ASSERT_EQUAL_UINT8(6, latest[0].zone_dur[0]);
-        TEST_ASSERT_EQUAL_UINT8(6, latest[0].zone_dur[1]);
-        TEST_ASSERT_EQUAL_UINT8(6, latest[0].zone_dur[2]);
+        stepLoopOnce(1000);
     }
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+    TEST_ASSERT_EQUAL_UINT8(1, wateringCtrl.currentZone()); // upcoming Z2
 
-    // E. MANUAL collision at 08:00 + blackout on MANUAL before 08:00 -> aborts stale MANUAL, catches AUTO once
-    {
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO;
-        storage.save();
+    // Second blackout DURING inter-zone wait -> reboot resumes at Z2 (never re-runs Z1!)
+    utc += 30;
+    simulateReboot(utc);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_TRUE(gState.watering.is_waiting);
+    TEST_ASSERT_EQUAL_UINT8(1, wateringCtrl.currentZone());
 
-        uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 58, 0)).unixtime();
-        simulateReboot(utc);
-        wateringCtrl.startGeneral(WaterTrigger::MANUAL);
-        stepLoopOnce(RELAY_DEADTIME_MS + 5);
-
-        // Power outage at 07:59 -> back at 08:05 (crossed 08:00 AUTO slot)
-        utc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 5, 0)).unixtime();
-        simulateReboot(utc);
-        // Recovery of MANUAL aborted because 08:00 scheduled slot passed during outage;
-        // Scheduler catch-up runs 08:00 AUTO ONCE.
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
-        stepLoopOnce(1000);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl._runTrigger);
-        wateringCtrl.stop();
-    }
-
-    // F. SUSPEND expiration boundaries:
-    //    1) expires mid-minute (08:00:30) -> triggers 08:00 once
-    //    2) expires AFTER slot (08:15:00) -> does NOT catch up stale slot from suspension period
-    {
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO;
-        uint32_t slotUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
-        gState.suspended = true;
-        gState.suspended_until = slotUtc + 30;
-        storage.save();
-
-        simulateReboot(slotUtc + 20);
-        stepLoopOnce(1000);
-        TEST_ASSERT_TRUE(gState.suspended);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
-
-        // Step second-by-second across suspension expiry at 08:00:30 -> triggers 08:00 once
-        for (uint32_t u = slotUtc + 22; u <= slotUtc + 35; u++) {
-            rtclock._rtc.adjust(DateTime(u));
-            stepLoopOnce(1000);
-        }
-        TEST_ASSERT_FALSE(gState.suspended);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        wateringCtrl.stop();
-
-        // Next second at 08:00:36 -> must not re-trigger
-        rtclock._rtc.adjust(DateTime(slotUtc + 36));
-        stepLoopOnce(1000);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
-
-        // Case F2: suspension spans 08:00 and expires at 08:15 -> NO catch-up
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO;
-        gState.suspended = true;
-        gState.suspended_until = slotUtc + 900; // 08:15:00
-        storage.save();
-        simulateReboot(slotUtc + 895);
-        stepLoopOnce(1000);
-        TEST_ASSERT_TRUE(gState.suspended);
-        for (uint32_t u = slotUtc + 897; u <= slotUtc + 905; u++) {
-            rtclock._rtc.adjust(DateTime(u));
-            stepLoopOnce(1000);
-        }
-        TEST_ASSERT_FALSE(gState.suspended);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
-    }
-
-    // G. EVERY_X_DAYS (interval=3) midnight wrap catch-up maintains exact 3-day cadence
-    {
-        resetSystem();
-        setupCommonZones();
-        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        cs.slot_count = 1;
-        cs.interval_days = 3;
-        cs.day_pattern = DayPattern::EVERY_X_DAYS;
-        cs.slots[0] = { 23, 50 };
-        gState.mode = AppMode::PERSONALIZADO;
-        gState.custom_ref_day = DateTime(2026, 6, 15, 0, 0, 0).unixtime() / 86400UL;
-        storage.save();
-
-        // Day 3 (2026-06-18): outage at 23:45 -> reboot 2026-06-19 00:10 -> catches up Day 3's 23:50!
-        uint32_t catchUtc = RTClock::localToUtc(DateTime(2026, 6, 19, 0, 10, 0)).unixtime();
-        simulateReboot(catchUtc);
-        stepLoopOnce(1000);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        wateringCtrl.stop();
-
-        // Step continuously through Day 4 (Jun 19), Day 5 (Jun 20), and Day 6 (Jun 21 23:51):
-        // Day 4 & Day 5 must NOT fire; Day 6 MUST fire once at 23:50.
-        uint32_t u = catchUtc + 1;
-        uint32_t day6TriggerUtc = RTClock::localToUtc(DateTime(2026, 6, 21, 23, 50, 0)).unixtime();
-        uint32_t endDay6Utc = day6TriggerUtc + 60UL;
-        uint32_t firedAtUtc = 0;
-        uint32_t fireCount = 0;
-        while (u < endDay6Utc) {
-            uint32_t sMs = (u + 30 >= day6TriggerUtc) ? 1000UL : 10000UL;
-            u += sMs / 1000UL;
-            rtclock._rtc.adjust(DateTime(u));
-            stepLoopOnce(sMs);
-            if (wateringCtrl.isActive()) {
-                fireCount++;
-                firedAtUtc = u;
-                wateringCtrl.stop();
-            }
-        }
-        TEST_ASSERT_EQUAL_UINT32(1, fireCount);
-        TEST_ASSERT_EQUAL_UINT32(day6TriggerUtc, firedAtUtc);
-    }
-
-    // H. Dead RTC battery on cold boot inhibits AUTO watering, and export_history defers recording cleanly
-    {
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO;
-        storage.save();
-
-        uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
-        simulateReboot(utc, true, true); // lostPower = true on cold boot
-        TEST_ASSERT_FALSE(gState.rtc_valid);
-        stepLoopOnce(1000);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive()); // fail-safe: no AUTO without valid clock
-
-        // Manual run + export_history active simultaneously -> deferred entry flushes once export ends
-        rtclock.set(2026, 6, 15, 9, 0, 0);
-        HistoryEntry seed = { 2026, 6, 14, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
-        history.record(seed);
-        TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
-
-        Serial.feedInput("export_history\n");
-        terminal.update();
-        TEST_ASSERT_TRUE(history.isExporting());
-
-        wateringCtrl.startGeneral(WaterTrigger::MANUAL);
-        stepLoopOnce(RELAY_DEADTIME_MS + 5);
-        // Stop after 1 minute so history records while export is still active
-        advanceMockMillis(60000UL);
-        wateringCtrl.stop();
-        TEST_ASSERT_NOT_EQUAL(history._defHead, history._defTail);
-
-        // Drain export -> deferred history record flushes automatically
-        int guard = 100;
-        while ((history.isExporting() || history._defHead != history._defTail) && guard-- > 0) {
-            history.update();
-        }
-        TEST_ASSERT_FALSE(history.isExporting());
-        TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
-    }
-
-    // I. Transient DS3231 disconnect + hotplug reconnect must NOT clear sched_tr or double-water
-    {
-        resetSystem();
-        setupCommonZones();
-        gState.mode = AppMode::MEDIO; // 08:00, 20:00
-        storage.save();
-
-        uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
-        simulateReboot(utc);
-        utc++;
+    // Drain rest of cycle (Z2 + Z3)
+    while (wateringCtrl.isActive()) {
+        uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting ? 20UL : 1000UL;
+        if (sMs == 1000UL) utc++;
         rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(1000); // 08:00:00 -> fires once
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        wateringCtrl.stop();
+        stepLoopOnce(sMs);
+    }
+    HistoryEntry latest[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, history.readLast(1, latest));
+    TEST_ASSERT_EQUAL_UINT8(6, latest[0].zone_dur[0]);
+    TEST_ASSERT_EQUAL_UINT8(6, latest[0].zone_dur[1]);
+    TEST_ASSERT_EQUAL_UINT8(6, latest[0].zone_dur[2]);
+}
 
-        // Transient RTC disconnect (3 failed polls -> _found=false) + I2C hotplug reconnect
-        // (bumps rtclock.revision(), NOT manualRevision())
-        rtclock._rtc.mockPresent = false;
-        utc += 29;
-        rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(29000UL); // poll 1 fail (_consecErrors=1)
-        for (int i = 0; i < 2; i++) {
-            utc += 5;
-            rtclock._rtc.adjust(DateTime(utc));
-            stepLoopOnce(5000UL); // poll 2, poll 3 fail -> _found=false via RTClock::update()
-        }
-        TEST_ASSERT_FALSE(rtclock.isPresent());
-        utc += 30;
-        rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(30000UL);
+// E. MANUAL collision at 08:00 + blackout on MANUAL before 08:00 -> aborts stale MANUAL, catches AUTO once
+static void test_soak_manual_blackout_across_auto_slot_catches_up_once(void) {
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO;
+    storage.save();
 
-        uint32_t revBefore = rtclock.revision();
-        uint32_t manBefore = rtclock.manualRevision();
-        rtclock._rtc.mockPresent = true;
-        utc += 30;
-        rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(30000UL);
-        TEST_ASSERT_TRUE(rtclock.isPresent());
-        TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
-        TEST_ASSERT_EQUAL_UINT32(manBefore, rtclock.manualRevision());
+    uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 58, 0)).unixtime();
+    simulateReboot(utc);
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    stepLoopOnce(RELAY_DEADTIME_MS + 5);
 
-        // Blackout & reboot at 08:15 (inside 30-min catch-up window) MUST NOT re-fire 08:00!
-        uint32_t rebootUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 15, 0)).unixtime();
-        simulateReboot(rebootUtc);
+    // Power outage at 07:59 -> back at 08:05 (crossed 08:00 AUTO slot)
+    utc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 5, 0)).unixtime();
+    simulateReboot(utc);
+    // Recovery of MANUAL aborted because 08:00 scheduled slot passed during outage;
+    // Scheduler catch-up runs 08:00 AUTO ONCE.
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    stepLoopOnce(1000);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl._runTrigger);
+    wateringCtrl.stop();
+}
+
+// F. SUSPEND expiration boundaries:
+//    1) expires mid-minute (08:00:30) -> triggers 08:00 once
+//    2) expires AFTER slot (08:15:00) -> does NOT catch up stale slot from suspension period
+static void test_soak_suspend_expiration_boundaries(void) {
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO;
+    uint32_t slotUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
+    gState.suspended = true;
+    gState.suspended_until = slotUtc + 30;
+    storage.save();
+
+    simulateReboot(slotUtc + 20);
+    stepLoopOnce(1000);
+    TEST_ASSERT_TRUE(gState.suspended);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    // Step second-by-second across suspension expiry at 08:00:30 -> triggers 08:00 once
+    for (uint32_t u = slotUtc + 22; u <= slotUtc + 35; u++) {
+        rtclock._rtc.adjust(DateTime(u));
         stepLoopOnce(1000);
-        TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    }
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    wateringCtrl.stop();
+
+    // Next second at 08:00:36 -> must not re-trigger
+    rtclock._rtc.adjust(DateTime(slotUtc + 36));
+    stepLoopOnce(1000);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+
+    // Case F2: suspension spans 08:00 and expires at 08:15 -> NO catch-up
+    resetSystem();
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO;
+    gState.suspended = true;
+    gState.suspended_until = slotUtc + 900; // 08:15:00
+    storage.save();
+    simulateReboot(slotUtc + 895);
+    stepLoopOnce(1000);
+    TEST_ASSERT_TRUE(gState.suspended);
+    for (uint32_t u = slotUtc + 897; u <= slotUtc + 905; u++) {
+        rtclock._rtc.adjust(DateTime(u));
+        stepLoopOnce(1000);
+    }
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+}
+
+// G. EVERY_X_DAYS (interval=3) midnight wrap catch-up maintains exact 3-day cadence
+static void test_soak_every_x_days_midnight_wrap_preserves_cadence(void) {
+    setupCommonZones();
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.interval_days = 3;
+    cs.day_pattern = DayPattern::EVERY_X_DAYS;
+    cs.slots[0] = { 23, 50 };
+    gState.mode = AppMode::PERSONALIZADO;
+    gState.custom_ref_day = DateTime(2026, 6, 15, 0, 0, 0).unixtime() / 86400UL;
+    storage.save();
+
+    // Day 3 (2026-06-18): outage at 23:45 -> reboot 2026-06-19 00:10 -> catches up Day 3's 23:50!
+    uint32_t catchUtc = RTClock::localToUtc(DateTime(2026, 6, 19, 0, 10, 0)).unixtime();
+    simulateReboot(catchUtc);
+    stepLoopOnce(1000);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    wateringCtrl.stop();
+
+    // Step continuously through Day 4 (Jun 19), Day 5 (Jun 20), and Day 6 (Jun 21 23:51):
+    // Day 4 & Day 5 must NOT fire; Day 6 MUST fire once at 23:50.
+    uint32_t u = catchUtc + 1;
+    uint32_t day6TriggerUtc = RTClock::localToUtc(DateTime(2026, 6, 21, 23, 50, 0)).unixtime();
+    uint32_t endDay6Utc = day6TriggerUtc + 60UL;
+    uint32_t firedAtUtc = 0;
+    uint32_t fireCount = 0;
+    while (u < endDay6Utc) {
+        uint32_t sMs = (u + 30 >= day6TriggerUtc) ? 1000UL : 10000UL;
+        u += sMs / 1000UL;
+        rtclock._rtc.adjust(DateTime(u));
+        stepLoopOnce(sMs);
+        if (wateringCtrl.isActive()) {
+            fireCount++;
+            firedAtUtc = u;
+            wateringCtrl.stop();
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(1, fireCount);
+    TEST_ASSERT_EQUAL_UINT32(day6TriggerUtc, firedAtUtc);
+}
+
+// H. Dead RTC battery on cold boot inhibits AUTO watering, and export_history defers recording cleanly
+static void test_soak_cold_rtc_battery_inhibits_auto_and_defers_history_during_export(void) {
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO;
+    storage.save();
+
+    uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
+    simulateReboot(utc, true, true); // lostPower = true on cold boot
+    TEST_ASSERT_FALSE(gState.rtc_valid);
+    stepLoopOnce(1000);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive()); // fail-safe: no AUTO without valid clock
+
+    // Manual run + export_history active simultaneously -> deferred entry flushes once export ends
+    rtclock.set(2026, 6, 15, 9, 0, 0);
+    HistoryEntry seed = { 2026, 6, 14, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(seed);
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    Serial.feedInput("export_history\n");
+    terminal.update();
+    TEST_ASSERT_TRUE(history.isExporting());
+
+    wateringCtrl.startGeneral(WaterTrigger::MANUAL);
+    stepLoopOnce(RELAY_DEADTIME_MS + 5);
+    // Stop after 1 minute so history records while export is still active
+    advanceMockMillis(60000UL);
+    wateringCtrl.stop();
+    TEST_ASSERT_NOT_EQUAL(history._defHead, history._defTail);
+
+    // Drain export -> deferred history record flushes automatically
+    int guard = 100;
+    while ((history.isExporting() || history._defHead != history._defTail) && guard-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_EQUAL_UINT16(2, history.entryCount());
+}
+
+// I. Transient DS3231 disconnect + hotplug reconnect must NOT clear sched_tr or double-water
+static void test_soak_transient_rtc_disconnect_preserves_triggers(void) {
+    setupCommonZones();
+    gState.mode = AppMode::MEDIO; // 08:00, 20:00
+    storage.save();
+
+    uint32_t utc = RTClock::localToUtc(DateTime(2026, 6, 15, 7, 59, 59)).unixtime();
+    simulateReboot(utc);
+    utc++;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(1000); // 08:00:00 -> fires once
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    wateringCtrl.stop();
+
+    // Transient RTC disconnect (3 failed polls -> _found=false) + I2C hotplug reconnect
+    // (bumps rtclock.revision(), NOT manualRevision())
+    rtclock._rtc.mockPresent = false;
+    utc += 29;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(29000UL); // poll 1 fail (_consecErrors=1)
+    for (int i = 0; i < 2; i++) {
+        utc += 5;
+        rtclock._rtc.adjust(DateTime(utc));
+        stepLoopOnce(5000UL); // poll 2, poll 3 fail -> _found=false via RTClock::update()
+    }
+    TEST_ASSERT_FALSE(rtclock.isPresent());
+    utc += 30;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(30000UL);
+
+    uint32_t revBefore = rtclock.revision();
+    uint32_t manBefore = rtclock.manualRevision();
+    rtclock._rtc.mockPresent = true;
+    utc += 30;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(30000UL);
+    TEST_ASSERT_TRUE(rtclock.isPresent());
+    TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
+    TEST_ASSERT_EQUAL_UINT32(manBefore, rtclock.manualRevision());
+
+    // Blackout & reboot at 08:15 (inside 30-min catch-up window) MUST NOT re-fire 08:00!
+    uint32_t rebootUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 15, 0)).unixtime();
+    simulateReboot(rebootUtc);
+    stepLoopOnce(1000);
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+}
+
+// J. Blackout mid-cycle during October DST fall-back (1st 01:30 WEST) + reboot at 01:05 WET
+//    must resume cleanly (not falsely abort due to unloaded sched_tr) and NOT double-water at 2nd 01:30 WET!
+static void test_soak_dst_fallback_mid_cycle_blackout_resumes_without_double_water(void) {
+    setupCommonZones();
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.slot_count = 1;
+    cs.interval_days = 1;
+    cs.day_pattern = DayPattern::DAILY;
+    DateTime fallFirstSlotLocal = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
+    cs.slots[0] = { fallFirstSlotLocal.hour(), fallFirstSlotLocal.minute() };
+    gState.mode = AppMode::PERSONALIZADO;
+    storage.save();
+
+    uint32_t utc = DateTime(2026, 10, 25, 0, 29, 59).unixtime();
+    simulateReboot(utc);
+    utc++;
+    rtclock._rtc.adjust(DateTime(utc));
+    stepLoopOnce(1000); // 1st occurrence fires -> persists sched_tr + RecoveryState
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    stepLoopOnce(RELAY_DEADTIME_MS + 5);
+
+    // Power loss 5 min in; power returns 35 min after start (01:05 UTC, 25 min before 2nd occurrence)
+    uint32_t resumeUtc = DateTime(2026, 10, 25, 1, 5, 0).unixtime();
+    simulateReboot(resumeUtc);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive()); // Must resume!
+
+    // Drain resumed cycle before 01:30 UTC
+    uint32_t u = resumeUtc;
+    while (wateringCtrl.isActive()) {
+        uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting ? 20UL : 1000UL;
+        if (sMs == 1000UL) u++;
+        rtclock._rtc.adjust(DateTime(u));
+        stepLoopOnce(sMs);
     }
 
-    // J. Blackout mid-cycle during October DST fall-back (1st 01:30 WEST) + reboot at 01:05 WET
-    //    must resume cleanly (not falsely abort due to unloaded sched_tr) and NOT double-water at 2nd 01:30 WET!
-    {
-        resetSystem();
-        setupCommonZones();
-        ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
-        cs.slot_count = 1;
-        cs.interval_days = 1;
-        cs.day_pattern = DayPattern::DAILY;
-        DateTime fallFirstSlotLocal = RTClock::utcToLocal(DateTime(2026, 10, 25, 0, 30, 0));
-        cs.slots[0] = { fallFirstSlotLocal.hour(), fallFirstSlotLocal.minute() };
-        gState.mode = AppMode::PERSONALIZADO;
-        storage.save();
-
-        uint32_t utc = DateTime(2026, 10, 25, 0, 29, 59).unixtime();
-        simulateReboot(utc);
-        utc++;
-        rtclock._rtc.adjust(DateTime(utc));
-        stepLoopOnce(1000); // 1st occurrence fires -> persists sched_tr + RecoveryState
-        TEST_ASSERT_TRUE(wateringCtrl.isActive());
-        stepLoopOnce(RELAY_DEADTIME_MS + 5);
-
-        // Power loss 5 min in; power returns 35 min after start (01:05 UTC, 25 min before 2nd occurrence)
-        uint32_t resumeUtc = DateTime(2026, 10, 25, 1, 5, 0).unixtime();
-        simulateReboot(resumeUtc);
-        TEST_ASSERT_TRUE(wateringCtrl.isActive()); // Must resume!
-
-        // Drain resumed cycle before 01:30 UTC
-        uint32_t u = resumeUtc;
-        while (wateringCtrl.isActive()) {
-            uint32_t sMs = wateringCtrl._isRelayDeadTimeWaiting ? 20UL : 1000UL;
-            if (sMs == 1000UL) u++;
-            rtclock._rtc.adjust(DateTime(u));
-            stepLoopOnce(sMs);
-        }
-
-        // Advance across 2nd occurrence (01:30 UTC) -> MUST stay blocked by sched_tr!
-        uint32_t secondSlotUtc = DateTime(2026, 10, 25, 1, 30, 0).unixtime();
-        while (u <= secondSlotUtc + 60UL) {
-            u++;
-            rtclock._rtc.adjust(DateTime(u));
-            stepLoopOnce(1000UL);
-            TEST_ASSERT_FALSE(wateringCtrl.isActive());
-        }
+    // Advance across 2nd occurrence (01:30 UTC) -> MUST stay blocked by sched_tr!
+    uint32_t secondSlotUtc = DateTime(2026, 10, 25, 1, 30, 0).unixtime();
+    while (u <= secondSlotUtc + 60UL) {
+        u++;
+        rtclock._rtc.adjust(DateTime(u));
+        stepLoopOnce(1000UL);
+        TEST_ASSERT_FALSE(wateringCtrl.isActive());
     }
 }
 
@@ -1050,7 +989,7 @@ void test_soak_double_watering_and_edge_case_matrix(void) {
 //    (random power outages, RTC drops/corrupt reads/OSF,
 //     LCD faults under Always-On, user menu/terminal inputs)
 // ─────────────────────────────────────────────────────────
-void test_soak_120_days_chaotic_blackouts_and_faults(void) {
+static void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     gState.setup_done = true;
     gState.auto_dst = true;
     gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
@@ -1186,11 +1125,30 @@ void test_soak_120_days_chaotic_blackouts_and_faults(void) {
     TEST_ASSERT_LESS_OR_EQUAL_UINT16(HISTORY_MAX_ENTRIES, history.entryCount());
 }
 
+};
+
+void setUp(void) {
+    UnitTestAccess::resetSystem();
+}
+
+void tearDown(void) {
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_wraparound_49_day_millis_all_subsystems);
-    RUN_TEST(test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations);
-    RUN_TEST(test_soak_double_watering_and_edge_case_matrix);
-    RUN_TEST(test_soak_120_days_chaotic_blackouts_and_faults);
+    RUN_UT(test_wraparound_49_day_millis_all_subsystems);
+    RUN_UT(test_soak_520_days_regular_usage_all_modes_dst_leap_and_rotations);
+    RUN_UT(test_soak_dst_fallback_reboot_no_double_water);
+    RUN_UT(test_soak_dst_fallback_outage_catches_up_once);
+    RUN_UT(test_soak_brownout_retry_limit_blocks_catchup);
+    RUN_UT(test_soak_multizone_blackout_checkpoint_and_interzone_resume);
+    RUN_UT(test_soak_manual_blackout_across_auto_slot_catches_up_once);
+    RUN_UT(test_soak_suspend_expiration_boundaries);
+    RUN_UT(test_soak_every_x_days_midnight_wrap_preserves_cadence);
+    RUN_UT(test_soak_cold_rtc_battery_inhibits_auto_and_defers_history_during_export);
+    RUN_UT(test_soak_transient_rtc_disconnect_preserves_triggers);
+    RUN_UT(test_soak_dst_fallback_mid_cycle_blackout_resumes_without_double_water);
+    RUN_UT(test_soak_120_days_chaotic_blackouts_and_faults);
     return UNITY_END();
 }

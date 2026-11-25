@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <esp_task_wdt.h>
-#if __has_include(<esp_idf_version.h>)
-  #include <esp_idf_version.h>
+#include <esp_idf_version.h>
+#if !defined(ESP_IDF_VERSION) || !defined(ESP_IDF_VERSION_VAL) || \
+    (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0))
+  #error "Lawn & Order requires ESP-IDF >= 5.0.0 (Arduino-ESP32 Core 3.x)"
 #endif
 #if __has_include(<esp_system.h>)
   #include <esp_system.h>
@@ -71,78 +73,8 @@ void recoverI2C() {
     recoverI2CWith(display, rtclock, gI2cRecState);
 }
 
-void setup() {
-    // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else.
-    initRelayPinsSafe();
-
-    Serial.begin(115200);
-    Serial.println();
-    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_BOOT,
-          FW_VERSION, FW_BUILD_DATE, resetReasonStr());
-
-    // Inicializar o Watchdog com timeout parametrizado e reset automatico (compativel com ESP-IDF v4 e v5)
-#if LOG_LEVEL >= LVL_ERROR
-    esp_err_t wdt_err;
-#endif
-#if defined(ESP_IDF_VERSION) && defined(ESP_IDF_VERSION_VAL) && \
-    (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0))
-    esp_task_wdt_config_t wdt_config = {
-        .timeout_ms = WDT_TIMEOUT_S * 1000,
-        .idle_core_mask = (1 << 0), // Watch Core 0 idle (Arduino-ESP32 default); Core 1 loopTask is watched via esp_task_wdt_add(NULL)
-        .trigger_panic = true
-    };
-  #if LOG_LEVEL >= LVL_ERROR
-    wdt_err = esp_task_wdt_init(&wdt_config);
-    if (wdt_err == ESP_ERR_INVALID_STATE) {
-        // No Arduino Core 3.x (ESP-IDF 5), o TWDT ja vem pre-inicializado pelo core.
-        // Reconfigurar para aplicar o timeout customizado de 8s.
-        wdt_err = esp_task_wdt_reconfigure(&wdt_config);
-    }
-  #else
-    if (esp_task_wdt_init(&wdt_config) == ESP_ERR_INVALID_STATE) {
-        esp_task_wdt_reconfigure(&wdt_config);
-    }
-  #endif
-#else
-  #if LOG_LEVEL >= LVL_ERROR
-    wdt_err = esp_task_wdt_init(WDT_TIMEOUT_S, true);
-  #else
-    esp_task_wdt_init(WDT_TIMEOUT_S, true);
-  #endif
-#endif
-#if LOG_LEVEL >= LVL_ERROR
-    if (wdt_err != ESP_OK) {
-        char errBuf[40];
-        espErrDesc(wdt_err, errBuf, sizeof(errBuf));
-        LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_INIT_FAIL, errBuf);
-    }
-
-    wdt_err = esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
-    // No Arduino Core 3.x, a loopTask pode ja vir subscrita ao TWDT (retorna ESP_ERR_INVALID_STATE)
-    if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
-        char errBuf[40];
-        espErrDesc(wdt_err, errBuf, sizeof(errBuf));
-        LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_ADD_FAIL, errBuf);
-    }
-#else
-    esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
-#endif
-
-    initAppState();       // load firmware defaults into RAM
-
-    storage.begin();      // open NVS namespace
-    storage.load();       // overwrite defaults with persisted values
-
-    esp_task_wdt_reset();
-    history.begin();      // mount LittleFS, open/create history file
-    esp_task_wdt_reset();
-
-    clearI2CBus();
-    Wire.begin(PIN_SDA, PIN_SCL);
-    configureI2CTimeout();
-    delay(200); // Allow LCD to boot fully
-
 #if LOG_LEVEL >= LVL_DEBUG
+static void debugI2cScan() {
     // Full I2C bus diagnostic scan (debug builds only; LCD/RTC probe their own addresses below)
     byte i2cCount = 0;
     char i2cList[192] = "";
@@ -176,27 +108,63 @@ void setup() {
         LOG_D(TXT_LOG_TAG_I2C, TXT_LOG_I2C_SCAN_SUMMARY,
               (unsigned)i2cCount, i2cList);
     }
+}
 #endif
-    esp_task_wdt_reset();
-    display.begin();
-    esp_task_wdt_reset();
-    display.setErrorCallback(recoverI2C);
-    encoder.begin();
 
-    rtclock.setErrorCallback(recoverI2C);
-    rtclock.begin();
+void setup() {
+    // 1. HARDWARE SAFETY: Force relays OFF immediately before anything else.
+    initRelayPinsSafe();
 
-    // Evaluate active suspension against the real RTC time before resuming interrupted cycles
-    evaluateBootSuspension();
+    Serial.setRxBufferSize(1024);
+    Serial.begin(115200);
+    Serial.println();
+    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_BOOT,
+          FW_VERSION, FW_BUILD_DATE, resetReasonStr());
 
-    scheduler.loadTriggers(); // Load persisted DST fall-back guards before recovery checks next slot
-    wateringCtrl.begin();
+    // Inicializar o Watchdog com timeout parametrizado e reset automatico (ESP-IDF 5 / Arduino Core 3.x)
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = WDT_TIMEOUT_S * 1000,
+        .idle_core_mask = (1 << 0), // Watch Core 0 idle (Arduino-ESP32 default); Core 1 loopTask is watched via esp_task_wdt_add(NULL)
+        .trigger_panic = true
+    };
+#if LOG_LEVEL >= LVL_ERROR
+    esp_err_t wdt_err = esp_task_wdt_init(&wdt_config);
+    if (wdt_err == ESP_ERR_INVALID_STATE) {
+        // No Arduino Core 3.x (ESP-IDF 5), o TWDT ja vem pre-inicializado pelo core.
+        // Reconfigurar para aplicar o timeout customizado de 8s.
+        wdt_err = esp_task_wdt_reconfigure(&wdt_config);
+    }
+    if (wdt_err != ESP_OK) {
+        char errBuf[40];
+        espErrDesc(wdt_err, errBuf, sizeof(errBuf));
+        LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_INIT_FAIL, errBuf);
+    }
 
-    scheduler.begin();    // computes next_hour/min from live RTC + current mode
-    ui.begin();
-    terminal.begin();
+    wdt_err = esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
+    // No Arduino Core 3.x, a loopTask pode ja vir subscrita ao TWDT (retorna ESP_ERR_INVALID_STATE)
+    if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
+        char errBuf[40];
+        espErrDesc(wdt_err, errBuf, sizeof(errBuf));
+        LOG_E(TXT_LOG_TAG_SYS, TXT_LOG_WDT_ADD_FAIL, errBuf);
+    }
+#else
+    if (esp_task_wdt_init(&wdt_config) == ESP_ERR_INVALID_STATE) {
+        esp_task_wdt_reconfigure(&wdt_config);
+    }
+    esp_task_wdt_add(NULL); // Adiciona a thread principal do loop()
+#endif
 
-    LOG_I(TXT_LOG_TAG_SYS, TXT_LOG_SYS_READY);
+    bootSystem({
+        display,
+        encoder,
+        ui,
+        recoverI2C,
+#if LOG_LEVEL >= LVL_DEBUG
+        debugI2cScan
+#else
+        nullptr
+#endif
+    });
 }
 
 // ─────────────────────────────────────────────────────────
@@ -206,16 +174,7 @@ void loop() {
     static uint32_t lastSlowLogMs = 0;
     static bool hasSlowLogged = false;
 #endif
-    esp_task_wdt_reset();   // Alimentar o Watchdog em cada ciclo do loop
-    rtclock.update();       // advances software clock once/sec and polls DS3231 every 30 s
-    scheduler.update();     // checks trigger, advances next_*, fires watering
-    ui.update();            // handles encoder, redraws LCD
-    wateringCtrl.update();  // advances zone timer, drives relays
-    history.update();       // processes background file rotations
-    terminal.update();
-    if (!ui.inSetup()) {
-        storage.update();   // retries transient NVS config write failures
-    }
+    tickSystem(ui);
 #if LOG_LEVEL >= LVL_WARN
     uint32_t loopEndMs = millis();
     uint32_t loopDurMs = loopEndMs - loopStartMs;

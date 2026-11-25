@@ -49,6 +49,7 @@ public:
     template<size_t N> static char* pbar(char (&buf)[N], uint8_t pct) { return _pbar(buf, N, pct); }
 
 private:
+    UNIT_TEST_FRIEND
     static char* _fx(char* buf, size_t n, const char* s);
     static char* _cx(char* buf, size_t n, const char* s);
     static char* _hdr(char* buf, size_t n, const char* s);
@@ -81,6 +82,7 @@ private:
     uint32_t _lastFullRefresh;
     uint32_t _lastAttemptMs = 0;
 
+    static void _padRow(char (&out)[LCD_COLS + 1], const char* text);
     bool _flushRow(uint8_t row);
     void _stageRow(uint8_t row, const char* text);
     bool _writeRow(uint8_t row, const char* text, bool* wroteFull = nullptr, bool* didI2c = nullptr);

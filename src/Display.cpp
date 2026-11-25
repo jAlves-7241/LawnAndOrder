@@ -167,15 +167,19 @@ void Display::displayOff() {
     _displayOn = false;
 }
 
-void Display::_stageRow(uint8_t row, const char* text) {
-    if (row >= LCD_ROWS) return;
+void Display::_padRow(char (&out)[LCD_COLS + 1], const char* text) {
     if (!text) text = "";
-    char padded[LCD_COLS + 1];
     size_t rawLen = strlen(text);
     int len = (rawLen > LCD_COLS) ? LCD_COLS : (int)rawLen;
-    memcpy(padded, text, len);
-    memset(padded + len, ' ', LCD_COLS - len);
-    padded[LCD_COLS] = '\0';
+    memcpy(out, text, len);
+    memset(out + len, ' ', LCD_COLS - len);
+    out[LCD_COLS] = '\0';
+}
+
+void Display::_stageRow(uint8_t row, const char* text) {
+    if (row >= LCD_ROWS) return;
+    char padded[LCD_COLS + 1];
+    _padRow(padded, text);
     if (memcmp(_shadow[row], padded, LCD_COLS) != 0) {
         memcpy(_shadow[row], padded, LCD_COLS + 1);
         _dirty[row] = true;
@@ -341,14 +345,8 @@ bool Display::_writeRow(uint8_t row, const char* text, bool* wroteFull, bool* di
     if (wroteFull) *wroteFull = false;
     if (didI2c) *didI2c = false;
     if (row >= LCD_ROWS) return true;  // bounds guard
-    if (!text) text = "";
-    // Build padded version
     char padded[LCD_COLS + 1];
-    size_t rawLen = strlen(text);
-    int len = (rawLen > LCD_COLS) ? LCD_COLS : (int)rawLen;
-    memcpy(padded, text, len);
-    memset(padded + len, ' ', LCD_COLS - len);
-    padded[LCD_COLS] = '\0';
+    _padRow(padded, text);
 
     if (_dirty[row]) {
         memcpy(_shadow[row], padded, LCD_COLS + 1);

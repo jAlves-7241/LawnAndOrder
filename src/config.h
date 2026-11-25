@@ -136,12 +136,26 @@
 #define WDT_TIMEOUT_S 8        // Watchdog timeout em segundos
 #define SUSPEND_DEFAULT_DAYS 3 // Dias padrão para suspensão de rega
 #define SAFETY_GAP_SEC 7200UL  // Tempo de segurança (em segundos) para evitar regas duplas. Valor seguro: 7200 (2h)
+#define DST_DUP_WINDOW_S 7200UL // Janela (2 h) para bloquear duplicacao do mesmo slot no recuo DST
+#define SCHED_WALL_JUMP_MAX_S 7200UL // Salto maximo de hora local (2 h) que aciona recuperacao de slot perdido
 #define SCHED_CATCHUP_WINDOW_S 1800UL // Janela (30 min) para recuperar rega perdida apos falha de energia ou salto DST
 #define DATE_YEAR_MIN 2020     // Ano mínimo para o editor de data
 #define DATE_YEAR_MAX 2099     // Ano máximo para o editor de data
+#define UNIX_MIN_VALID 1577836800UL // 2020-01-01 00:00:00 UTC
+#define UNIX_MAX_VALID 4102444799UL // 2099-12-31 23:59:59 UTC
+#define UNIX_DEFAULT_FALLBACK 1767225600UL // 2026-01-01 00:00:00 UTC (placeholder em RAM sem RTC)
+// 2099-12-31 UTC = dia 47481; +1 dia de margem para fusos positivos (data local 2100-01-01)
+#define CUSTOM_REF_DAY_MAX ((UNIX_MAX_VALID / 86400UL) + 1UL)
 #define MAX_RECOVERY_RETRIES 3    // Máximo de retentativas por zona após reboot
 #define RECOVERY_CHECKPOINT_MIN 2 // Intervalo (min) para guardar progresso da zona em NVS
 #define RECOVERY_MAX_AGE_S 7200UL // Idade máxima (2 h) para retomar ciclo interrompido
 #define DATE_YEAR_SPAN                                                         \
   (DATE_YEAR_MAX - DATE_YEAR_MIN +                                             \
    1) // Faixa de anos (DATE_YEAR_MAX - DATE_YEAR_MIN + 1)
+
+// Standards-compliant white-box hook for native unit tests (zero overhead on ESP32)
+#ifdef UNIT_TEST
+#define UNIT_TEST_FRIEND friend struct UnitTestAccess;
+#else
+#define UNIT_TEST_FRIEND
+#endif

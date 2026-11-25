@@ -6,10 +6,8 @@
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
 
-#define private public
 #include "WateringController.h"
 #include "Scheduler.h"
-#undef private
 
 #include "../../src/WateringController.cpp"
 #include "../../src/Scheduler.cpp"
@@ -26,7 +24,8 @@ void tearDown(void) {
     wateringCtrl.stop();
 }
 
-void test_watering_general_builds_queue_and_skips_disabled(void) {
+struct UnitTestAccess {
+static void test_watering_general_builds_queue_and_skips_disabled(void) {
     // Configure zones: 0 and 2 enabled, 1 and 3 disabled / 0 min
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
@@ -55,7 +54,7 @@ void test_watering_general_builds_queue_and_skips_disabled(void) {
     TEST_ASSERT_EQUAL_UINT32(300000UL, wateringCtrl._queue[1].duration_ms);
 }
 
-void test_watering_custom_selection(void) {
+static void test_watering_custom_selection(void) {
     bool selected[NUM_ZONES] = { false, true, false, true };
     uint8_t durMin = 8; // 8 minutes
 
@@ -71,7 +70,7 @@ void test_watering_custom_selection(void) {
     TEST_ASSERT_EQUAL_UINT32(480000UL, wateringCtrl._queue[1].duration_ms);
 }
 
-void test_watering_dead_time_and_relay_activation(void) {
+static void test_watering_dead_time_and_relay_activation(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
     for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
@@ -95,7 +94,7 @@ void test_watering_dead_time_and_relay_activation(void) {
     TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_4));
 }
 
-void test_watering_emergency_stop(void) {
+static void test_watering_emergency_stop(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
 
@@ -116,7 +115,7 @@ void test_watering_emergency_stop(void) {
     TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_4));
 }
 
-void test_watering_test_run_does_not_log_to_history(void) {
+static void test_watering_test_run_does_not_log_to_history(void) {
     history.clear();
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 
@@ -136,7 +135,7 @@ void test_watering_test_run_does_not_log_to_history(void) {
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 }
 
-void test_watering_blackout_recovery_resumes_interrupted_cycle(void) {
+static void test_watering_blackout_recovery_resumes_interrupted_cycle(void) {
     // 1. Prepare interrupted state in storage
     // Slot 0 for MEDIO is 08:00 local time (SCHED_MEDIO_SLOT0_H). In June 2026, DST is active (UTC = 07:00)
     DateTime slotDT(2026, 6, 15, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0);
@@ -169,7 +168,7 @@ void test_watering_blackout_recovery_resumes_interrupted_cycle(void) {
     TEST_ASSERT_EQUAL_UINT8(2, wateringCtrl._queue[wateringCtrl._queuePos].zone_idx);
 }
 
-void test_watering_multi_zone_sequence_and_history_logging(void) {
+static void test_watering_multi_zone_sequence_and_history_logging(void) {
     history.clear();
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 
@@ -246,7 +245,7 @@ void test_watering_multi_zone_sequence_and_history_logging(void) {
     TEST_ASSERT_FALSE(rs.active);
 }
 
-void test_watering_emergency_stop_partial_duration_recorded(void) {
+static void test_watering_emergency_stop_partial_duration_recorded(void) {
     history.clear();
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
@@ -276,7 +275,7 @@ void test_watering_emergency_stop_partial_duration_recorded(void) {
     TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
 }
 
-void test_watering_empty_selection_does_not_activate(void) {
+static void test_watering_empty_selection_does_not_activate(void) {
     for (int i = 0; i < NUM_ZONES; i++) {
         gState.zones[i].enabled = false;
         gState.zones[i].duration_min = 0;
@@ -291,7 +290,7 @@ void test_watering_empty_selection_does_not_activate(void) {
     TEST_ASSERT_FALSE(wateringCtrl._active);
 }
 
-void test_watering_recovery_rejects_corrupted_and_suspended_states(void) {
+static void test_watering_recovery_rejects_corrupted_and_suspended_states(void) {
     DateTime slotDT(2026, 6, 15, SCHED_MEDIO_SLOT0_H, SCHED_MEDIO_SLOT0_M, 0);
     uint32_t startUnix = slotDT.unixtime() - 3600;
     gState.mode = AppMode::MEDIO;
@@ -338,7 +337,7 @@ void test_watering_recovery_rejects_corrupted_and_suspended_states(void) {
     TEST_ASSERT_FALSE(cleared.active);
 }
 
-void test_watering_inter_zone_wait_updates_upcoming_zone_index(void) {
+static void test_watering_inter_zone_wait_updates_upcoming_zone_index(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 1;
     gState.zones[1].enabled = false;
@@ -359,7 +358,7 @@ void test_watering_inter_zone_wait_updates_upcoming_zone_index(void) {
     TEST_ASSERT_EQUAL_UINT8(0, gState.watering.progress_pct);
 }
 
-void test_watering_deenergize_relays_preserves_recovery_state(void) {
+static void test_watering_deenergize_relays_preserves_recovery_state(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
     wateringCtrl.startGeneral(WaterTrigger::MANUAL);
@@ -378,7 +377,7 @@ void test_watering_deenergize_relays_preserves_recovery_state(void) {
     TEST_ASSERT_TRUE(rs.active);
 }
 
-void test_watering_recovery_retry_cap_and_stable_reset(void) {
+static void test_watering_recovery_retry_cap_and_stable_reset(void) {
     DateTime nowDt(2026, 6, 15, 10, 2, 0);
     uint32_t startUnix = nowDt.unixtime() - 120;
     gState.rtc_valid = true;
@@ -485,7 +484,7 @@ void test_watering_recovery_retry_cap_and_stable_reset(void) {
     TEST_ASSERT_EQUAL_UINT8(4, entries[0].zone_dur[1]);
 }
 
-void test_watering_invalid_custom_duration_preserves_active_cycle(void) {
+static void test_watering_invalid_custom_duration_preserves_active_cycle(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 10;
     wateringCtrl.startGeneral(WaterTrigger::MANUAL);
@@ -504,7 +503,7 @@ void test_watering_invalid_custom_duration_preserves_active_cycle(void) {
     TEST_ASSERT_EQUAL_UINT8(HIGH, digitalRead(PIN_RELAY_2));
 }
 
-void test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime(void) {
+static void test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime(void) {
     // 1. 5 s hardware test completion must log seconds, never "(1 min)"
     wateringCtrl.startTest(0);
     advanceMockMillis(RELAY_DEADTIME_MS + 10);
@@ -577,7 +576,7 @@ void test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime(void) {
 #endif
 }
 
-void test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings(void) {
+static void test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings(void) {
     // 1. startCustom / startTest invalid arguments emit clear warnings
     bool sel[NUM_ZONES] = { true, false, false, false };
     Serial.reset();
@@ -659,7 +658,7 @@ void test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings(void) {
 #endif
 }
 
-void test_watering_max_zone_cap_and_periodic_pin_refresh(void) {
+static void test_watering_max_zone_cap_and_periodic_pin_refresh(void) {
     // 1. Periodic idle pin refresh restores corrupted inactive relay GPIO
     wateringCtrl.begin();
     digitalWrite(PIN_RELAY_2, RELAY_ON);
@@ -711,7 +710,7 @@ void test_watering_max_zone_cap_and_periodic_pin_refresh(void) {
     TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
 }
 
-void test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log(void) {
+static void test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log(void) {
     gState.rtc_valid = true;
     gState.now = { 2026, 6, 15, 8, 0, 0, 1, 1781510400UL };
     gState.zones[0] = { "Z1", true, 1 };
@@ -763,7 +762,7 @@ void test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log(void) {
     TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_2));
 }
 
-void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
+static void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
     // 1. Cycle started without valid RTC must NOT log bogus 2026-01-01 if clock is set mid-cycle
     history.clear();
     gState.rtc_valid = false;
@@ -907,7 +906,7 @@ void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
 #endif
 }
 
-void test_watering_begin_core3_periman_glitch_free_relay_off(void) {
+static void test_watering_begin_core3_periman_glitch_free_relay_off(void) {
     // Simulate ESP32 hardware reset state: GPIO.out == 0 (LOW == RELAY_ON) and Core 3.x periman active
     memset(_mock_gpio, LOW, sizeof(_mock_gpio));
     memset(_mock_gpio_configured, 0, sizeof(_mock_gpio_configured));
@@ -933,7 +932,7 @@ void test_watering_begin_core3_periman_glitch_free_relay_off(void) {
     _mock_enforce_periman = false;
 }
 
-void test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history(void) {
+static void test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history(void) {
     // 1. MANUAL cycle interrupted near an INTENSO slot MUST resume while automatic watering is suspended
     history.clear();
     gState.auto_dst = true;
@@ -1033,28 +1032,64 @@ void test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history
     TEST_ASSERT_EQUAL_UINT8(4, savedPartial[0].zone_dur[0]);
 }
 
+static void test_watering_refuses_preemption_while_active(void) {
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 8, 0, 0, 1, RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime() };
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1] = { "Z2", true, 5 };
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::AUTO));
+    advanceMockMillis(RELAY_DEADTIME_MS + 10);
+    wateringCtrl.update();
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+
+    // Attempting test, custom, or manual general start while active must be refused without interrupting AUTO
+    bool customSel[NUM_ZONES] = { false, true, false, false };
+    TEST_ASSERT_FALSE(wateringCtrl.startTest(-1));
+    TEST_ASSERT_FALSE(wateringCtrl.startTest(1));
+    TEST_ASSERT_FALSE(wateringCtrl.startCustom(customSel, 3));
+    TEST_ASSERT_FALSE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+    TEST_ASSERT_EQUAL_UINT8(0, wateringCtrl.currentZone());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_ON, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+
+    RecoveryState rs = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(rs));
+    TEST_ASSERT_TRUE(rs.active);
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, rs.trigger);
+}
+
+};
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_watering_general_builds_queue_and_skips_disabled);
-    RUN_TEST(test_watering_custom_selection);
-    RUN_TEST(test_watering_dead_time_and_relay_activation);
-    RUN_TEST(test_watering_emergency_stop);
-    RUN_TEST(test_watering_test_run_does_not_log_to_history);
-    RUN_TEST(test_watering_blackout_recovery_resumes_interrupted_cycle);
-    RUN_TEST(test_watering_multi_zone_sequence_and_history_logging);
-    RUN_TEST(test_watering_emergency_stop_partial_duration_recorded);
-    RUN_TEST(test_watering_empty_selection_does_not_activate);
-    RUN_TEST(test_watering_recovery_rejects_corrupted_and_suspended_states);
-    RUN_TEST(test_watering_inter_zone_wait_updates_upcoming_zone_index);
-    RUN_TEST(test_watering_deenergize_relays_preserves_recovery_state);
-    RUN_TEST(test_watering_recovery_retry_cap_and_stable_reset);
-    RUN_TEST(test_watering_invalid_custom_duration_preserves_active_cycle);
-    RUN_TEST(test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime);
-    RUN_TEST(test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings);
-    RUN_TEST(test_watering_max_zone_cap_and_periodic_pin_refresh);
-    RUN_TEST(test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log);
-    RUN_TEST(test_watering_mid_cycle_rtc_set_and_aborted_recovery_history);
-    RUN_TEST(test_watering_begin_core3_periman_glitch_free_relay_off);
-    RUN_TEST(test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history);
+    RUN_UT(test_watering_general_builds_queue_and_skips_disabled);
+    RUN_UT(test_watering_custom_selection);
+    RUN_UT(test_watering_dead_time_and_relay_activation);
+    RUN_UT(test_watering_emergency_stop);
+    RUN_UT(test_watering_test_run_does_not_log_to_history);
+    RUN_UT(test_watering_blackout_recovery_resumes_interrupted_cycle);
+    RUN_UT(test_watering_multi_zone_sequence_and_history_logging);
+    RUN_UT(test_watering_emergency_stop_partial_duration_recorded);
+    RUN_UT(test_watering_empty_selection_does_not_activate);
+    RUN_UT(test_watering_recovery_rejects_corrupted_and_suspended_states);
+    RUN_UT(test_watering_inter_zone_wait_updates_upcoming_zone_index);
+    RUN_UT(test_watering_deenergize_relays_preserves_recovery_state);
+    RUN_UT(test_watering_recovery_retry_cap_and_stable_reset);
+    RUN_UT(test_watering_invalid_custom_duration_preserves_active_cycle);
+    RUN_UT(test_watering_logs_seconds_for_test_and_clean_stop_during_deadtime);
+    RUN_UT(test_watering_oob_deadtime_guard_cycle_done_order_and_arg_warnings);
+    RUN_UT(test_watering_max_zone_cap_and_periodic_pin_refresh);
+    RUN_UT(test_watering_inter_zone_wait_pin_refresh_and_clamped_start_log);
+    RUN_UT(test_watering_mid_cycle_rtc_set_and_aborted_recovery_history);
+    RUN_UT(test_watering_begin_core3_periman_glitch_free_relay_off);
+    RUN_UT(test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history);
+    RUN_UT(test_watering_refuses_preemption_while_active);
     return UNITY_END();
 }

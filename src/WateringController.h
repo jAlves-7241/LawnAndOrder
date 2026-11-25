@@ -14,17 +14,19 @@ public:
 
     void begin();
 
-    void startGeneral(WaterTrigger trigger = WaterTrigger::MANUAL);
-    void startCustom(const bool zones[NUM_ZONES], uint8_t dur_min);
-    void startTest(int8_t zone_idx);
+    bool startGeneral(WaterTrigger trigger = WaterTrigger::MANUAL);
+    bool startCustom(const bool zones[NUM_ZONES], uint8_t dur_min);
+    bool startTest(int8_t zone_idx);
     void stop();
     void deenergizeRelays();
     void update();
 
-    bool    isActive()    const { return _active; }
-    uint8_t currentZone() const { return _zoneIdx; }
+    bool         isActive()      const { return _active; }
+    uint8_t      currentZone()   const { return _zoneIdx; }
+    WaterTrigger activeTrigger() const { return _runTrigger; }
 
 private:
+    UNIT_TEST_FRIEND
     struct QueueEntry {
         uint8_t  zone_idx;
         uint32_t duration_ms;

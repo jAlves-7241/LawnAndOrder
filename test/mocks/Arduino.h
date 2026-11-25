@@ -302,6 +302,8 @@ public:
 
     int availableForWrite() const { return 512; }
 
+    size_t setRxBufferSize(size_t sz) { return sz; }
+
     void flush() {}
 };
 

@@ -33,6 +33,8 @@ bool RTClock::_probeRtcI2c() {
 bool RTClock::_ensureRtcDriver() {
     if (!_probeRtcI2c()) return false;
     if (!_rtcDriverReady) {
+        // Adafruit_I2CDevice::begin() calls Wire.begin(), which on ESP32 Arduino Core
+        // returns immediately when Wire.begin(PIN_SDA, PIN_SCL) has already initialized the bus.
         _rtcDriverReady = _rtc.begin();
     }
     return _rtcDriverReady;
@@ -40,7 +42,7 @@ bool RTClock::_ensureRtcDriver() {
 
 bool RTClock::begin() {
     const bool wasValid = gState.rtc_valid;
-    if (wasValid && _anchorUnix >= 1577836800UL && gState.now.unix == _lastKnownUnix) {
+    if (wasValid && _anchorUnix >= UNIX_MIN_VALID && gState.now.unix == _lastKnownUnix) {
         _incrementSoftwareClock();
     }
     const SystemTime prevTime = gState.now;
@@ -98,7 +100,7 @@ bool RTClock::begin() {
         _lastKnownUnix = gState.now.unix;
         if (!wasValid) {
             _revision++;
-        } else if (prevTime.unix >= 1577836800UL) {
+        } else if (prevTime.unix >= UNIX_MIN_VALID) {
             int64_t drift = (int64_t)newUnix - (int64_t)prevTime.unix;
             if (drift > 300 || drift < -300) {
                 _revision++;
@@ -120,7 +122,7 @@ bool RTClock::begin() {
         if (wasValid && prevTime.year >= DATE_YEAR_MIN && prevTime.year <= DATE_YEAR_MAX) {
             LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
             _batRecoveryWarned = true;
-            DateTime restoredUtc = (prevTime.unix >= 1577836800UL)
+            DateTime restoredUtc = (prevTime.unix >= UNIX_MIN_VALID)
                 ? DateTime(prevTime.unix)
                 : localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
                                       prevTime.hour, prevTime.min, prevTime.sec));
@@ -164,7 +166,7 @@ bool RTClock::begin() {
             gState.now.unix = initialUtc.unixtime();
         } else if (gState.now.year < DATE_YEAR_MIN) {
             _copyToState(DateTime(2026, 1, 1, 0, 0, 0));
-            gState.now.unix = 1767225600UL;
+            gState.now.unix = UNIX_DEFAULT_FALLBACK;
         }
         _lastReadMs = millis();
         _anchorMs = _lastReadMs;
@@ -182,7 +184,7 @@ bool RTClock::probe() {
 }
 
 void RTClock::refreshLocalTime() {
-    if (gState.now.unix < 1577836800UL) return;
+    if (gState.now.unix < UNIX_MIN_VALID) return;
     DateTime localDt = utcToLocal(DateTime(gState.now.unix));
     _copyToState(localDt);
 }
@@ -238,10 +240,10 @@ void RTClock::update() {
                             LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
                             _batRecoveryWarned = true;
                         }
-                        if (_anchorUnix >= 1577836800UL && gState.now.unix == _lastKnownUnix) {
+                        if (_anchorUnix >= UNIX_MIN_VALID && gState.now.unix == _lastKnownUnix) {
                             _incrementSoftwareClock();
                         }
-                        DateTime restoredUtc = (gState.now.unix >= 1577836800UL)
+                        DateTime restoredUtc = (gState.now.unix >= UNIX_MIN_VALID)
                             ? DateTime(gState.now.unix)
                             : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
                                                   gState.now.hour, gState.now.min, gState.now.sec));
@@ -279,7 +281,7 @@ void RTClock::update() {
         // Se continua nao encontrado, mantem relogio por software
         if (!gState.rtc_valid) {
             // Garantir que temos uma data de arranque coerente em RAM
-            if (gState.now.year < 2020) {
+            if (gState.now.year < DATE_YEAR_MIN) {
                 gState.now.year = 2026;
                 gState.now.month = 1;
                 gState.now.day = 1;
@@ -287,7 +289,7 @@ void RTClock::update() {
                 gState.now.min = 0;
                 gState.now.sec = 0;
                 gState.now.dow = 4; // Quinta-feira
-                gState.now.unix = 1767225600UL;
+                gState.now.unix = UNIX_DEFAULT_FALLBACK;
             }
         }
         _incrementSoftwareClock();
@@ -342,7 +344,7 @@ void RTClock::update() {
         uint32_t newUnix = utcDt.unixtime();
         if (!wasRtcValid) {
             _revision++;
-        } else if (!recoveredPowerLoss && _anchorUnix >= 1577836800UL) {
+        } else if (!recoveredPowerLoss && _anchorUnix >= UNIX_MIN_VALID) {
             uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
             uint32_t expectedUnix = _anchorUnix + elapsedSec;
             int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
@@ -372,10 +374,10 @@ void RTClock::update() {
                 LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
                 _batRecoveryWarned = true;
             }
-            if (_anchorUnix >= 1577836800UL && gState.now.unix == _lastKnownUnix) {
+            if (_anchorUnix >= UNIX_MIN_VALID && gState.now.unix == _lastKnownUnix) {
                 _incrementSoftwareClock();
             }
-            DateTime restoredUtc = (gState.now.unix >= 1577836800UL)
+            DateTime restoredUtc = (gState.now.unix >= UNIX_MIN_VALID)
                 ? DateTime(gState.now.unix)
                 : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
                                       gState.now.hour, gState.now.min, gState.now.sec));
@@ -480,9 +482,8 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
             int64_t delta = (int64_t)gState.now.unix - (int64_t)oldUnixUTC;
             int64_t newUntil = (int64_t)gState.suspended_until + delta;
             // Se a nova hora ultrapassou a meta de suspensao, ou overflow negativo
-            static constexpr uint32_t MAX_VALID_UNIX = 4102444799UL; // 2099-12-31 23:59:59 UTC
-            if (newUntil > (int64_t)MAX_VALID_UNIX) {
-                gState.suspended_until = MAX_VALID_UNIX;
+            if (newUntil > (int64_t)UNIX_MAX_VALID) {
+                gState.suspended_until = UNIX_MAX_VALID;
             } else if (newUntil <= (int64_t)gState.now.unix || newUntil < 0) {
                 gState.suspended = false;
                 gState.suspended_until = 0;
@@ -528,8 +529,8 @@ void RTClock::_incrementSoftwareClock() {
     }
 
     uint32_t currentUnix = gState.now.unix;
-    if (currentUnix < 1577836800UL) { // Menor que 2020-01-01
-        currentUnix    = 1767225600UL; // 2026-01-01 00:00:00 UTC
+    if (currentUnix < UNIX_MIN_VALID) { // Menor que 2020-01-01
+        currentUnix    = UNIX_DEFAULT_FALLBACK; // 2026-01-01 00:00:00 UTC
         _anchorMs      = millis();
         _anchorUnix    = currentUnix;
         _lastKnownUnix = currentUnix;

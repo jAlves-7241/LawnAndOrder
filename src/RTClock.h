@@ -60,6 +60,7 @@ public:
     void setErrorCallback(ErrorCallback cb) { _errorCb = cb; }
 
 private:
+    UNIT_TEST_FRIEND
     RTC_DS3231 _rtc;
     bool     _found;
     bool     _rtcDriverReady = false;

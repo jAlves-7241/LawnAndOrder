@@ -5,14 +5,12 @@
 #include "../../src/AppState.cpp"
 #include "../../src/Storage.cpp"
 
-#define private public
 #include "RTClock.h"
 #include "Display.h"
 #include "Encoder.h"
 #include "WateringController.h"
 #include "Scheduler.h"
 #include "UI.h"
-#undef private
 
 #include "../../src/RTClock.cpp"
 #include "../../src/History.cpp"
@@ -32,6 +30,7 @@ static Display testDisp;
 static Encoder testEnc(PIN_CLK, PIN_DT, PIN_SW);
 static UI      testUi(testDisp, testEnc);
 
+struct UnitTestAccess {
 static void simulateClick(UI& u) {
     digitalWrite(PIN_SW, LOW);
     u.update();
@@ -48,27 +47,7 @@ static void simulateRotate(UI& u, int8_t steps) {
     u.update();
 }
 
-void setUp(void) {
-    resetAllTestMocks();
-    rtclock = RTClock();
-    storage.begin();
-    history.begin();
-    wateringCtrl.begin();
-    digitalWrite(PIN_CLK, HIGH);
-    digitalWrite(PIN_DT, HIGH);
-    digitalWrite(PIN_SW, HIGH);
-    testDisp = Display();
-    testDisp.begin();
-    testEnc.begin();
-    testUi.~UI();
-    new (&testUi) UI(testDisp, testEnc);
-}
-
-void tearDown(void) {
-    wateringCtrl.stop();
-}
-
-void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
+static void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
     testDisp.setRows("Row0", "Row1", "Row2", "Row3");
     TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
     TEST_ASSERT_EQUAL_STRING("Row1                ", testDisp._lcd.getRow(1));
@@ -107,7 +86,7 @@ void test_display_delta_rows_and_nullptr_preservation_across_refresh(void) {
     TEST_ASSERT_EQUAL_STRING("Tick3               ", testDisp._lcd.getRow(3));
 }
 
-void test_display_formatting_helpers_and_null_safety(void) {
+static void test_display_formatting_helpers_and_null_safety(void) {
     char buf[21] = {};
 
     TEST_ASSERT_EQUAL_UINT32(20, strlen(Display::fx(buf, "Hello")));
@@ -131,7 +110,7 @@ void test_display_formatting_helpers_and_null_safety(void) {
     TEST_ASSERT_TRUE(strstr(buf, "100%") != nullptr);
 }
 
-void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
+static void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
     gState.setup_done = true;
     gState.rtc_valid = true;
     testUi.begin();
@@ -150,7 +129,7 @@ void test_menubuilder_dynamic_stop_watering_and_live_menu_refresh(void) {
     TEST_ASSERT_TRUE(strstr(testUi.getScreenMenu()._items[0].action, "stop_now") == nullptr);
 }
 
-void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
+static void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
     gState.rtc_valid = true;
     history.clear();
     strncpy(gState.zones[0].name, "Front|Lawn", sizeof(gState.zones[0].name));
@@ -174,7 +153,7 @@ void test_menubuilder_history_localization_and_dynamic_test_duration(void) {
     TEST_ASSERT_TRUE(strstr(items[1].action, "Front/Lawn") != nullptr);
 }
 
-void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
+static void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
     gState.setup_done = false;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -217,7 +196,7 @@ void test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete(void) {
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
 }
 
-void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
+static void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
     rtclock._rtc.mockPresent = false;
     gState.rtc_valid = false;
     gState.setup_done = false;
@@ -258,7 +237,7 @@ void test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow(void) {
     TEST_ASSERT_EQUAL(MenuID::SETUP_MODE, testUi.getScreenMenu()._mid);
 }
 
-void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
+static void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
     gState.setup_done = true;
     testUi.begin();
 
@@ -278,7 +257,7 @@ void test_ui_info_and_done_post_enter_rotation_bounce_guard(void) {
     TEST_ASSERT_EQUAL(MenuID::MAIN, testUi.getScreenMenu()._mid);
 }
 
-void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) {
+static void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) {
     gState.setup_done = true;
     gState.auto_dst = true;
     rtclock.begin();
@@ -328,7 +307,7 @@ void test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety(void) 
     TEST_ASSERT_TRUE(ESP.rebooted);
 }
 
-void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
+static void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
     gState.setup_done = true;
     gState.rtc_valid = true;
     gState.zones[0] = { "Zone 1", true, 1 };
@@ -360,12 +339,12 @@ void test_ui_idle_screen_waiting_between_zones_and_backlight_never(void) {
     TEST_ASSERT_TRUE(testDisp.isDisplayOn());
 }
 
-static uint8_t _i2cRecoverCallbackCalls = 0;
+inline static uint8_t _i2cRecoverCallbackCalls = 0;
 static void _mockI2cRecoverCb() {
     _i2cRecoverCallbackCalls++;
 }
 
-void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
+static void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
     _i2cRecoverCallbackCalls = 0;
     testDisp.setErrorCallback(_mockI2cRecoverCb);
 
@@ -420,7 +399,7 @@ void test_display_i2c_fault_abort_cooldown_and_recovery_callback(void) {
     TEST_ASSERT_EQUAL_STRING("Row0                ", testDisp._lcd.getRow(0));
 }
 
-void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
+static void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
     gState.setup_done = true;
     gState.mode = AppMode::PERSONALIZADO;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
@@ -451,7 +430,7 @@ void test_ui_four_cycle_horarios_and_zero_dur_overlap_guard(void) {
     TEST_ASSERT_TRUE(cs.slots[0].hour != cs.slots[1].hour || cs.slots[0].minute != cs.slots[1].minute);
 }
 
-void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
+static void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -486,7 +465,7 @@ void test_ui_clock_editor_refresh_and_freq_days_without_rtc(void) {
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFUL, gState.custom_ref_day);
 }
 
-void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
+static void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -601,7 +580,7 @@ void test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning(void) {
 #endif
 }
 
-void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(void) {
+static void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(void) {
     // 1. Display::recover() while _displayOn == true immediately restores _shadow onto LCD
     testDisp.setRows("Line0", "Line1", "Line2", "Line3");
     testDisp._lcd.clear();
@@ -646,7 +625,7 @@ void test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault(vo
     testDisp.setErrorCallback(nullptr);
 }
 
-void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(void) {
+static void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
@@ -683,15 +662,18 @@ void test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set(voi
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(3), TXT_IDLE_SET_TIME) != nullptr);
 }
 
-void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
+static void initUiIdleFixture(void) {
     gState.setup_done = true;
     rtclock.begin();
     rtclock.set(2026, 6, 15, 10, 0, 0);
     history.clear();
     testUi.begin();
     testUi.goIdle();
+}
 
-    // 1. Immediate save on UI edit without waiting for goIdle()
+static void test_ui_immediate_save_on_edit(void) {
+    initUiIdleFixture();
+    // Immediate save on UI edit without waiting for goIdle()
     gState.backlight_timeout_ms = 120000UL;
     storage.save();
     testUi.dispatchAction("bl:60000");
@@ -699,8 +681,11 @@ void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
     gState.backlight_timeout_ms = 120000UL;
     TEST_ASSERT_TRUE(storage.load());
     TEST_ASSERT_EQUAL_UINT32(60000UL, gState.backlight_timeout_ms);
+}
 
-    // 2. Wake from displayOff() runs quiet Display::recover(true) without recovery log spam
+static void test_ui_quiet_wake_recovery_without_log_spam(void) {
+    initUiIdleFixture();
+    // Wake from displayOff() runs quiet Display::recover(true) without recovery log spam
     testDisp.displayOff();
     testDisp.backlightOff();
     uint32_t prevClears = testDisp._lcd.clearCalls;
@@ -711,11 +696,14 @@ void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
 #if LOG_LEVEL >= LVL_INFO
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_RECOVERED) == std::string::npos);
 #endif
+}
 
-    // 3. Periodic 6h LCD re-init while idle, display ON, and not watering
+static void test_ui_periodic_6h_lcd_recovery(void) {
+    initUiIdleFixture();
+    // Periodic 6h LCD re-init while idle, display ON, and not watering
     gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
     testUi.goIdle();
-    prevClears = testDisp._lcd.clearCalls;
+    uint32_t prevClears = testDisp._lcd.clearCalls;
     advanceMockMillis(6UL * 3600UL * 1000UL);
     Serial.reset();
     testUi.update();
@@ -723,8 +711,10 @@ void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
 #if LOG_LEVEL >= LVL_INFO
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_LCD_RECOVERED) == std::string::npos);
 #endif
+}
 
-    // 4. Exponential backoff on persistent LCD I2C failure (10s -> 60s -> 300s)
+static void test_display_exponential_backoff_on_persistent_i2c_fault(void) {
+    // Exponential backoff on persistent LCD I2C failure (10s -> 60s -> 300s)
     _i2cRecoverCallbackCalls = 0;
     testDisp.setErrorCallback(_mockI2cRecoverCb);
     testDisp._lcd.mockI2cError = 1;
@@ -754,8 +744,11 @@ void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
     TEST_ASSERT_FALSE(testDisp.hasBusFault());
     TEST_ASSERT_EQUAL_UINT32(10000UL, testDisp._recoverCooldownMs);
     testDisp.setErrorCallback(nullptr);
+}
 
-    // 5. ScreenIdle shows Last watering, History unavail, and RTC disconnected
+static void test_ui_idle_last_watering_history_err_and_rtc_missing(void) {
+    initUiIdleFixture();
+    // ScreenIdle shows Last watering, History unavail, and RTC disconnected
     HistoryEntry he = { 2026, 6, 14, 8, 30, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(he);
     testUi.goIdle();
@@ -773,9 +766,9 @@ void test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info(void) {
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_MISSING) != nullptr);
 }
 
-static Display* _throttledDispPtr = nullptr;
-static uint8_t  _throttledCbCalls = 0;
-static bool     _simulateThrottle = false;
+inline static Display* _throttledDispPtr = nullptr;
+inline static uint8_t  _throttledCbCalls = 0;
+inline static bool     _simulateThrottle = false;
 static void _mockThrottledI2cRecoverCb(void) {
     _throttledCbCalls++;
     if (_simulateThrottle && _throttledDispPtr) {
@@ -783,8 +776,8 @@ static void _mockThrottledI2cRecoverCb(void) {
     }
 }
 
-void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void) {
-    // 1. Setup wizard defers NVS writes (including sel:4 custom mode) until completion
+static void test_ui_setup_wizard_defers_nvs_writes_until_completion(void) {
+    // Setup wizard defers NVS writes (including sel:4 custom mode) until completion
     gState.setup_done = false;
     gState.mode = AppMode::DESATIVADO;
     storage.save();
@@ -809,8 +802,11 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     gState.mode = AppMode::DESATIVADO;
     TEST_ASSERT_TRUE(storage.load());
     TEST_ASSERT_EQUAL(AppMode::PERSONALIZADO, gState.mode);
+}
 
-    // 2. Wake from displayOff() does NOT flush stale shadow text prior to ScreenIdle::render()
+static void test_ui_wake_from_display_off_skips_stale_shadow_flush(void) {
+    initUiIdleFixture();
+    // Wake from displayOff() does NOT flush stale shadow text prior to ScreenIdle::render()
     gState.backlight_timeout_ms = 60000UL;
     testUi.goIdle();
     testDisp.displayOff();
@@ -823,12 +819,15 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(4, testDisp._lcd.printCalls);
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "11:05") != nullptr);
+}
 
-    // 3. 6h periodic LCD recovery is suppressed when watering, in setup, or under bus fault
+static void test_ui_periodic_6h_recovery_guards(void) {
+    initUiIdleFixture();
+    // 6h periodic LCD recovery is suppressed when watering, in setup, or under bus fault
     gState.backlight_timeout_ms = BACKLIGHT_TIMEOUT_NEVER;
     testUi.goIdle();
     advanceMockMillis(6UL * 3600UL * 1000UL);
-    prevClears = testDisp._lcd.clearCalls;
+    uint32_t prevClears = testDisp._lcd.clearCalls;
     gState.watering.active = true;
     testUi.update();
     TEST_ASSERT_EQUAL_UINT32(prevClears, testDisp._lcd.clearCalls);
@@ -845,8 +844,10 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     testDisp._busFault = false;
     testUi.update(); // now all guards are clear -> 6h recover executes
     TEST_ASSERT_EQUAL_UINT32(prevClears + 1, testDisp._lcd.clearCalls);
+}
 
-    // 4. Shared recoverI2C() throttle defers without escalating backoff; full 300s backoff fires 4th attempt
+static void test_display_throttled_recovery_defers_without_escalating_backoff(void) {
+    // Shared recoverI2C() throttle defers without escalating backoff; full 300s backoff fires 4th attempt
     _throttledDispPtr = &testDisp;
     _throttledCbCalls = 0;
     _simulateThrottle = true;
@@ -881,15 +882,20 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     testDisp._lcd.mockI2cError = 0;
     testDisp.setRows("OK0", "OK1", "OK2", "OK3");
     testDisp.setErrorCallback(nullptr);
+}
 
-    // 5. Cold boot missing RTC (!gState.rtc_valid && !isPresent) shows RTC missing on Row 1 + Set Time on Row 3,
-    //    and battery-low warning takes priority over !isPresent; verify formatted Last watering date
+static void test_ui_idle_cold_rtc_missing_and_battery_priority(void) {
+    // Cold boot missing RTC (!gState.rtc_valid && !isPresent) shows RTC missing on Row 1 + Set Time on Row 3,
+    // and battery-low warning takes priority over !isPresent; verify formatted Last watering date
+    gState.setup_done = true;
+    gState.rtc_valid = true;
     HistoryEntry he = { 2026, 6, 14, 8, 30, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     history.record(he);
     rtclock = RTClock();
     rtclock._rtc.mockPresent = false;
     gState.rtc_valid = false;
     TEST_ASSERT_FALSE(rtclock.begin());
+    testUi.begin();
     testUi.goIdle();
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "--:--") != nullptr);
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_MISSING) != nullptr);
@@ -903,8 +909,8 @@ void test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle(void
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_IDLE_RTC_BAT) != nullptr);
 }
 
-void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) {
-    // 1. Failed hardware write in ScreenTimeEdit leaves rtc_valid == false (no silent SW fallback)
+static void test_ui_time_edit_hw_write_fail_leaves_rtc_invalid(void) {
+    // Failed hardware write in ScreenTimeEdit leaves rtc_valid == false (no silent SW fallback)
     rtclock = RTClock();
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.mockAdjustFail = true;
@@ -919,15 +925,19 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     simulateClick(testUi); // attempt save -> hwOk == false
     TEST_ASSERT_FALSE(gState.rtc_valid);
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
-    rtclock._rtc.mockAdjustFail = false;
+}
 
-    // 2. NUM_CYCLES with unchanged slot_count preserves custom times; decreasing zeroes unused trailing slots
+static void test_ui_num_cycles_preserves_slots_and_zeroes_trailing(void) {
+    // NUM_CYCLES with unchanged slot_count preserves custom times; decreasing zeroes unused trailing slots
+    gState.setup_done = true;
     gState.mode = AppMode::PERSONALIZADO;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.slot_count = 2;
     cs.slots[0] = { 6, 15 };
     cs.slots[1] = { 19, 45 };
     cs.slots[2] = { 22, 0 };
+    testUi.begin();
+
     testUi.getScreenDurPick().setup(2, DurContext::NUM_CYCLES, 0, MenuID::CFG_CUSTOM);
     testUi.changeScreen(&testUi.getScreenDurPick());
     simulateClick(testUi); // unchanged count -> preserve slots
@@ -944,11 +954,18 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     TEST_ASSERT_EQUAL_UINT8(0, cs.slots[1].hour);
     TEST_ASSERT_EQUAL_UINT8(0, cs.slots[1].minute);
     TEST_ASSERT_EQUAL_UINT8(0, cs.slots[2].hour);
+}
 
-    // 3. CUSTOM_CYCLE logs post-sort index when editing slot 2 earlier than slot 1
+static void test_ui_custom_cycle_logs_post_sort_index(void) {
+    // CUSTOM_CYCLE logs post-sort index when editing slot 2 earlier than slot 1
+    gState.setup_done = true;
+    gState.mode = AppMode::PERSONALIZADO;
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.slot_count = 2;
     cs.slots[0] = { 8, 0 };
     cs.slots[1] = { 20, 0 };
+    testUi.begin();
+
     testUi.getScreenTimeEdit().setup(TimeEditContext::CUSTOM_CYCLE, 1, MenuID::CFG_CUSTOM);
     testUi.changeScreen(&testUi.getScreenTimeEdit());
     testUi.getScreenTimeEdit()._teHour = 6;
@@ -963,34 +980,46 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     snprintf(expectedPostSort, sizeof(expectedPostSort), TXT_LOG_UI_SLOT_SET, 1, 6U, 30U);
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedPostSort) != std::string::npos);
 #endif
+}
 
-    // 4. SUSPEND clamps suspended_until to 4102444799UL near 2099-12-31
+static void test_ui_suspend_clamps_to_max_valid_unix(void) {
+    // SUSPEND clamps suspended_until to UNIX_MAX_VALID (4102444799UL) near 2099-12-31
+    gState.setup_done = true;
     gState.rtc_valid = true;
     gState.now = { 2099, 12, 30, 12, 0, 0, 3, DateTime(2099, 12, 30, 12, 0, 0).unixtime() };
+    testUi.begin();
     testUi.getScreenDurPick().setup(10, DurContext::SUSPEND, 0, MenuID::PROG);
     testUi.changeScreen(&testUi.getScreenDurPick());
     simulateClick(testUi);
     TEST_ASSERT_TRUE(gState.suspended);
-    TEST_ASSERT_EQUAL_UINT32(4102444799UL, gState.suspended_until);
+    TEST_ASSERT_EQUAL_UINT32(UNIX_MAX_VALID, gState.suspended_until);
+}
 
-    // 5. cancel_susp recomputes next_* immediately via scheduler.onModeChanged(false)
+static void test_ui_cancel_suspend_recomputes_next_slot(void) {
+    // cancel_susp recomputes next_* immediately via scheduler.onModeChanged(false)
+    initUiIdleFixture();
     gState.mode = AppMode::MEDIO; // 08:00, 20:00
-    gState.now = { 2026, 6, 15, 10, 0, 0, 1, DateTime(2026, 6, 15, 9, 0, 0).unixtime() };
+    gState.suspended = true;
+    gState.suspended_until = gState.now.unix + 86400UL;
     gState.next_hour = 0;
     gState.next_min = 0;
     testUi.dispatchAction("cancel_susp");
     TEST_ASSERT_FALSE(gState.suspended);
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_H, gState.next_hour);
     TEST_ASSERT_EQUAL_UINT8(SCHED_MEDIO_SLOT1_M, gState.next_min);
+}
 
-    // 6. ScreenIdle::update() re-renders on same-minute hour change and day change
-    testUi.goIdle();
+static void test_ui_idle_rerenders_on_same_minute_hour_change(void) {
+    initUiIdleFixture();
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "10:00") != nullptr);
     gState.now.hour = 11; // same minute (00)
     testUi.update();
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), "11:00") != nullptr);
+}
 
-    // 7. ScreenMenu::update() clamps _off on MAIN shrink (no blank row) and live-refreshes PROG on suspension expiry
+static void test_ui_menu_live_refresh_clamps_offset_and_updates_prog(void) {
+    initUiIdleFixture();
+    // ScreenMenu::update() clamps _off on MAIN shrink (no blank row) and live-refreshes PROG on suspension expiry
     gState.watering.active = true;
     testUi.goMenu(MenuID::MAIN); // 5 items (0..4)
     testUi.getScreenMenu()._cur = 4;
@@ -1013,8 +1042,9 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
         }
     }
     TEST_ASSERT_TRUE(hasSuspendOption);
+}
 
-    // 8. goIdle() during setup does NOT flush _configChanged to NVS
+static void test_ui_go_idle_during_setup_does_not_flush_config(void) {
     storage.clear();
     gState.setup_done = false;
     gState.mode = AppMode::DESATIVADO;
@@ -1022,9 +1052,11 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     testUi.flagConfigChanged();
     testUi.goIdle();
     TEST_ASSERT_FALSE(storage.load());
-    testUi.setInSetup(false);
+}
 
-    // 9. Strict index parsing rejects non-numeric actions and out-of-range bl: timeout
+static void test_ui_strict_action_parsing_rejects_invalid_inputs(void) {
+    initUiIdleFixture();
+    // Strict index parsing rejects non-numeric actions and out-of-range bl: timeout
     uint32_t prevBl = gState.backlight_timeout_ms;
     testUi.dispatchAction("bl:4000000"); // > 3600000ms and != NEVER
     TEST_ASSERT_EQUAL_UINT32(prevBl, gState.backlight_timeout_ms);
@@ -1037,8 +1069,11 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
     TEST_ASSERT_TRUE(testUi.executeConfirmed("test_abc"));
     TEST_ASSERT_FALSE(wateringCtrl.isActive());
+}
 
-    // 10. Factory reset calls history.clear(true) and repairs unmounted FS (even while mountFail is active)
+static void test_ui_factory_reset_repairs_unmounted_history_fs(void) {
+    // Factory reset calls history.clear(true) and repairs unmounted FS (even while mountFail is active)
+    gState.rtc_valid = true;
     HistoryEntry preReset = { 2026, 6, 15, 8, 0, { 5, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
     history.record(preReset);
     LittleFS.mountFail = true;
@@ -1050,8 +1085,8 @@ void test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions(void) 
     TEST_ASSERT_TRUE(ESP.rebooted);
 }
 
-void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void) {
-    // 1. Mid-frame I2C error during setRows() must still stage rows 1..3 so recovery renders a coherent frame
+static void test_display_mid_frame_i2c_error_keeps_coherent_shadow(void) {
+    // Mid-frame I2C error during setRows() must still stage rows 1..3 so recovery renders a coherent frame
     testDisp.setRows("Old0", "Old1", "Old2", "Old3");
     TEST_ASSERT_EQUAL_STRING("Old0                ", testDisp._lcd.getRow(0));
     TEST_ASSERT_EQUAL_STRING("Old3                ", testDisp._lcd.getRow(3));
@@ -1068,8 +1103,10 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     TEST_ASSERT_EQUAL_STRING("New1                ", testDisp._lcd.getRow(1));
     TEST_ASSERT_EQUAL_STRING("New2                ", testDisp._lcd.getRow(2));
     TEST_ASSERT_EQUAL_STRING("New3                ", testDisp._lcd.getRow(3));
+}
 
-    // 2. Switching to Setup Welcome while asleep + BACKLIGHT_TIMEOUT_NEVER wakes and renders new screen cleanly
+static void test_ui_setup_welcome_wakes_with_backlight_never(void) {
+    // Switching to Setup Welcome while asleep + BACKLIGHT_TIMEOUT_NEVER wakes and renders new screen cleanly
     gState.setup_done = true;
     gState.backlight_timeout_ms = 60000UL;
     testUi.begin();
@@ -1087,11 +1124,13 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     TEST_ASSERT_TRUE(testDisp.isDisplayOn());
     TEST_ASSERT_TRUE(testDisp.isBacklightOn());
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), TXT_WELCOME) != nullptr);
+}
 
-    // 3. I2C error on backlightOff()/displayOff() keeps logical ON state, avoids retry storm, and recovers after bus clears
+static void test_display_sleep_i2c_error_keeps_logical_on_and_recovers(void) {
+    // I2C error on backlightOff()/displayOff() keeps logical ON state, avoids retry storm, and recovers after bus clears
     gState.setup_done = true;
     gState.backlight_timeout_ms = 60000UL;
-    testUi.syncSetupState();
+    testUi.begin();
     testDisp._lcd.mockI2cError = 1;
     testDisp.backlightOff();
     TEST_ASSERT_TRUE(testDisp.isBacklightOn());
@@ -1108,9 +1147,11 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     testDisp.displayOff();
     TEST_ASSERT_FALSE(testDisp.isBacklightOn());
     TEST_ASSERT_FALSE(testDisp.isDisplayOn());
-    testDisp.wake(true);
+}
 
-    // 4. FREQ_DAYS with unchanged interval preserves existing custom_ref_day and scheduler trigger locks
+static void test_ui_freq_days_unchanged_preserves_ref_day_and_triggers(void) {
+    // FREQ_DAYS with unchanged interval preserves existing custom_ref_day and scheduler trigger locks
+    gState.setup_done = true;
     gState.rtc_valid = true;
     gState.now = { 2026, 6, 15, 10, 0, 0, 1, DateTime(2026, 6, 15, 9, 0, 0).unixtime() };
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
@@ -1118,14 +1159,17 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     const uint32_t origRefDay = 20000UL;
     gState.custom_ref_day = origRefDay;
     scheduler._lastTriggerUnix[0] = 1781500000UL;
+    testUi.begin();
 
     testUi.getScreenDurPick().setup(3, DurContext::FREQ_DAYS, 0, MenuID::CFG_CUSTOM);
     testUi.changeScreen(&testUi.getScreenDurPick());
     simulateClick(testUi);
     TEST_ASSERT_EQUAL_UINT32(origRefDay, gState.custom_ref_day);
     TEST_ASSERT_EQUAL_UINT32(1781500000UL, scheduler._lastTriggerUnix[0]);
+}
 
-    // 5. ScreenTimeEdit displays effective normalized local time on spring-forward DST gap
+static void test_ui_time_edit_displays_normalized_spring_forward_dst_gap(void) {
+    // ScreenTimeEdit displays effective normalized local time on spring-forward DST gap
     gState.auto_dst = true;
     rtclock = RTClock();
     rtclock.begin();
@@ -1145,14 +1189,9 @@ void test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve(void)
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expectedDone) != nullptr);
 }
 
-void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) {
-    gState.setup_done = true;
-    rtclock = RTClock();
-    rtclock.begin();
-    rtclock.set(2026, 6, 15, 10, 0, 0);
-    testUi.begin();
-
-    // 1. ScreenConfirm 350ms post-enter rotation bounce guard protects destructive confirmation
+static void test_ui_confirm_post_enter_rotation_bounce_guard(void) {
+    initUiIdleFixture();
+    // ScreenConfirm 350ms post-enter rotation bounce guard protects destructive confirmation
     testUi.getScreenConfirm().setup("Erase ALL", "settings?", MenuID::DEF_AVANCADO, "reset");
     testUi.changeScreen(&testUi.getScreenConfirm());
     TEST_ASSERT_FALSE(testUi.getScreenConfirm()._selectionOk);
@@ -1162,8 +1201,11 @@ void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) 
     advanceMockMillis(200);
     simulateRotate(testUi, 1);
     TEST_ASSERT_TRUE(testUi.getScreenConfirm()._selectionOk);
+}
 
-    // 2. In-place menu toggles (CUSTOM_ZONAS & toggle_dst) preserve cursor/scroll and copy action safely
+static void test_ui_inplace_menu_toggles_preserve_cursor_and_scroll(void) {
+    initUiIdleFixture();
+    // In-place menu toggles (CUSTOM_ZONAS & toggle_dst) preserve cursor/scroll and copy action safely
     gState.custom_sel[3] = false;
     testUi.goMenu(MenuID::CUSTOM_ZONAS);
     simulateRotate(testUi, 3); // highlight Z4 (scrolls _off to 1)
@@ -1192,8 +1234,11 @@ void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) 
     TEST_ASSERT_EQUAL(!prevDst, gState.auto_dst);
     TEST_ASSERT_EQUAL(MenuID::DEF_AVANCADO, testUi.getScreenMenu()._mid);
     TEST_ASSERT_EQUAL_UINT8(dstIdx, testUi.getScreenMenu()._cur);
+}
 
-    // 3. ScreenTimeEdit distinguishes UTC range rejection from missing RTC (normal & setup flows)
+static void test_ui_time_edit_distinguishes_utc_range_error_from_missing_rtc(void) {
+    initUiIdleFixture();
+    // ScreenTimeEdit distinguishes UTC range rejection from missing RTC (normal & setup flows)
     gState.auto_dst = false;
     testUi.setInSetup(false);
     // Out-of-range cached year (or TZ-shifted UTC boundary) while hardware RTC is present
@@ -1242,9 +1287,11 @@ void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) 
     TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[1], TXT_ERR_INVALID_DATE));
     simulateClick(testUi); // dismiss -> returns to ScreenDateEdit
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDateEdit(), testUi._currentScreen);
-    testUi.setInSetup(false);
+}
 
-    // 4. Schedule info screen uses "F:" frequency prefix (never duplicates "H:" on row 3)
+static void test_ui_horarios_screen_uses_distinct_frequency_prefix(void) {
+    initUiIdleFixture();
+    // Schedule info screen uses "F:" frequency prefix (never duplicates "H:" on row 3)
     gState.mode = AppMode::MEDIO;
     testUi.dispatchAction("horarios");
     TEST_ASSERT_EQUAL_CHAR('H', testUi.getScreenInfo()._rows[2][0]);
@@ -1259,8 +1306,7 @@ void test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels(void) 
     TEST_ASSERT_EQUAL_CHAR('F', testUi.getScreenInfo()._rows[3][0]);
 }
 
-void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry(void) {
-    rtclock = RTClock();
+static void test_ui_idle_long_interval_shows_date_short_shows_weekday(void) {
     rtclock.begin();
     rtclock.set(2026, 6, 1, 9, 0, 0); // Monday June 1, 09:00
     gState.setup_done = true;
@@ -1269,7 +1315,7 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
     testUi.begin();
 
-    // 1. Custom interval >= 7 days shows explicit date (11Jun) instead of ambiguous weekday
+    // Custom interval >= 7 days shows explicit date (11Jun) instead of ambiguous weekday
     gState.mode = AppMode::PERSONALIZADO;
     ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
     cs.day_pattern = DayPattern::EVERY_X_DAYS;
@@ -1287,18 +1333,25 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     cs.interval_days = 3;
     testUi.goIdle();
     TEST_ASSERT_NOT_NULL(strstr(testDisp._lcd.getRow(3), TXT_DOW_THU));
+}
 
-    // 2. All zones disabled shows TXT_NO_ACTIVE_ZONES on ScreenIdle row 3 (live update too)
+static void test_ui_idle_zero_enabled_zones_shows_warning(void) {
+    initUiIdleFixture();
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    for (int i = 1; i < NUM_ZONES; i++) gState.zones[i].enabled = false;
+    testUi.goIdle();
+
+    // All zones disabled shows TXT_NO_ACTIVE_ZONES on ScreenIdle row 3 (live update too)
     gState.zones[0].enabled = false;
     gState.zones[0].duration_min = 0;
     testUi.update();
     TEST_ASSERT_NOT_NULL(strstr(testDisp._lcd.getRow(3), TXT_NO_ACTIVE_ZONES));
+}
 
-    // Restore zone 1 for subsequent checks
-    gState.zones[0].enabled = true;
-    gState.zones[0].duration_min = 5;
-
-    // 3. DurContext::SUSPEND value 0 displays TXT_CANCEL and cancels cleanly without suspending
+static void test_ui_suspend_zero_days_cancels_cleanly(void) {
+    initUiIdleFixture();
+    // DurContext::SUSPEND value 0 displays TXT_CANCEL and cancels cleanly without suspending
     testUi.getScreenDurPick().setup(SUSPEND_DEFAULT_DAYS, DurContext::SUSPEND, 0, MenuID::PROG);
     testUi.changeScreen(&testUi.getScreenDurPick());
     simulateRotate(testUi, -3); // 3 -> 0
@@ -1308,16 +1361,22 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenMenu(), testUi._currentScreen);
     TEST_ASSERT_EQUAL(MenuID::PROG, testUi.getScreenMenu()._mid);
+}
 
-    // 4. Settings -> Date/Time fails fast when RTC is missing outside Setup Wizard
+static void test_ui_settings_date_edit_fails_fast_when_rtc_missing(void) {
+    initUiIdleFixture();
+    // Settings -> Date/Time fails fast when RTC is missing outside Setup Wizard
     rtclock._found = false;
     rtclock._rtc.mockPresent = false;
     testUi.setInSetup(false);
     testUi.dispatchAction("date_edit:rtc");
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
     TEST_ASSERT_NOT_NULL(strstr(testUi.getScreenInfo()._rows[0], TXT_ERR_NO_RTC));
+}
 
-    // 5. MAIN menu live rebuild preserves cursor on selected action when stop_now inserts/removes
+static void test_ui_main_menu_live_rebuild_preserves_selected_action(void) {
+    initUiIdleFixture();
+    // MAIN menu live rebuild preserves cursor on selected action when stop_now inserts/removes
     testUi.goMenu(MenuID::MAIN);
     simulateRotate(testUi, 1); // highlight "Schedule" (go:prog) at index 1
     TEST_ASSERT_EQUAL_STRING("go:prog", testUi.getScreenMenu()._items[testUi.getScreenMenu()._cur].action);
@@ -1328,8 +1387,11 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     gState.watering.active = false;
     testUi.update();
     TEST_ASSERT_EQUAL_STRING("go:prog", testUi.getScreenMenu()._items[testUi.getScreenMenu()._cur].action);
+}
 
-    // 6. SETUP_MODE includes Disabled (sel:3) option
+static void test_ui_setup_mode_includes_disabled_option(void) {
+    initUiIdleFixture();
+    // SETUP_MODE includes Disabled (sel:3) option
     testUi.goMenu(MenuID::SETUP_MODE);
     bool foundDisabled = false;
     for (uint8_t i = 0; i < testUi.getScreenMenu()._itemCount; i++) {
@@ -1339,8 +1401,11 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
         }
     }
     TEST_ASSERT_TRUE(foundDisabled);
+}
 
-    // 7. Setup completion & UI::update() retry failed storage.save() cleanly on 5 s throttle
+static void test_ui_setup_completion_retries_failed_save_on_throttle(void) {
+    initUiIdleFixture();
+    // Setup completion & UI::update() retry failed storage.save() cleanly on 5 s throttle
     Preferences::writeFail = true;
     gState.setup_done = false;
     testUi.setInSetup(true);
@@ -1360,14 +1425,18 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     initAppState();
     TEST_ASSERT_TRUE(storage.load());
     TEST_ASSERT_TRUE(gState.setup_done);
+}
 
-    // 8. Display::recover() while sleeping (_displayOn == false) never flips LCD displayState ON
+static void test_display_recover_while_sleeping_keeps_display_off(void) {
+    // Display::recover() while sleeping (_displayOn == false) never flips LCD displayState ON
     testDisp.displayOff();
     TEST_ASSERT_FALSE(testDisp._lcd.displayState);
     testDisp.recover(true, false);
     TEST_ASSERT_FALSE(testDisp._lcd.displayState);
+}
 
-    // 9. Failed backlightOn()/displayOn() arms sync retry so Display::sync() turns hardware back ON once I2C clears
+static void test_display_failed_wake_arms_sync_retry(void) {
+    // Failed backlightOn()/displayOn() arms sync retry so Display::sync() turns hardware back ON once I2C clears
     testDisp.displayOn();
     testDisp.backlightOff();
     testDisp.displayOff();
@@ -1386,8 +1455,11 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     TEST_ASSERT_FALSE(testDisp.hasBusFault());
     TEST_ASSERT_TRUE(testDisp._lcd.displayState);
     TEST_ASSERT_TRUE(testDisp._lcd.backlightState);
+}
 
-    // 10. cancel_susp refreshes next_* WITHOUT clearing persisted DST fall-back trigger guards
+static void test_ui_cancel_suspend_preserves_persisted_triggers(void) {
+    initUiIdleFixture();
+    // cancel_susp refreshes next_* WITHOUT clearing persisted DST fall-back trigger guards
     gState.mode = AppMode::MEDIO;
     gState.suspended = true;
     gState.suspended_until = gState.now.unix + 86400UL;
@@ -1400,34 +1472,193 @@ void test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_ret
     uint32_t persistedTr[MAX_SLOTS_PER_MODE] = {};
     TEST_ASSERT_TRUE(storage.loadLastTriggers(persistedTr, MAX_SLOTS_PER_MODE));
     TEST_ASSERT_EQUAL_UINT32(savedTrigger, persistedTr[0]);
+}
 
-    // 11. ScreenConfirm::setup() handles nullptr tag safely
+static void test_ui_confirm_setup_handles_nullptr_tag(void) {
+    // ScreenConfirm::setup() handles nullptr tag safely
     testUi.getScreenConfirm().setup("Line1", "Line2", MenuID::MAIN, nullptr);
     TEST_ASSERT_EQUAL_STRING("", testUi.getScreenConfirm()._tag);
 }
 
+static void test_ui_blocks_manual_and_test_while_watering_active(void) {
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1] = { "Z2", false, 0 };
+    gState.zones[2] = { "Z3", false, 0 };
+    gState.zones[3] = { "Z4", false, 0 };
+    gState.custom_sel[0] = true;
+    gState.custom_dur_min = 3;
+    testUi.begin();
+
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::AUTO));
+    TEST_ASSERT_TRUE(gState.watering.active);
+
+    // Early menu gates block entering MANUAL and TESTES while watering is active
+    testUi.dispatchAction("go:manual");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_WATERING_ACTIVE) != nullptr);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), TXT_STOP_FIRST) != nullptr);
+
+    testUi.goIdle();
+    testUi.dispatchAction("go:testes");
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_WATERING_ACTIVE) != nullptr);
+
+    // Late confirm gates (e.g. AUTO started while sitting on ScreenConfirm) also block and return true
+    const char* blockedTags[] = { "general", "custom", "test_all", "test_0" };
+    for (size_t i = 0; i < sizeof(blockedTags) / sizeof(blockedTags[0]); i++) {
+        testUi.goIdle();
+        TEST_ASSERT_TRUE(testUi.executeConfirmed(blockedTags[i]));
+        TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+        TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_WATERING_ACTIVE) != nullptr);
+    }
+
+    // Active AUTO run remains intact
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+}
+
+static void test_ui_idle_displays_skipped_slot_notice(void) {
+    scheduler = Scheduler();
+    gState.setup_done = true;
+    gState.rtc_valid = true;
+    gState.mode = AppMode::MEDIO;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 7, 59, 0);
+    scheduler.begin();
+    testUi.begin();
+
+    // MANUAL General overlaps 08:00 -> skipped indicator set
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+    rtclock.set(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
+
+    testUi.update();
+    char expected[LCD_COLS + 1];
+    snprintf(expected, sizeof(expected), TXT_IDLE_SKIPPED_FMT, 8, 0);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), expected) != nullptr);
+}
+
+static void test_ui_shows_config_lost_alert_only_on_load_failure(void) {
+    // 1. Fresh empty NVS -> Setup Welcome directly (no false error screen)
+    storage.clear();
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+    testUi.begin();
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+
+    // 2. Corrupt NVS load failure -> persistent ScreenInfo alert before Setup Welcome
+    uint8_t garbage[44];
+    memset(garbage, 0xEE, sizeof(garbage));
+    prefs.putBytes("cfg", garbage, sizeof(garbage));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    testUi.begin();
+    TEST_ASSERT_TRUE(testUi.inSetup());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), TXT_ERR_CFG_LOST_TITLE) != nullptr);
+
+    // Must remain visible past IDLE_TIMEOUT_MS until acknowledged
+    advanceMockMillis(IDLE_TIMEOUT_MS + 5000UL);
+    testUi.update();
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+
+    // Clicking advances into Setup Welcome
+    simulateClick(testUi);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
+}
+
+};
+
+void setUp(void) {
+    resetAllTestMocks();
+    rtclock = RTClock();
+    storage.begin();
+    history.begin();
+    wateringCtrl.begin();
+    digitalWrite(PIN_CLK, HIGH);
+    digitalWrite(PIN_DT, HIGH);
+    digitalWrite(PIN_SW, HIGH);
+    testDisp = Display();
+    testDisp.begin();
+    testEnc.begin();
+    testUi.~UI();
+    new (&testUi) UI(testDisp, testEnc);
+}
+
+void tearDown(void) {
+    wateringCtrl.stop();
+}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_display_delta_rows_and_nullptr_preservation_across_refresh);
-    RUN_TEST(test_display_formatting_helpers_and_null_safety);
-    RUN_TEST(test_menubuilder_dynamic_stop_watering_and_live_menu_refresh);
-    RUN_TEST(test_menubuilder_history_localization_and_dynamic_test_duration);
-    RUN_TEST(test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete);
-    RUN_TEST(test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow);
-    RUN_TEST(test_ui_info_and_done_post_enter_rotation_bounce_guard);
-    RUN_TEST(test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety);
-    RUN_TEST(test_ui_idle_screen_waiting_between_zones_and_backlight_never);
-    RUN_TEST(test_display_i2c_fault_abort_cooldown_and_recovery_callback);
-    RUN_TEST(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
-    RUN_TEST(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
-    RUN_TEST(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
-    RUN_TEST(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
-    RUN_TEST(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
-    RUN_TEST(test_ui_immediate_save_quiet_wake_recover_backoff_and_idle_info);
-    RUN_TEST(test_ui_setup_atomicity_wake_shadow_backoff_throttle_and_cold_rtc_idle);
-    RUN_TEST(test_ui_phase4_rtc_fail_cycles_preserve_idle_menu_and_strict_actions);
-    RUN_TEST(test_display_coherent_shadow_wake_never_sleep_fault_and_freq_preserve);
-    RUN_TEST(test_ui_confirm_bounce_cursor_preserve_utc_range_err_and_freq_labels);
-    RUN_TEST(test_ui_idle_long_interval_zero_zones_suspend_cancel_early_rtc_and_save_retry);
+    RUN_UT(test_display_delta_rows_and_nullptr_preservation_across_refresh);
+    RUN_UT(test_display_formatting_helpers_and_null_safety);
+    RUN_UT(test_menubuilder_dynamic_stop_watering_and_live_menu_refresh);
+    RUN_UT(test_menubuilder_history_localization_and_dynamic_test_duration);
+    RUN_UT(test_ui_setup_wizard_skip_mode_advances_to_zones_not_complete);
+    RUN_UT(test_ui_setup_missing_rtc_skip_clock_back_and_ok_flow);
+    RUN_UT(test_ui_info_and_done_post_enter_rotation_bounce_guard);
+    RUN_UT(test_ui_actions_dst_refresh_custom_respace_zero_dur_and_reset_safety);
+    RUN_UT(test_ui_idle_screen_waiting_between_zones_and_backlight_never);
+    RUN_UT(test_display_i2c_fault_abort_cooldown_and_recovery_callback);
+    RUN_UT(test_ui_four_cycle_horarios_and_zero_dur_overlap_guard);
+    RUN_UT(test_ui_clock_editor_refresh_and_freq_days_without_rtc);
+    RUN_UT(test_ui_settings_logs_unknown_confirm_and_missing_rtc_warning);
+    RUN_UT(test_display_recover_flushes_shadow_and_sync_catches_always_on_lcd_fault);
+    RUN_UT(test_ui_idle_displays_battery_low_warning_immediately_and_clears_on_set);
+    RUN_UT(test_ui_immediate_save_on_edit);
+    RUN_UT(test_ui_quiet_wake_recovery_without_log_spam);
+    RUN_UT(test_ui_periodic_6h_lcd_recovery);
+    RUN_UT(test_display_exponential_backoff_on_persistent_i2c_fault);
+    RUN_UT(test_ui_idle_last_watering_history_err_and_rtc_missing);
+    RUN_UT(test_ui_setup_wizard_defers_nvs_writes_until_completion);
+    RUN_UT(test_ui_wake_from_display_off_skips_stale_shadow_flush);
+    RUN_UT(test_ui_periodic_6h_recovery_guards);
+    RUN_UT(test_display_throttled_recovery_defers_without_escalating_backoff);
+    RUN_UT(test_ui_idle_cold_rtc_missing_and_battery_priority);
+    RUN_UT(test_ui_time_edit_hw_write_fail_leaves_rtc_invalid);
+    RUN_UT(test_ui_num_cycles_preserves_slots_and_zeroes_trailing);
+    RUN_UT(test_ui_custom_cycle_logs_post_sort_index);
+    RUN_UT(test_ui_suspend_clamps_to_max_valid_unix);
+    RUN_UT(test_ui_cancel_suspend_recomputes_next_slot);
+    RUN_UT(test_ui_idle_rerenders_on_same_minute_hour_change);
+    RUN_UT(test_ui_menu_live_refresh_clamps_offset_and_updates_prog);
+    RUN_UT(test_ui_go_idle_during_setup_does_not_flush_config);
+    RUN_UT(test_ui_strict_action_parsing_rejects_invalid_inputs);
+    RUN_UT(test_ui_factory_reset_repairs_unmounted_history_fs);
+    RUN_UT(test_display_mid_frame_i2c_error_keeps_coherent_shadow);
+    RUN_UT(test_ui_setup_welcome_wakes_with_backlight_never);
+    RUN_UT(test_display_sleep_i2c_error_keeps_logical_on_and_recovers);
+    RUN_UT(test_ui_freq_days_unchanged_preserves_ref_day_and_triggers);
+    RUN_UT(test_ui_time_edit_displays_normalized_spring_forward_dst_gap);
+    RUN_UT(test_ui_confirm_post_enter_rotation_bounce_guard);
+    RUN_UT(test_ui_inplace_menu_toggles_preserve_cursor_and_scroll);
+    RUN_UT(test_ui_time_edit_distinguishes_utc_range_error_from_missing_rtc);
+    RUN_UT(test_ui_horarios_screen_uses_distinct_frequency_prefix);
+    RUN_UT(test_ui_idle_long_interval_shows_date_short_shows_weekday);
+    RUN_UT(test_ui_idle_zero_enabled_zones_shows_warning);
+    RUN_UT(test_ui_suspend_zero_days_cancels_cleanly);
+    RUN_UT(test_ui_settings_date_edit_fails_fast_when_rtc_missing);
+    RUN_UT(test_ui_main_menu_live_rebuild_preserves_selected_action);
+    RUN_UT(test_ui_setup_mode_includes_disabled_option);
+    RUN_UT(test_ui_setup_completion_retries_failed_save_on_throttle);
+    RUN_UT(test_display_recover_while_sleeping_keeps_display_off);
+    RUN_UT(test_display_failed_wake_arms_sync_retry);
+    RUN_UT(test_ui_cancel_suspend_preserves_persisted_triggers);
+    RUN_UT(test_ui_confirm_setup_handles_nullptr_tag);
+    RUN_UT(test_ui_blocks_manual_and_test_while_watering_active);
+    RUN_UT(test_ui_idle_displays_skipped_slot_notice);
+    RUN_UT(test_ui_shows_config_lost_alert_only_on_load_failure);
     return UNITY_END();
 }

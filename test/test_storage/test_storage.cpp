@@ -2,11 +2,10 @@
 #include "TestCommon.h"
 #include "../../test/mocks/TestCommon.cpp"
 #include "../../src/AppState.cpp"
-#define private public
 #include "Storage.h"
-#undef private
 #include "../../src/Storage.cpp"
 
+struct UnitTestAccess {
 static void recomputeHexCrc(char* hex) {
     size_t nBytes = sizeof(AppConfigBlob);
     uint8_t raw[sizeof(AppConfigBlob)] = {};
@@ -22,14 +21,7 @@ static void recomputeHexCrc(char* hex) {
     }
 }
 
-void setUp(void) {
-    resetAllTestMocks();
-    storage.begin();
-}
-
-void tearDown(void) {}
-
-void test_storage_export_hex_length_and_format(void) {
+static void test_storage_export_hex_length_and_format(void) {
     char hex[128] = {};
     storage.exportConfigHex(hex, sizeof(hex));
 
@@ -45,7 +37,7 @@ void test_storage_export_hex_length_and_format(void) {
     }
 }
 
-void test_storage_export_and_import_roundtrip(void) {
+static void test_storage_export_and_import_roundtrip(void) {
     // 1. Set specific configuration in gState
     gState.mode = AppMode::INTENSO;
     gState.zones[0].enabled = true;
@@ -105,7 +97,7 @@ void test_storage_export_and_import_roundtrip(void) {
     TEST_ASSERT_EQUAL_UINT8(45, restoredCs.slots[1].minute);
 }
 
-void test_storage_import_rejects_invalid_inputs(void) {
+static void test_storage_import_rejects_invalid_inputs(void) {
     // 1. Null pointer
     TEST_ASSERT_FALSE(storage.importConfigHex(nullptr));
 
@@ -125,7 +117,7 @@ void test_storage_import_rejects_invalid_inputs(void) {
     TEST_ASSERT_FALSE(storage.importConfigHex(hex));
 }
 
-void test_storage_recovery_state_roundtrip(void) {
+static void test_storage_recovery_state_roundtrip(void) {
     RecoveryState rs = {};
     rs.version = NVS_VERSION;
     rs.active = true;
@@ -163,7 +155,7 @@ void test_storage_recovery_state_roundtrip(void) {
     TEST_ASSERT_FALSE(storage.loadRecoveryState(loaded));
 }
 
-void test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip(void) {
+static void test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip(void) {
     RecoveryState rs = {};
     rs.version = NVS_VERSION;
     rs.active = true;
@@ -231,7 +223,7 @@ void test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip(vo
 #endif
 }
 
-void test_storage_save_and_load_persistence(void) {
+static void test_storage_save_and_load_persistence(void) {
     gState.mode = AppMode::FRACO;
     gState.zones[0].duration_min = 14;
     gState.setup_done = true;
@@ -251,7 +243,7 @@ void test_storage_save_and_load_persistence(void) {
     TEST_ASSERT_TRUE(gState.setup_done);
 }
 
-void test_storage_rejects_corrupted_boolean_bytes(void) {
+static void test_storage_rejects_corrupted_boolean_bytes(void) {
     char hex[128] = {};
     storage.exportConfigHex(hex, sizeof(hex));
 
@@ -265,7 +257,7 @@ void test_storage_rejects_corrupted_boolean_bytes(void) {
     TEST_ASSERT_FALSE(ok);
 }
 
-void test_storage_duration_clamping_on_import(void) {
+static void test_storage_duration_clamping_on_import(void) {
     char hex[128] = {};
     storage.exportConfigHex(hex, sizeof(hex));
 
@@ -288,7 +280,7 @@ void test_storage_duration_clamping_on_import(void) {
     TEST_ASSERT_TRUE(storage.importConfigHex(hex));
 }
 
-void test_storage_import_rejects_version_mismatch(void) {
+static void test_storage_import_rejects_version_mismatch(void) {
     char hex[128] = {};
     storage.exportConfigHex(hex, sizeof(hex));
 
@@ -300,7 +292,7 @@ void test_storage_import_rejects_version_mismatch(void) {
     TEST_ASSERT_FALSE(storage.importConfigHex(hex));
 }
 
-void test_storage_clear_wipes_all(void) {
+static void test_storage_clear_wipes_all(void) {
     gState.mode = AppMode::INTENSO;
     storage.save();
 
@@ -318,7 +310,7 @@ void test_storage_clear_wipes_all(void) {
     TEST_ASSERT_EQUAL(AppMode::DESATIVADO, gState.mode);
 }
 
-void test_storage_history_cache_persistence(void) {
+static void test_storage_history_cache_persistence(void) {
     HistoryEntry sample[3] = {};
     sample[0] = { 2026, 6, 1, 8, 0, { 10, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
     sample[1] = { 2026, 6, 2, 8, 0, { 12, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
@@ -337,7 +329,7 @@ void test_storage_history_cache_persistence(void) {
     TEST_ASSERT_EQUAL(WaterTrigger::CUSTOM, loaded[2].trigger);
 }
 
-void test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected(void) {
+static void test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected(void) {
     // 1. Fixed mode (MEDIO) with dormant overlapping PERSONALIZADO slots + edited 20m zones
     gState.mode = AppMode::MEDIO;
     for (int i = 0; i < NUM_ZONES; i++) {
@@ -371,11 +363,12 @@ void test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected(void) 
     TEST_ASSERT_FALSE(storage.importConfigHex(badHex));
 }
 
-void test_storage_zero_duration_normalizes_enabled_false(void) {
+static void test_storage_zero_duration_normalizes_enabled_false(void) {
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 0;
     TEST_ASSERT_TRUE(storage.save());
-    TEST_ASSERT_FALSE(gState.zones[0].enabled);
+    // Persistence must not mutate caller RAM state; normalization occurs in _stateToBlob() / _blobToState()
+    TEST_ASSERT_TRUE(gState.zones[0].enabled);
 
     initAppState();
     TEST_ASSERT_TRUE(storage.load());
@@ -383,32 +376,119 @@ void test_storage_zero_duration_normalizes_enabled_false(void) {
     TEST_ASSERT_EQUAL_UINT8(0, gState.zones[0].duration_min);
 }
 
-void test_storage_nvs_load_crc_rejection_and_clamping(void) {
+static void test_storage_nvs_load_crc_rejection_and_clamping(void) {
     gState.mode = AppMode::FRACO;
     gState.zones[0].enabled = true;
     gState.zones[0].duration_min = 12;
     TEST_ASSERT_TRUE(storage.save());
 
-    AppConfigBlob blob = {};
-    TEST_ASSERT_EQUAL_UINT32(sizeof(blob), prefs.getBytes(KEY_CFG, &blob, sizeof(blob)));
+    AppConfigSlot slot = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(slot), prefs.getBytes(KEY_CFG, &slot, sizeof(slot)));
 
-    // 1. Corrupt byte in NVS without updating CRC -> load() rejects
-    blob.zones[0].duration_min = 9;
-    prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    // 1. Corrupt byte in BOTH slots without updating CRC -> load() rejects with CORRUPT
+    slot.blob.zones[0].duration_min = 9;
+    prefs.putBytes(KEY_CFG, &slot, sizeof(slot));
+    prefs.putBytes(KEY_CFG_B, &slot, sizeof(slot));
     initAppState();
+    Serial.reset();
     TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::CORRUPT, storage.lastLoadResult());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
     TEST_ASSERT_EQUAL(AppMode::DESATIVADO, gState.mode);
+#if LOG_LEVEL >= LVL_ERROR
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_LOAD_FAILED) != std::string::npos);
+#endif
 
-    // 2. Corrupted duration > 20 in NVS WITH valid CRC -> load() defensively clamps to 8
-    blob.zones[0].duration_min = 30;
-    blob.crc16 = Storage::_crc16((const uint8_t*)&blob, offsetof(AppConfigBlob, crc16));
-    prefs.putBytes(KEY_CFG, &blob, sizeof(blob));
+    // 2. Corrupted duration > 20 in NVS WITH valid inner & outer CRC -> load() defensively clamps to 8
+    slot.blob.zones[0].duration_min = 30;
+    slot.blob.crc16 = Storage::_crc16((const uint8_t*)&slot.blob, offsetof(AppConfigBlob, crc16));
+    slot.slot_crc16 = Storage::_crc16((const uint8_t*)&slot, offsetof(AppConfigSlot, slot_crc16));
+    prefs.putBytes(KEY_CFG, &slot, sizeof(slot));
+    prefs.putBytes(KEY_CFG_B, &slot, sizeof(slot));
     initAppState();
     TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::OK, storage.lastLoadResult());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
     TEST_ASSERT_EQUAL_UINT8(8, gState.zones[0].duration_min);
 }
 
-void test_storage_history_blob_atomic_and_filesize(void) {
+static void test_storage_dual_slot_ping_pong_backup_and_legacy_compat(void) {
+    // 1. Empty NVS (first boot) is EMPTY, NOT a load failure
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::EMPTY, storage.lastLoadResult());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+
+    // 2. First save seeds both cfg and cfg_b (seq=1); second save alternates to newer seq=2
+    gState.mode = AppMode::MEDIO;
+    gState.setup_done = true;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_EQUAL_UINT32(sizeof(AppConfigSlot), prefs.getBytesLength(KEY_CFG));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(AppConfigSlot), prefs.getBytesLength(KEY_CFG_B));
+
+    gState.mode = AppMode::INTENSO;
+    TEST_ASSERT_TRUE(storage.save());
+
+    AppConfigSlot sA = {}, sB = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(sA), prefs.getBytes(KEY_CFG, &sA, sizeof(sA)));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(sB), prefs.getBytes(KEY_CFG_B, &sB, sizeof(sB)));
+    TEST_ASSERT_TRUE((sA.seq == 2 && sB.seq == 1) || (sB.seq == 2 && sA.seq == 1));
+
+    // Reload picks newer seq=2 (INTENSO)
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::INTENSO, gState.mode);
+
+    // 3. Corrupt newer slot -> automatically recovers older valid slot (MEDIO) with warning
+    const char* newerKey = (sA.seq > sB.seq) ? KEY_CFG : KEY_CFG_B;
+    AppConfigSlot badNewer = (sA.seq > sB.seq) ? sA : sB;
+    badNewer.blob.mode ^= 0xFF; // breaks both inner & outer CRC
+    prefs.putBytes(newerKey, &badNewer, sizeof(badNewer));
+
+    initAppState();
+    Serial.reset();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::MEDIO, gState.mode);
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_BACKUP_USED) != std::string::npos);
+#endif
+
+    // 4. Version mismatch on stored config reports VERSION_MISMATCH (configLoadFailed == true),
+    //    while seq == 0 on a version-mismatched envelope is rejected as CORRUPT.
+    storage.clear();
+    AppConfigSlot oldVer = sA;
+    oldVer.version = NVS_VERSION - 1;
+    oldVer.blob.version = NVS_VERSION - 1;
+    oldVer.blob.crc16 = Storage::_crc16((const uint8_t*)&oldVer.blob, offsetof(AppConfigBlob, crc16));
+    oldVer.slot_crc16 = Storage::_crc16((const uint8_t*)&oldVer, offsetof(AppConfigSlot, slot_crc16));
+    prefs.putBytes(KEY_CFG, &oldVer, sizeof(oldVer));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::VERSION_MISMATCH, storage.lastLoadResult());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    oldVer.seq = 0;
+    oldVer.slot_crc16 = Storage::_crc16((const uint8_t*)&oldVer, offsetof(AppConfigSlot, slot_crc16));
+    prefs.putBytes(KEY_CFG, &oldVer, sizeof(oldVer));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::CORRUPT, storage.lastLoadResult());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    // 5. Legacy single-slot 36-byte v5 AppConfigBlob in KEY_CFG still loads cleanly
+    storage.clear();
+    AppConfigBlob legacy = sA.blob;
+    legacy.mode = (uint8_t)AppMode::FRACO;
+    legacy.crc16 = Storage::_crc16((const uint8_t*)&legacy, offsetof(AppConfigBlob, crc16));
+    prefs.putBytes(KEY_CFG, &legacy, sizeof(legacy));
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::FRACO, gState.mode);
+    TEST_ASSERT_EQUAL(ConfigLoadResult::OK, storage.lastLoadResult());
+}
+
+static void test_storage_history_blob_atomic_and_filesize(void) {
     TEST_ASSERT_FALSE(storage.hasHistoryData());
 
     HistoryEntry sample[2] = {};
@@ -434,7 +514,7 @@ void test_storage_history_blob_atomic_and_filesize(void) {
     TEST_ASSERT_FALSE(storage.loadHistoryCache(loaded, sizeof(loaded), lineCount, &fileSize));
 }
 
-void test_storage_last_triggers_roundtrip(void) {
+static void test_storage_last_triggers_roundtrip(void) {
     uint32_t ts[MAX_SLOTS_PER_MODE] = { 1781500000UL, 1781510000UL, 0UL, 1781520000UL };
     storage.saveLastTriggers(ts, MAX_SLOTS_PER_MODE);
 
@@ -449,7 +529,7 @@ void test_storage_last_triggers_roundtrip(void) {
     TEST_ASSERT_FALSE(storage.loadLastTriggers(loaded, MAX_SLOTS_PER_MODE));
 }
 
-void test_storage_clear_guard_invalid_hist_cache_and_respace_logs(void) {
+static void test_storage_clear_guard_invalid_hist_cache_and_respace_logs(void) {
     // 1. storage.clear() when !_ready returns false and logs NS_FAIL without MEM_CLEARED
     storage._ready = false;
     Serial.reset();
@@ -487,7 +567,7 @@ void test_storage_clear_guard_invalid_hist_cache_and_respace_logs(void) {
 #endif
 }
 
-void test_storage_backlight_upper_bound_import_and_load(void) {
+static void test_storage_backlight_upper_bound_import_and_load(void) {
     char hexBuf[sizeof(AppConfigBlob) * 2 + 1];
 
     // 1. importConfigHex rejects backlight_timeout_ms > 3600000ms (unless BACKLIGHT_TIMEOUT_NEVER)
@@ -522,7 +602,7 @@ void test_storage_backlight_upper_bound_import_and_load(void) {
     TEST_ASSERT_EQUAL_UINT32(120000UL, gState.backlight_timeout_ms);
 }
 
-void test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp(void) {
+static void test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp(void) {
     // 1. Storage::begin() is idempotent (must not fail on repeat call when already _ready)
     TEST_ASSERT_TRUE(storage._ready);
     storage.begin();
@@ -627,26 +707,36 @@ void test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clam
     Preferences::writeFail = false;
 }
 
+};
+
+void setUp(void) {
+    resetAllTestMocks();
+    storage.begin();
+}
+
+void tearDown(void) {}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_storage_export_hex_length_and_format);
-    RUN_TEST(test_storage_export_and_import_roundtrip);
-    RUN_TEST(test_storage_import_rejects_invalid_inputs);
-    RUN_TEST(test_storage_recovery_state_roundtrip);
-    RUN_TEST(test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip);
-    RUN_TEST(test_storage_save_and_load_persistence);
-    RUN_TEST(test_storage_rejects_corrupted_boolean_bytes);
-    RUN_TEST(test_storage_duration_clamping_on_import);
-    RUN_TEST(test_storage_import_rejects_version_mismatch);
-    RUN_TEST(test_storage_clear_wipes_all);
-    RUN_TEST(test_storage_history_cache_persistence);
-    RUN_TEST(test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected);
-    RUN_TEST(test_storage_zero_duration_normalizes_enabled_false);
-    RUN_TEST(test_storage_nvs_load_crc_rejection_and_clamping);
-    RUN_TEST(test_storage_history_blob_atomic_and_filesize);
-    RUN_TEST(test_storage_last_triggers_roundtrip);
-    RUN_TEST(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);
-    RUN_TEST(test_storage_backlight_upper_bound_import_and_load);
-    RUN_TEST(test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp);
+    RUN_UT(test_storage_export_hex_length_and_format);
+    RUN_UT(test_storage_export_and_import_roundtrip);
+    RUN_UT(test_storage_import_rejects_invalid_inputs);
+    RUN_UT(test_storage_recovery_state_roundtrip);
+    RUN_UT(test_storage_recovery_state_rejects_legacy_size_ver_bool_and_crc_bitflip);
+    RUN_UT(test_storage_save_and_load_persistence);
+    RUN_UT(test_storage_rejects_corrupted_boolean_bytes);
+    RUN_UT(test_storage_duration_clamping_on_import);
+    RUN_UT(test_storage_import_rejects_version_mismatch);
+    RUN_UT(test_storage_clear_wipes_all);
+    RUN_UT(test_storage_history_cache_persistence);
+    RUN_UT(test_storage_dormant_custom_overlap_auto_respaced_vs_active_rejected);
+    RUN_UT(test_storage_zero_duration_normalizes_enabled_false);
+    RUN_UT(test_storage_nvs_load_crc_rejection_and_clamping);
+    RUN_UT(test_storage_dual_slot_ping_pong_backup_and_legacy_compat);
+    RUN_UT(test_storage_history_blob_atomic_and_filesize);
+    RUN_UT(test_storage_last_triggers_roundtrip);
+    RUN_UT(test_storage_clear_guard_invalid_hist_cache_and_respace_logs);
+    RUN_UT(test_storage_backlight_upper_bound_import_and_load);
+    RUN_UT(test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp);
     return UNITY_END();
 }

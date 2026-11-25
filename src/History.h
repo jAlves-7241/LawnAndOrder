@@ -40,6 +40,7 @@ public:
     uint16_t exportSent() const;
 
 private:
+    UNIT_TEST_FRIEND
     bool     _ready = false;
     uint16_t _lineCount = 0;   // cached line count - avoids re-reading file on every record()
     uint32_t _lastMountRetryMs = 0;

@@ -24,6 +24,7 @@ public:
     bool getClick();
 
 private:
+    UNIT_TEST_FRIEND
     const uint8_t _clk, _dt, _sw;
 
     volatile int16_t _delta;    // int16 avoids ISR overflow on fast spins

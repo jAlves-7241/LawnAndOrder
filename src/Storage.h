@@ -77,18 +77,43 @@ struct __attribute__((packed)) AppConfigBlob {
     uint16_t crc16;
 };
 
+// Redundant NVS ping-pong slot envelope (cfg / cfg_b).
+// Wraps AppConfigBlob with a monotonic sequence counter and outer CRC-16 so
+// export_config / import_config stays an unchanged 36-byte (72-hex) format.
+struct __attribute__((packed)) AppConfigSlot {
+    uint8_t       magic;      // 0xA5
+    uint8_t       version;    // NVS_VERSION
+    uint32_t      seq;        // monotonically increasing write sequence (>= 1)
+    AppConfigBlob blob;
+    uint16_t      slot_crc16;
+};
+
+enum class ConfigLoadResult : uint8_t {
+    OK = 0,
+    EMPTY,
+    CORRUPT,
+    VERSION_MISMATCH,
+    NOT_READY,
+};
+
 
 class Storage {
 public:
     // Open NVS namespace. Call once in setup(), before load().
     void begin();
 
-    // Overwrite gState fields with values from NVS.
-    // If NVS is empty or version mismatch, gState is left unchanged (defaults).
-    // Returns true if data was successfully loaded.
+    // Overwrite gState fields with values from NVS (reads cfg and cfg_b, picking newer valid copy).
+    // If NVS is empty or both copies fail validation, gState is left unchanged (defaults).
+    // Returns true if data was successfully loaded. Inspect lastLoadResult() / configLoadFailed()
+    // to distinguish first-boot EMPTY from corruption or version mismatch.
     bool load();
+    ConfigLoadResult lastLoadResult() const { return _lastLoadResult; }
+    bool configLoadFailed() const {
+        return _lastLoadResult != ConfigLoadResult::OK &&
+               _lastLoadResult != ConfigLoadResult::EMPTY;
+    }
 
-    // Write all persisted fields from gState to NVS.
+    // Write all persisted fields from gState to NVS (alternating cfg / cfg_b slots).
     // Returns false if NVS is unavailable or the write fails (arms periodic retry).
     bool save();
 
@@ -120,11 +145,20 @@ public:
     bool importConfigHex(const char* hexIn);
 
 private:
+    UNIT_TEST_FRIEND
     bool _ready = false;  // true after begin() succeeds
     bool _savePending = false;
     uint32_t _lastSaveRetryMs = 0;
+    ConfigLoadResult _lastLoadResult = ConfigLoadResult::EMPTY;
+    uint32_t _configSeq = 0;
+    uint8_t  _activeSlot = 0;
+    bool     _backupSeeded = false;
 
     static uint16_t _crc16(const uint8_t* data, size_t len);
+    bool _readConfigSlot(const char* key, AppConfigBlob& outBlob,
+                         uint32_t& outSeq, bool& outEnveloped,
+                         ConfigLoadResult& outErr);
+    static bool _migratePrevVersionBlob(const uint8_t* raw, size_t len, AppConfigBlob& outBlob);
     void _stateToBlob(AppConfigBlob& blob);
     bool _blobToState(const AppConfigBlob& blob);
 };

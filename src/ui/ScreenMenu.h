@@ -1,6 +1,7 @@
 #pragma once
 #include "UIScreen.h"
 #include "MenuBuilder.h"
+#include "../config.h"
 
 class ScreenMenu : public UIScreen {
 public:
@@ -13,6 +14,7 @@ public:
     void render(UI& ui) override;
 
 private:
+    UNIT_TEST_FRIEND
     static const uint8_t MAX_ITEMS = MenuBuilder::MAX_ITEMS;
 
     MenuID _mid = MenuID::MAIN;

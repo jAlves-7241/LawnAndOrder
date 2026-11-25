@@ -4,12 +4,12 @@ Este diretório contém o firmware do controlador ESP32. A execução é coopera
 
 ## Arquitetura
 
-- `main.cpp`, `SystemBoot.h / .cpp`: inicialização, ciclo principal e utilitários testáveis de arranque seguro dos relés (`initRelayPinsSafe`), recuperação do barramento I²C (`clearI2CBus`, `recoverI2CWith`) e avaliação de suspensão no boot (`evaluateBootSuspension`).
+- `main.cpp`, `SystemBoot.h / .cpp`: ponto de entrada ESP32 (exige ESP-IDF 5 / Core 3.x, configura WDT e buffer UART RX de 1024 B) e orquestração partilhada `bootSystem()` / `tickSystem()`, arranque seguro dos relés (`initRelayPinsSafe`), recuperação do barramento I²C (`clearI2CBus`, `recoverI2CWith`) e avaliação de suspensão no boot (`evaluateBootSuspension`).
 - `AppState.h / .cpp`: estruturas da aplicação e estado central `gState`.
-- `WateringController.h / .cpp`: fila de zonas, temporização, comutação dos relés e estado de recuperação persistente.
-- `Scheduler.h / .cpp`: cálculo limitado do próximo horário, tratamento de frequência personalizada e disparo de ciclos automáticos.
+- `WateringController.h / .cpp`: fila de zonas, temporização, comutação dos relés, recusa de preempção sobre ciclos ativos e estado de recuperação persistente.
+- `Scheduler.h / .cpp`: cálculo limitado do próximo horário, tratamento de frequência personalizada, disparo de ciclos automáticos, recuperação adiada após colisões com `TEST`/`CUSTOM` e indicador de horário omitido (`hasSkippedSlot()`).
 - `RTClock.h / .cpp`: DS3231 no hardware, conversão local/UTC, DST europeu e avanço por software entre leituras do RTC.
-- `Storage.h / .cpp`: configuração NVS v5 com integridade por CRC-16/CCITT em `AppConfigBlob` (72 carateres hex, sem retrocompatibilidade v4), cache atómica de histórico (`hblob`), estado de recuperação (`recv`) e marcadores `sched_tr`.
+- `Storage.h / .cpp`: configuração NVS v5 redundante em dois slots alternados (`cfg` / `cfg_b`) com contador de sequência, integridade por CRC-16/CCITT em `AppConfigBlob` (72 carateres hex, retrocompatível com `cfg` v5 legado e com hook de migração `N-1`), diagnóstico de falha (`ConfigLoadResult` / `configLoadFailed()`), `save()` puro sem mutar `gState`, cache atómica de histórico (`hblob`), estado de recuperação (`recv`) e marcadores `sched_tr`.
 - `History.h / .cpp`: CSV em LittleFS, cache de entradas recentes e dimensão esperada do ficheiro na NVS (`hblob`), persistência de adiamentos durante rotação em `/hist_pend.txt` e exportação série.
 - `Display.h / .cpp`, `Encoder.h / .cpp`, `UI.h / .cpp`: LCD com shadow buffer, encoder via ISR/debounce e encaminhamento dos ecrãs.
 - `Terminal.h / .cpp`: CLI Serial a 115200 baud, com leitura incremental de comandos (incluindo `stop`, `reboot`, `i2c_scan`, gestão de configurações e histórico).
@@ -18,21 +18,22 @@ Este diretório contém o firmware do controlador ESP32. A execução é coopera
 
 A separação por módulos é acompanhada por singletons e estado global partilhado (`gState`), uma escolha simples para este firmware de uma só aplicação, suportada para testes unitários isolados através da suite nativa com mocks em `test/` (ver [test/README.md](../test/README.md)). O encoder é o único serviço com entrada assíncrona por interrupção; o delta é protegido por secção crítica.
 
-## Inicialização (`setup()`)
+## Inicialização (`setup()` → `bootSystem()`)
 
-1. Pré-carrega os níveis OFF nos registos GPIO (`gpio_set_level`) antes de configurar os pinos dos relés como `OUTPUT`, evitando pulsos espúrios no arranque sob ESP32 Arduino Core 3.x.
-2. Inicializa o watchdog com `WDT_TIMEOUT_S` (8 s por defeito) e o estado em RAM.
-3. Abre NVS e carrega configurações validadas.
-4. Monta LittleFS e carrega a cache do histórico.
-5. Recupera o barramento I²C, inicializa-o (com scan de diagnóstico em modo `LVL_DEBUG`), inicia o LCD e o encoder.
-6. Inicializa o RTC, instala a recuperação I²C, verifica suspensão, carrega os marcadores DST persistidos (`scheduler.loadTriggers()`) e tenta recuperar um ciclo interrompido.
-7. Calcula o horário seguinte, inicia UI e terminal.
+A sequência crítica de arranque está centralizada em `bootSystem()` (`SystemBoot.cpp`) e é reutilizada diretamente por `main.cpp`, `test_system` e `test_soak`:
+
+1. `main.cpp` pré-carrega os níveis OFF nos registos GPIO (`initRelayPinsSafe`) antes de configurar os pinos dos relés como `OUTPUT` (evitando pulsos espúrios sob ESP32 Arduino Core 3.x), expande o buffer UART RX para 1024 B (`Serial.setRxBufferSize(1024)`), abre Serial e inicializa o watchdog ESP-IDF 5 com `WDT_TIMEOUT_S` (8 s por defeito).
+2. `bootSystem()` inicializa o estado em RAM (`initAppState`), abre NVS e carrega configurações dos slots redundantes `cfg`/`cfg_b` (se ambos falharem, regista `LOG_E` e mantém `storage.configLoadFailed()` ativo).
+3. Monta LittleFS e carrega a cache do histórico (`history.begin()`).
+4. Limpa e inicializa o barramento I²C (`clearI2CBus`, `Wire.begin`, `configureI2CTimeout`, com scan opcional em `LVL_DEBUG`), inicia o LCD e o encoder.
+5. Inicializa o RTC, instala a recuperação I²C, avalia suspensão no arranque (`evaluateBootSuspension`), carrega os marcadores DST persistidos (`scheduler.loadTriggers()`) antes de tentar recuperar um ciclo interrompido (`wateringCtrl.begin()`).
+6. Inicia o scheduler (`scheduler.begin()`, após a recuperação para detetar `wateringCtrl.isActive()`), a UI (apresentando banner persistente de erro de configuração antes do assistente inicial se `configLoadFailed()`) e o terminal.
 
 `History::begin()` tenta montar o sistema de ficheiros com `LittleFS.begin(false)` (com retentativa antes de desistir). Se a montagem falhar, consulta `storage.hasHistoryData()` (`hblob` na NVS); se já existirem registos conhecidos, a formatação destrutiva é prevenida para salvaguardar o histórico. A formatação (`begin(true)`) só é executada quando não há dados históricos conhecidos em NVS. No arranque seguinte, valida também o tamanho do ficheiro contra o registado em `hblob` e reprocessa eventuais entradas pendentes de `/hist_pend.txt`. A configuração NVS permanece separada.
 
-## Ciclo principal (`loop()`)
+## Ciclo principal (`loop()` → `tickSystem()`)
 
-A ordem efetiva em `main.cpp` é:
+A ordem efetiva executada por `tickSystem(ui)` (chamado de `main.cpp::loop()` e dos testes):
 
 1. Alimentar o watchdog.
 2. `rtclock.update()`.

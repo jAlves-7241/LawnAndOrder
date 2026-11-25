@@ -59,6 +59,7 @@ public:
     uint8_t getDateEditDay() const { return _dateDay; }
 
 private:
+    UNIT_TEST_FRIEND
     Display& _d;
     Encoder& _enc;
 
@@ -86,4 +87,5 @@ private:
     uint8_t _dateDay;
     
     void _startSetup();
+    void _showWateringActiveInfo(MenuID backMenu);
 };

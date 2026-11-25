@@ -1,6 +1,7 @@
 #pragma once
 #include "UIScreen.h"
 #include "UITypes.h"
+#include "../config.h"
 
 class ScreenSetupWelcome : public UIScreen {
 public:
@@ -12,5 +13,6 @@ public:
     void render(UI& ui) override;
 
 private:
+    UNIT_TEST_FRIEND
     bool _isComplete = false;
 };
