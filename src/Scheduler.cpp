@@ -162,23 +162,7 @@ void Scheduler::update() {
                             break;
                         }
                         if (gState.watering.active) {
-                            WaterTrigger activeTrig = wateringCtrl.activeTrigger();
-                            if (activeTrig == WaterTrigger::TEST || activeTrig == WaterTrigger::CUSTOM) {
-                                _collisionCatchUpPending = true;
-                                _collisionHour = sched.slots[i].hour;
-                                _collisionMin  = sched.slots[i].minute;
-                                LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_DEFER,
-                                      (int)_collisionHour, (int)_collisionMin);
-                            } else {
-                                _collisionCatchUpPending = false;
-                                _hasSkippedSlot = true;
-                                _skippedHour = sched.slots[i].hour;
-                                _skippedMin  = sched.slots[i].minute;
-                                _lastTriggerUnix[i] = t.unix;
-                                storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
-                                LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
-                                      (int)_skippedHour, (int)_skippedMin);
-                            }
+                            _handleSlotCollision(i, sched.slots[i].hour, sched.slots[i].minute, t.unix);
                             break;
                         }
                         if (!wateringCtrl.startGeneral(WaterTrigger::AUTO)) {
@@ -198,8 +182,18 @@ void Scheduler::update() {
 
         if (_catchUpPending) {
             _catchUpPending = false;
-            if (!gState.watering.active && sched.slot_count > 0) {
-                _tryCatchUp(t);
+            if (sched.slot_count > 0) {
+                if (!gState.watering.active) {
+                    _tryCatchUp(t);
+                } else {
+                    uint8_t cIdx = 0, cHour = 0, cMin = 0;
+                    if (_findCatchUpSlot(t, false, cIdx, cHour, cMin) &&
+                        !(_lastTriggerUnix[cIdx] > 0 && t.unix >= _lastTriggerUnix[cIdx] &&
+                          (t.unix - _lastTriggerUnix[cIdx]) < DST_DUP_WINDOW_S) &&
+                        hasEnabledZones()) {
+                        _handleSlotCollision(cIdx, cHour, cMin, t.unix);
+                    }
+                }
             }
         }
     }
@@ -240,7 +234,34 @@ uint32_t Scheduler::_resolveSlotUtc(const DateTime& slotLocal, uint32_t afterUtc
     return effSlotUtc;
 }
 
-bool Scheduler::_tryCatchUp(const SystemTime& t, bool allowExactSecond) {
+void Scheduler::_handleSlotCollision(uint8_t slotIdx, uint8_t hour, uint8_t min, uint32_t nowUnix) {
+    WaterTrigger activeTrig = wateringCtrl.activeTrigger();
+    if (activeTrig == WaterTrigger::TEST || activeTrig == WaterTrigger::CUSTOM) {
+        if (_collisionCatchUpPending && (_collisionHour != hour || _collisionMin != min)) {
+            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
+                  (int)_collisionHour, (int)_collisionMin);
+        }
+        _collisionCatchUpPending = true;
+        _collisionHour = hour;
+        _collisionMin  = min;
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_DEFER,
+              (int)_collisionHour, (int)_collisionMin);
+    } else {
+        _collisionCatchUpPending = false;
+        _hasSkippedSlot = true;
+        _skippedHour = hour;
+        _skippedMin  = min;
+        if (slotIdx < MAX_SLOTS_PER_MODE) {
+            _lastTriggerUnix[slotIdx] = nowUnix;
+            storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
+        }
+        LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
+              (int)_skippedHour, (int)_skippedMin);
+    }
+}
+
+bool Scheduler::_findCatchUpSlot(const SystemTime& t, bool allowExactSecond,
+                                 uint8_t& outIdx, uint8_t& outHour, uint8_t& outMin) {
     if ((uint8_t)gState.mode >= (uint8_t)AppMode::_COUNT) return false;
     const ModeSchedule& sched = MODE_SCHEDULES[(uint8_t)gState.mode];
     if (sched.slot_count == 0) return false;
@@ -250,10 +271,8 @@ bool Scheduler::_tryCatchUp(const SystemTime& t, bool allowExactSecond) {
 
     bool found = false;
     uint8_t bestIdx = 0;
-#if LOG_LEVEL >= LVL_INFO
     uint8_t bestHour = 0;
     uint8_t bestMin = 0;
-#endif
     uint32_t bestAge = 0xFFFFFFFFUL;
 
     for (int dayOff = 0; dayOff >= -1; dayOff--) {
@@ -282,16 +301,29 @@ bool Scheduler::_tryCatchUp(const SystemTime& t, bool allowExactSecond) {
             if (age <= SCHED_CATCHUP_WINDOW_S && (!found || age < bestAge)) {
                 found = true;
                 bestIdx = i;
-#if LOG_LEVEL >= LVL_INFO
                 bestHour = sl.hour;
                 bestMin = sl.minute;
-#endif
                 bestAge = age;
             }
         }
     }
 
     if (!found) return false;
+    outIdx  = bestIdx;
+    outHour = bestHour;
+    outMin  = bestMin;
+    return true;
+}
+
+bool Scheduler::_tryCatchUp(const SystemTime& t, bool allowExactSecond) {
+    uint8_t bestIdx = 0;
+    uint8_t bestHour = 0;
+    uint8_t bestMin = 0;
+    if (!_findCatchUpSlot(t, allowExactSecond, bestIdx, bestHour, bestMin)) {
+        return false;
+    }
+    (void)bestHour;
+    (void)bestMin;
 
     if (_lastTriggerUnix[bestIdx] > 0 && t.unix >= _lastTriggerUnix[bestIdx] &&
         (t.unix - _lastTriggerUnix[bestIdx]) < DST_DUP_WINDOW_S) {

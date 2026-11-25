@@ -1240,6 +1240,100 @@ static void test_scheduler_collision_manual_sets_skipped_indicator_no_double_wat
     wateringCtrl.stop();
 }
 
+static void test_scheduler_dst_catchup_collision_and_superseded_defer_logging(void) {
+    // 1. Spring-forward DST jump skipping custom slot during active TEST defers and runs after TEST
+    gState.auto_dst = true;
+    gState.mode = AppMode::PERSONALIZADO;
+    gState.setup_done = true;
+    gState.suspended = false;
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+
+    const uint8_t skipH = (uint8_t)((1 + TIMEZONE_OFFSET + 24) % 24);
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.day_pattern = DayPattern::DAILY;
+    cs.slot_count = 1;
+    cs.slots[0] = { skipH, 30 };
+
+    // 2026-03-29 00:59:59 UTC (1 s before EU spring-forward)
+    const uint32_t preJumpUtc = DateTime(2026, 3, 29, 0, 59, 59).unixtime();
+    auto setUtcNow = [](uint32_t utc) {
+        gState.rtc_valid = true;
+        DateTime loc = RTClock::utcToLocal(DateTime(utc));
+        gState.now = { loc.year(), loc.month(), loc.day(), loc.hour(), loc.minute(), loc.second(),
+                       loc.dayOfTheWeek(), utc };
+    };
+    setUtcNow(preJumpUtc);
+    scheduler.begin();
+    scheduler.update();
+
+    TEST_ASSERT_TRUE(wateringCtrl.startTest(0));
+    // Tick across spring-forward to 01:00:00 UTC (local jumps +1h, skipping skipH:30)
+    setUtcNow(preJumpUtc + 1UL);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_EQUAL_UINT8(skipH, scheduler._collisionHour);
+    TEST_ASSERT_EQUAL_UINT8(30, scheduler._collisionMin);
+
+    // Once TEST finishes, deferred DST-skipped slot executes automatically
+    wateringCtrl.stop();
+    setUtcNow(preJumpUtc + 6UL);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL(WaterTrigger::AUTO, wateringCtrl.activeTrigger());
+    TEST_ASSERT_FALSE(scheduler.hasSkippedSlot());
+    wateringCtrl.stop();
+
+    // 2. Spring-forward DST jump skipping slot during active MANUAL marks skipped without double-water
+    scheduler = Scheduler();
+    storage.clear();
+    setUtcNow(preJumpUtc);
+    scheduler.begin();
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl.startGeneral(WaterTrigger::MANUAL));
+    setUtcNow(preJumpUtc + 1UL);
+    scheduler.update();
+    TEST_ASSERT_FALSE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_TRUE(scheduler.hasSkippedSlot());
+    TEST_ASSERT_EQUAL_UINT8(skipH, scheduler.skippedHour());
+    TEST_ASSERT_EQUAL_UINT8(30, scheduler.skippedMin());
+    wateringCtrl.stop();
+
+    // 3. Two custom slots colliding with a long CUSTOM run logs the superseded earlier slot
+    scheduler = Scheduler();
+    storage.clear();
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 10 };
+    setSchedulerTestLocalNow(2026, 6, 15, 7, 59, 59);
+    scheduler.begin();
+    bool customSel[NUM_ZONES] = { true, false, false, false };
+    TEST_ASSERT_TRUE(wateringCtrl.startCustom(customSel, 20));
+
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_EQUAL_UINT8(8, scheduler._collisionHour);
+    TEST_ASSERT_EQUAL_UINT8(0, scheduler._collisionMin);
+
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 9, 59);
+    scheduler.update();
+    Serial.reset();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 10, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_EQUAL_UINT8(8, scheduler._collisionHour);
+    TEST_ASSERT_EQUAL_UINT8(10, scheduler._collisionMin);
+#if LOG_LEVEL >= LVL_WARN
+    char skipMsg[96];
+    snprintf(skipMsg, sizeof(skipMsg), TXT_LOG_SCHED_COLLISION_SKIP, 8, 0);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(skipMsg) != std::string::npos);
+#endif
+    wateringCtrl.stop();
+}
+
 };
 
 int main(void) {
@@ -1284,5 +1378,6 @@ int main(void) {
     RUN_UT(test_scheduler_cycle_expired_respects_suspension_and_zero_zones);
     RUN_UT(test_scheduler_collision_defers_after_test_and_custom_runs);
     RUN_UT(test_scheduler_collision_manual_sets_skipped_indicator_no_double_water);
+    RUN_UT(test_scheduler_dst_catchup_collision_and_superseded_defer_logging);
     return UNITY_END();
 }
