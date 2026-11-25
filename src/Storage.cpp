@@ -207,6 +207,10 @@ bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
             outErr = ConfigLoadResult::CORRUPT;
             return false;
         }
+        if (slot.seq == 0) {
+            outErr = ConfigLoadResult::CORRUPT;
+            return false;
+        }
         if (slot.version != NVS_VERSION) {
             if (slot.version == (uint8_t)(NVS_VERSION - 1U) &&
                 _migratePrevVersionBlob(reinterpret_cast<const uint8_t*>(&slot.blob),
@@ -221,8 +225,7 @@ bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
             outErr = ConfigLoadResult::VERSION_MISMATCH;
             return false;
         }
-        if (slot.seq == 0 || !validateBlob(slot.blob, outErr)) {
-            if (slot.seq == 0) outErr = ConfigLoadResult::CORRUPT;
+        if (!validateBlob(slot.blob, outErr)) {
             return false;
         }
         outBlob = slot.blob;
@@ -260,12 +263,31 @@ bool Storage::_readConfigSlot(const char* key, AppConfigBlob& outBlob,
     // Attempt N-1 migration for future schema size changes before failing size check
     if (storedLen <= 128U) {
         uint8_t rawBuf[128];
-        if (prefs.getBytes(key, rawBuf, storedLen) == storedLen &&
-            _migratePrevVersionBlob(rawBuf, storedLen, outBlob)) {
-            outSeq = 0;
-            outEnveloped = false;
-            outErr = ConfigLoadResult::OK;
-            return true;
+        if (prefs.getBytes(key, rawBuf, storedLen) == storedLen) {
+            const size_t kEnvelopeHeader = offsetof(AppConfigSlot, blob);
+            const size_t kEnvelopeOverhead = kEnvelopeHeader + sizeof(uint16_t);
+            if (storedLen > kEnvelopeOverhead &&
+                rawBuf[0] == CFG_SLOT_MAGIC &&
+                rawBuf[1] == (uint8_t)(NVS_VERSION - 1U)) {
+                uint16_t storedSlotCrc = 0;
+                memcpy(&storedSlotCrc, rawBuf + storedLen - sizeof(uint16_t), sizeof(storedSlotCrc));
+                uint32_t seq = 0;
+                memcpy(&seq, rawBuf + offsetof(AppConfigSlot, seq), sizeof(seq));
+                if (seq != 0 &&
+                    storedSlotCrc == _crc16(rawBuf, storedLen - sizeof(uint16_t)) &&
+                    _migratePrevVersionBlob(rawBuf + kEnvelopeHeader,
+                                            storedLen - kEnvelopeOverhead, outBlob)) {
+                    outSeq = seq;
+                    outEnveloped = true;
+                    outErr = ConfigLoadResult::OK;
+                    return true;
+                }
+            } else if (_migratePrevVersionBlob(rawBuf, storedLen, outBlob)) {
+                outSeq = 0;
+                outEnveloped = false;
+                outErr = ConfigLoadResult::OK;
+                return true;
+            }
         }
     }
 

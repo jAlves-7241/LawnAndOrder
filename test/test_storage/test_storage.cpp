@@ -454,7 +454,8 @@ static void test_storage_dual_slot_ping_pong_backup_and_legacy_compat(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_BACKUP_USED) != std::string::npos);
 #endif
 
-    // 4. Version mismatch on stored config reports VERSION_MISMATCH (configLoadFailed == true)
+    // 4. Version mismatch on stored config reports VERSION_MISMATCH (configLoadFailed == true),
+    //    while seq == 0 on a version-mismatched envelope is rejected as CORRUPT.
     storage.clear();
     AppConfigSlot oldVer = sA;
     oldVer.version = NVS_VERSION - 1;
@@ -465,6 +466,14 @@ static void test_storage_dual_slot_ping_pong_backup_and_legacy_compat(void) {
     initAppState();
     TEST_ASSERT_FALSE(storage.load());
     TEST_ASSERT_EQUAL(ConfigLoadResult::VERSION_MISMATCH, storage.lastLoadResult());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+
+    oldVer.seq = 0;
+    oldVer.slot_crc16 = Storage::_crc16((const uint8_t*)&oldVer, offsetof(AppConfigSlot, slot_crc16));
+    prefs.putBytes(KEY_CFG, &oldVer, sizeof(oldVer));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_EQUAL(ConfigLoadResult::CORRUPT, storage.lastLoadResult());
     TEST_ASSERT_TRUE(storage.configLoadFailed());
 
     // 5. Legacy single-slot 36-byte v5 AppConfigBlob in KEY_CFG still loads cleanly
