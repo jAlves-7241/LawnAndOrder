@@ -181,13 +181,15 @@ void Scheduler::update() {
                             }
                             break;
                         }
+                        if (!wateringCtrl.startGeneral(WaterTrigger::AUTO)) {
+                            break;
+                        }
                         _collisionCatchUpPending = false;
                         _hasSkippedSlot = false;
                         _lastTriggerUnix[i] = t.unix;
                         storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
                         LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_AUTO_START,
                               (int)t.hour, (int)t.min);
-                        wateringCtrl.startGeneral(WaterTrigger::AUTO);
                         return;
                     }
                 }
@@ -316,11 +318,13 @@ bool Scheduler::_tryCatchUp(const SystemTime& t, bool allowExactSecond) {
         return false;
     }
 
+    if (!wateringCtrl.startGeneral(WaterTrigger::AUTO)) {
+        return false;
+    }
     _hasSkippedSlot = false;
     _lastTriggerUnix[bestIdx] = t.unix;
     storage.saveLastTriggers(_lastTriggerUnix, MAX_SLOTS_PER_MODE);
     LOG_I(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_CATCHUP, (int)bestHour, (int)bestMin);
-    wateringCtrl.startGeneral(WaterTrigger::AUTO);
     return true;
 }
 
