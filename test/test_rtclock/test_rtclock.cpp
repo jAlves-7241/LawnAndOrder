@@ -714,6 +714,26 @@ static void test_rtclock_failed_set_aligns_hotplug_retry_interval(void) {
     TEST_ASSERT_TRUE(gState.rtc_valid);
 }
 
+static void test_rtclock_hotplug_osf_restore_reanchors_sw_clock(void) {
+    setMockMillis(1000UL);
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(rtclock.set(2026, 6, 15, 10, 0, 0));
+    const uint32_t baseUnix = gState.now.unix;
+
+    // Disconnect and simulate OSF power loss while RAM clock stays valid
+    rtclock._found = false;
+    rtclock._rtc.mockLostPower = true;
+    advanceMockMillis(35500UL); // millis = 36500 (500 ms fractional remainder before hotplug)
+    rtclock.update();
+
+    TEST_ASSERT_TRUE(rtclock.isPresent());
+    TEST_ASSERT_FALSE(rtclock._lostPower);
+    TEST_ASSERT_EQUAL_UINT32(baseUnix + 35UL, gState.now.unix);
+    TEST_ASSERT_EQUAL_UINT32(millis(), rtclock._anchorMs);
+    TEST_ASSERT_EQUAL_UINT32(gState.now.unix, rtclock._anchorUnix);
+    TEST_ASSERT_EQUAL_UINT32(gState.now.unix, rtclock._lastKnownUnix);
+}
+
 };
 
 int main(void) {
@@ -737,5 +757,6 @@ int main(void) {
     RUN_UT(test_rtclock_adjust_verify_bcd_12h_0xff_and_no_sw_fallback);
     RUN_UT(test_rtclock_osf_recovery_advances_sw_clock_before_restore);
     RUN_UT(test_rtclock_failed_set_aligns_hotplug_retry_interval);
+    RUN_UT(test_rtclock_hotplug_osf_restore_reanchors_sw_clock);
     return UNITY_END();
 }

@@ -248,9 +248,15 @@ void RTClock::update() {
                             : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
                                                   gState.now.hour, gState.now.min, gState.now.sec));
                         bool adjOk = false;
-                        _adjustAndVerify(restoredUtc, adjOk);
+                        DateTime verifiedUtc = _adjustAndVerify(restoredUtc, adjOk);
                         if (adjOk) {
                             _lostPower = false;
+                            DateTime localDt = utcToLocal(verifiedUtc);
+                            _copyToState(localDt);
+                            gState.now.unix = verifiedUtc.unixtime();
+                            _anchorMs = nowMs;
+                            _anchorUnix = gState.now.unix;
+                            _lastKnownUnix = gState.now.unix;
                             _revision++;
                             LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
                         } else {
