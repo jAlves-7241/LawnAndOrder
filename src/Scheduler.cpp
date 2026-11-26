@@ -168,6 +168,11 @@ void Scheduler::update() {
                         if (!wateringCtrl.startGeneral(WaterTrigger::AUTO)) {
                             break;
                         }
+                        if (_collisionCatchUpPending &&
+                            (_collisionHour != sched.slots[i].hour || _collisionMin != sched.slots[i].minute)) {
+                            LOG_W(TXT_LOG_TAG_SCHEDULE, TXT_LOG_SCHED_COLLISION_SKIP,
+                                  (int)_collisionHour, (int)_collisionMin);
+                        }
                         _collisionCatchUpPending = false;
                         _hasSkippedSlot = false;
                         _lastTriggerUnix[i] = t.unix;

@@ -1332,6 +1332,39 @@ static void test_scheduler_dst_catchup_collision_and_superseded_defer_logging(vo
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(skipMsg) != std::string::npos);
 #endif
     wateringCtrl.stop();
+
+    // 4. Deferred slot superseded by a later slot firing directly also logs COLLISION_SKIP
+    scheduler = Scheduler();
+    storage.clear();
+    cs.slot_count = 2;
+    cs.slots[0] = { 8, 0 };
+    cs.slots[1] = { 8, 10 };
+    setSchedulerTestLocalNow(2026, 6, 15, 7, 59, 59);
+    scheduler.begin();
+    TEST_ASSERT_TRUE(wateringCtrl.startCustom(customSel, 10));
+
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 0, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    TEST_ASSERT_EQUAL_UINT8(8, scheduler._collisionHour);
+    TEST_ASSERT_EQUAL_UINT8(0, scheduler._collisionMin);
+
+    // CUSTOM still running at 08:09:59, finishes right before 08:10:00 -> slot 1 fires directly and logs superseded 08:00
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 9, 59);
+    scheduler.update();
+    TEST_ASSERT_TRUE(scheduler._collisionCatchUpPending);
+    wateringCtrl.stop();
+    Serial.reset();
+    setSchedulerTestLocalNow(2026, 6, 15, 8, 10, 0);
+    scheduler.update();
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_FALSE(scheduler._collisionCatchUpPending);
+#if LOG_LEVEL >= LVL_WARN
+    char directSkipMsg[96];
+    snprintf(directSkipMsg, sizeof(directSkipMsg), TXT_LOG_SCHED_COLLISION_SKIP, 8, 0);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(directSkipMsg) != std::string::npos);
+#endif
+    wateringCtrl.stop();
 }
 
 };

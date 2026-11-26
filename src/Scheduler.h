@@ -15,7 +15,7 @@
 //   - gState.mode        (written by UI)
 //   - gState.suspended   (written by UI)
 //   - gState.watering    (written by WateringController)
-//   - MODE_SCHEDULES[]   (const table in AppState.cpp)
+//   - MODE_SCHEDULES[]   (schedule table in AppState.cpp)
 //
 // Call order in setup():
 //   1. initAppState()
