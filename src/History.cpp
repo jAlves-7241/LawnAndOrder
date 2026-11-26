@@ -12,6 +12,30 @@ History history;
 
 static const char* HIST_TMP_FILE     = "/hist_tmp.csv";
 static const char* HIST_PENDING_FILE = "/hist_pend.txt";
+static const uint8_t PEND_DEDUP_MAX  = 8;
+
+// Pause TWDT around synchronous LittleFS full-partition erases, which can exceed WDT_TIMEOUT_S (8 s)
+// on slow/aged SPI NOR flash without yielding to loop().
+struct ScopedWdtPause {
+    bool paused = false;
+    ScopedWdtPause() {
+        esp_task_wdt_reset();
+        paused = (esp_task_wdt_delete(NULL) == 0);
+    }
+    ~ScopedWdtPause() {
+        if (paused) {
+            esp_task_wdt_add(NULL);
+            esp_task_wdt_reset();
+        }
+    }
+};
+
+uint32_t History::_remountBackoffMs(uint8_t attempts) {
+    if (attempts == 0) return 60000UL;    // 1 min
+    if (attempts == 1) return 300000UL;   // 5 min
+    if (attempts == 2) return 1800000UL;  // 30 min
+    return 86400000UL;                    // 24 h cap
+}
 
 static bool _isValidCachedEntry(const HistoryEntry& e) {
     if (e.year < DATE_YEAR_MIN || e.year > DATE_YEAR_MAX) return false;
@@ -108,6 +132,7 @@ bool History::begin(bool formatOnFail) {
     _log_suppressed_total = 0;
     _log_suppressed_warn_err = 0;
     _lastMountRetryMs = millis();
+    if (formatOnFail) _mountRetryAttempts = 0;
 
     _ready = LittleFS.begin(false);
     if (!_ready) {
@@ -119,9 +144,10 @@ bool History::begin(bool formatOnFail) {
     if (!_ready) {
         if (formatOnFail && !storage.hasHistoryData()) {
             formatAttempted = true;
-            esp_task_wdt_reset();
-            _ready = LittleFS.begin(true); // nothing to lose
-            esp_task_wdt_reset();
+            {
+                ScopedWdtPause wdtPause;
+                _ready = LittleFS.begin(true); // nothing to lose
+            }
             if (_ready) {
                 LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
             } else {
@@ -139,6 +165,7 @@ bool History::begin(bool formatOnFail) {
         _lineCount = 0;
         _cacheCount = 0;
     } else {
+        _mountRetryAttempts = 0;
         LittleFS.remove(HIST_TMP_FILE); // Clean up orphaned temp file from a crash
 
         // Replay any pending line(s) persisted right before a mid-rotation power loss
@@ -146,39 +173,80 @@ bool History::begin(bool formatOnFail) {
         bool pendingAlreadyPresent = false;
         File pendFile = LittleFS.open(HIST_PENDING_FILE, "r");
         if (pendFile) {
-            // Check whether the final valid pending line is already at the tail of HISTORY_FILE
-            // (indicates power loss right after rename() succeeded and before remove(HIST_PENDING_FILE)).
-            char lastValidPend[LINE_BUF] = {};
+            char pendLines[PEND_DEDUP_MAX][64] = {};
+            char lastValidPend[64] = {};
+            uint8_t pendCount = 0;
+            uint16_t totalValidPend = 0;
             bool scanReadErr = false;
             _forEachTrimmedLine(pendFile, [&](char* p) {
                 HistoryEntry tmp = {};
                 if (_lineToEntry(p, tmp)) {
-                    strlcpy(lastValidPend, p, sizeof(lastValidPend));
+                    char canon[64];
+                    if (strlen(p) < sizeof(canon)) {
+                        strlcpy(canon, p, sizeof(canon));
+                    } else {
+                        _entryToLine(tmp, canon, sizeof(canon));
+                    }
+                    if (pendCount < PEND_DEDUP_MAX) {
+                        strlcpy(pendLines[pendCount++], canon, sizeof(pendLines[0]));
+                    }
+                    strlcpy(lastValidPend, canon, sizeof(lastValidPend));
+                    if (totalValidPend < 0xFFFFU) totalValidPend++;
                 }
             }, &scanReadErr);
 
             bool replayWriteFailed = scanReadErr;
             int replayed = 0;
-            if (!scanReadErr && lastValidPend[0] != '\0' && _lastNonEmptyLineEquals(lastValidPend)) {
-                pendingAlreadyPresent = true;
-            } else if (!scanReadErr) {
-                bool replayReadErr = false;
-                pendFile.seek(0, SeekSet);
-                _forEachTrimmedLine(pendFile, [&](char* p) {
-                    HistoryEntry tmp = {};
-                    if (_lineToEntry(p, tmp)) {
-                        if (_lastNonEmptyLineEquals(p)) {
-                            pendingAlreadyPresent = true;
-                            return;
+            if (!scanReadErr && totalValidPend > 0) {
+                char tailLines[PEND_DEDUP_MAX][64] = {};
+                uint8_t tailCount = _readTailLines(tailLines, PEND_DEDUP_MAX);
+
+                if (totalValidPend <= PEND_DEDUP_MAX) {
+                    // Match longest prefix of pendLines[] already committed at the tail of HISTORY_FILE.
+                    uint8_t overlap = 0;
+                    uint8_t maxOv = (pendCount < tailCount) ? pendCount : tailCount;
+                    for (uint8_t k = maxOv; k >= 1; k--) {
+                        bool allMatch = true;
+                        for (uint8_t i = 0; i < k; i++) {
+                            if (strcmp(pendLines[i], tailLines[tailCount - k + i]) != 0) {
+                                allMatch = false;
+                                break;
+                            }
                         }
-                        if (_appendCsvLine(p)) {
+                        if (allMatch) {
+                            overlap = k;
+                            break;
+                        }
+                    }
+                    if (overlap > 0) {
+                        pendingAlreadyPresent = true;
+                    }
+                    for (uint8_t i = overlap; i < pendCount; i++) {
+                        if (_appendCsvLine(pendLines[i])) {
                             replayed++;
                         } else {
                             replayWriteFailed = true;
+                            break;
                         }
                     }
-                }, &replayReadErr);
-                if (replayReadErr) replayWriteFailed = true;
+                } else if (tailCount > 0 && strcmp(tailLines[tailCount - 1], lastValidPend) == 0) {
+                    pendingAlreadyPresent = true;
+                } else {
+                    bool replayReadErr = false;
+                    pendFile.seek(0, SeekSet);
+                    _forEachTrimmedLine(pendFile, [&](char* p) {
+                        if (replayWriteFailed) return;
+                        HistoryEntry tmp = {};
+                        if (_lineToEntry(p, tmp)) {
+                            if (_appendCsvLine(p)) {
+                                replayed++;
+                            } else {
+                                replayWriteFailed = true;
+                            }
+                        }
+                    }, &replayReadErr);
+                    if (replayReadErr) replayWriteFailed = true;
+                }
             }
             pendFile.close();
             if (replayWriteFailed) {
@@ -240,6 +308,7 @@ bool History::begin(bool formatOnFail) {
             // Cache e total recuperados instantaneamente da NVS!
             for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = tempCache[i];
             _cacheCount = validCount;
+            _revision++;
             LOG_D(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NVS_LOAD, (int)_lineCount);
         } else {
             // Fallback (apenas se NVS estiver vazio ou desatualizado/corrompido)
@@ -249,6 +318,7 @@ bool History::begin(bool formatOnFail) {
             if (_cacheCount == 0 && _lineCount > 0) {
                 _lineCount = 0;
             }
+            _revision++;
             // Salva na NVS para o proximo boot
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
             LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FS_LOAD, (int)_lineCount,
@@ -398,13 +468,15 @@ bool History::clear(bool forceFormat) {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_NOT_READY);
             return false;
         }
-        esp_task_wdt_reset();
-        _ready = LittleFS.begin(true);
-        esp_task_wdt_reset();
+        {
+            ScopedWdtPause wdtPause;
+            _ready = LittleFS.begin(true);
+        }
         if (!_ready) {
             LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMAT_FAIL);
             return false;
         }
+        _mountRetryAttempts = 0;
         LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
     } else {
         bool unlinkFailed = false;
@@ -429,6 +501,7 @@ bool History::clear(bool forceFormat) {
                     if (_cacheCount == 0 && _lineCount > 0) {
                         _lineCount = 0;
                     }
+                    _revision++;
                     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
                 }
                 LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FILE_ERR);
@@ -436,13 +509,15 @@ bool History::clear(bool forceFormat) {
             }
             // Directory/file corruption on a mounted FS requires end()+format()
             LittleFS.end();
-            esp_task_wdt_reset();
-            _ready = LittleFS.format() && LittleFS.begin(false);
-            esp_task_wdt_reset();
+            {
+                ScopedWdtPause wdtPause;
+                _ready = LittleFS.format() && LittleFS.begin(false);
+            }
             if (!_ready) {
                 LOG_E(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMAT_FAIL);
                 return false;
             }
+            _mountRetryAttempts = 0;
             LOG_W(TXT_LOG_TAG_HIST, TXT_LOG_HIST_FORMATTED);
         }
     }
@@ -452,6 +527,7 @@ bool History::clear(bool forceFormat) {
     _rotCorruptLines = 0;
     _defHead = 0;
     _defTail = 0;
+    _revision++;
     for (int i = 0; i < HISTORY_DISPLAY; i++) _cache[i] = HistoryEntry{};
     storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, 0);
     LOG_I(TXT_LOG_TAG_HIST, TXT_LOG_HIST_WIPED);
@@ -516,18 +592,48 @@ bool History::_appendCsvLine(const char* line, uint32_t* outNewSize) const {
     return writeOk && (newSize >= prevSize + expectedBytes);
 }
 
-bool History::_lastNonEmptyLineEquals(const char* target) const {
-    if (!_ready || !target || target[0] == '\0') return false;
+bool History::_appendPendingLine(const char* line) const {
+    if (!_ready || !line) return false;
+    const uint32_t priorPendSize = _fileSize(HIST_PENDING_FILE);
+    bool needPendNewline = false;
+    if (priorPendSize > 0) {
+        File rf = LittleFS.open(HIST_PENDING_FILE, "r");
+        if (rf) {
+            if (rf.seek(priorPendSize - 1, SeekSet)) {
+                int lastByte = rf.read();
+                if (lastByte >= 0 && lastByte != '\n') {
+                    needPendNewline = true;
+                }
+            }
+            rf.close();
+        }
+    }
+    File pendFile = LittleFS.open(HIST_PENDING_FILE, "a");
+    if (!pendFile) return false;
+    bool ok = true;
+    if (needPendNewline && pendFile.println("") != 2U) {
+        ok = false;
+    }
+    if (ok) {
+        ok = _writeCsvLine(pendFile, line);
+    }
+    if (ok) pendFile.flush();
+    pendFile.close();
+    return ok;
+}
+
+uint8_t History::_readTailLines(char out[][64], uint8_t maxLines) const {
+    if (!_ready || !out || maxLines == 0) return 0;
     File f = LittleFS.open(HISTORY_FILE, "r");
-    if (!f) return false;
+    if (!f) return 0;
 
     const uint32_t fsize = (uint32_t)f.size();
     if (fsize == 0) {
         f.close();
-        return false;
+        return 0;
     }
 
-    const uint32_t tailWindow = LINE_BUF * 2U;
+    const uint32_t tailWindow = (uint32_t)maxLines * LINE_BUF + 128U;
     if (fsize > tailWindow) {
         f.seek(fsize - tailWindow, SeekSet);
         while (f.available()) {
@@ -536,11 +642,40 @@ bool History::_lastNonEmptyLineEquals(const char* target) const {
         }
     }
 
-    char lastLine[LINE_BUF] = {};
+    uint8_t count = 0;
+    auto pushLine = [&](const char* line) {
+        if (count < maxLines) {
+            strlcpy(out[count++], line, 64);
+        } else {
+            for (uint8_t i = 0; i + 1 < maxLines; i++) {
+                memcpy(out[i], out[i + 1], 64);
+            }
+            strlcpy(out[maxLines - 1], line, 64);
+        }
+    };
+
     char curLine[LINE_BUF] = {};
     size_t curPos = 0;
     bool overflow = false;
     char chunk[128];
+
+    auto processLine = [&]() {
+        if (!overflow && curPos > 0) {
+            char* p = _trimLineBuffer(curLine, curPos);
+            HistoryEntry tmp = {};
+            if (p[0] != '\0' && _lineToEntry(p, tmp)) {
+                char canon[64];
+                if (strlen(p) < sizeof(canon)) {
+                    strlcpy(canon, p, sizeof(canon));
+                } else {
+                    _entryToLine(tmp, canon, sizeof(canon));
+                }
+                pushLine(canon);
+            }
+        }
+        curPos = 0;
+        overflow = false;
+    };
 
     while (f.available()) {
         esp_task_wdt_reset();
@@ -549,16 +684,7 @@ bool History::_lastNonEmptyLineEquals(const char* target) const {
         for (int i = 0; i < bytesRead; i++) {
             char c = chunk[i];
             if (c == '\n') {
-                if (overflow) {
-                    lastLine[0] = '\0';
-                } else {
-                    char* p = _trimLineBuffer(curLine, curPos);
-                    if (p[0] != '\0') {
-                        strlcpy(lastLine, p, sizeof(lastLine));
-                    }
-                }
-                curPos = 0;
-                overflow = false;
+                processLine();
             } else if (c != '\r') {
                 if (curPos < sizeof(curLine) - 1) {
                     curLine[curPos++] = c;
@@ -568,16 +694,9 @@ bool History::_lastNonEmptyLineEquals(const char* target) const {
             }
         }
     }
-    if (overflow) {
-        lastLine[0] = '\0';
-    } else if (curPos > 0) {
-        char* p = _trimLineBuffer(curLine, curPos);
-        if (p[0] != '\0') {
-            strlcpy(lastLine, p, sizeof(lastLine));
-        }
-    }
+    processLine();
     f.close();
-    return strcmp(lastLine, target) == 0;
+    return count;
 }
 
 uint32_t History::_fileSize(const char* path) const {
@@ -602,6 +721,7 @@ void History::_pushCache(const HistoryEntry& entry) {
         }
         _cache[HISTORY_DISPLAY - 1] = entry;
     }
+    _revision++;
 }
 
 // CSV: "YYYY-MM-DDTHH:MM,<trigger_char>,d0,d1,d2,d3"
@@ -816,13 +936,6 @@ void History::_rotateAndAppend(const char* newLine) {
     uint16_t step = HISTORY_MAX_ENTRIES / 10;
     if (step == 0) step = 1;
     uint16_t rotKeep = (HISTORY_MAX_ENTRIES > step) ? (HISTORY_MAX_ENTRIES - step) : 1;
-    // If prior fallbacks grew _lineCount past HISTORY_MAX_ENTRIES, discard all excess
-    // oldest lines so newest entries are never truncated at the tail.
-    if (_lineCount > rotKeep) {
-        _rotDiscard = _lineCount - rotKeep;
-    } else {
-        _rotDiscard = step;
-    }
 
     auto fallbackAppend = [&]() {
         if (_appendCsvLine(newLine)) {
@@ -839,6 +952,23 @@ void History::_rotateAndAppend(const char* newLine) {
         return;
     }
 
+    // Count actual valid CSV entries so corrupt/blank lines are scrubbed without
+    // consuming the discard budget of genuine watering records.
+    uint16_t validLines = 0;
+    bool scanReadErr = false;
+    _forEachTrimmedLine(_rotSrc, [&](char* p) {
+        HistoryEntry tmp = {};
+        if (_lineToEntry(p, tmp) && validLines < 0xFFFFU) {
+            validLines++;
+        }
+    }, &scanReadErr);
+    if (scanReadErr || !_rotSrc.seek(0, SeekSet)) {
+        _rotSrc.close();
+        fallbackAppend();
+        return;
+    }
+    _rotDiscard = (validLines > rotKeep) ? (uint16_t)(validLines - rotKeep) : 0U;
+
     _rotDst = LittleFS.open(HIST_TMP_FILE, "w");
     if (!_rotDst) {
         _rotSrc.close();
@@ -848,34 +978,8 @@ void History::_rotateAndAppend(const char* newLine) {
 
     // Append pending line before starting async copy so power loss (or an earlier
     // preserved pending entry after a failed clear/rotation) cannot be truncated/lost.
-    const uint32_t priorPendSize = _fileSize(HIST_PENDING_FILE);
-    _rotHadPriorPending = (priorPendSize > 0);
-    bool needPendNewline = false;
-    if (priorPendSize > 0) {
-        File rf = LittleFS.open(HIST_PENDING_FILE, "r");
-        if (rf) {
-            if (rf.seek(priorPendSize - 1, SeekSet)) {
-                int lastByte = rf.read();
-                if (lastByte >= 0 && lastByte != '\n') {
-                    needPendNewline = true;
-                }
-            }
-            rf.close();
-        }
-    }
-    _rotPendingInFile = false;
-    File pendFile = LittleFS.open(HIST_PENDING_FILE, "a");
-    if (pendFile) {
-        bool ok = true;
-        if (needPendNewline && pendFile.println("") != 2U) {
-            ok = false;
-        }
-        if (ok && _writeCsvLine(pendFile, newLine)) {
-            pendFile.flush();
-            _rotPendingInFile = true;
-        }
-        pendFile.close();
-    }
+    _rotHadPriorPending = (_fileSize(HIST_PENDING_FILE) > 0);
+    _rotPendingInFile = _appendPendingLine(newLine);
 
     strlcpy(_rotPendingLine, newLine, sizeof(_rotPendingLine));
     _rotSkipped = 0;
@@ -888,13 +992,33 @@ void History::_rotateAndAppend(const char* newLine) {
     _rotState = RotState::COPYING;
 }
 
+void History::flushDeferredBeforeReboot() {
+    if (!_ready || _defHead == _defTail) return;
+    while (_defHead != _defTail && _rotState == RotState::IDLE && _exportState == ExportState::IDLE) {
+        _drainOneDeferred();
+    }
+    while (_defHead != _defTail) {
+        HistoryEntry e = _deferredQueue[_defTail];
+        bool requireLiveRtc = _deferredRequireRtc[_defTail];
+        _defTail = (_defTail + 1) % 4;
+        if (e.trigger == WaterTrigger::TEST) continue;
+        if (requireLiveRtc && !gState.rtc_valid) continue;
+        if (!_isValidCachedEntry(e)) continue;
+        char line[LINE_BUF];
+        _entryToLine(e, line, sizeof(line));
+        _appendPendingLine(line);
+    }
+}
+
 void History::update() {
     if (!_ready) {
         if (!gState.watering.active) {
             uint32_t nowMs = millis();
-            if (nowMs - _lastMountRetryMs >= 86400000UL) {
+            if (nowMs - _lastMountRetryMs >= _remountBackoffMs(_mountRetryAttempts)) {
                 _lastMountRetryMs = nowMs;
-                begin(false);
+                if (!begin(false)) {
+                    if (_mountRetryAttempts < 255) _mountRetryAttempts++;
+                }
             }
         }
         return;
@@ -1099,7 +1223,8 @@ void History::update() {
 
     // ── Export via Serial (async) ──
     if (_exportState == ExportState::SENDING) {
-        char chunk[256];
+        if (Serial.availableForWrite() < 64) return;
+        char chunk[64];
         int bytesRead = _exportFile.read((uint8_t*)chunk, sizeof(chunk));
 
         if (bytesRead > 0) {

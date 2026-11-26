@@ -30,8 +30,10 @@ public:
     bool     isReady() const;
     bool     hasFileData() const;
     uint16_t entryCount() const;
+    uint32_t revision() const { return _revision; }
 
     void    update();
+    void    flushDeferredBeforeReboot();
 
     // Serial export
     bool     startExport(bool announce = false);
@@ -44,6 +46,8 @@ private:
     bool     _ready = false;
     uint16_t _lineCount = 0;   // cached line count - avoids re-reading file on every record()
     uint32_t _lastMountRetryMs = 0;
+    uint8_t  _mountRetryAttempts = 0;
+    uint32_t _revision = 0;
 
     enum class RotState { IDLE, COPYING, FINISHING };
     RotState _rotState = RotState::IDLE;
@@ -83,12 +87,14 @@ private:
     bool        _exportReadErr = false;
     bool        _exportLineOverflow = false;
 
+    static uint32_t _remountBackoffMs(uint8_t attempts);
     static void _entryToLine(const HistoryEntry& e, char* buf, size_t len);
     static bool _lineToEntry(const char* line, HistoryEntry& out);
     static char* _trimLineBuffer(char* buf, size_t& pos);
     static bool _writeCsvLine(File& f, const char* line);
     bool        _appendCsvLine(const char* line, uint32_t* outNewSize = nullptr) const;
-    bool        _lastNonEmptyLineEquals(const char* target) const;
+    bool        _appendPendingLine(const char* line) const;
+    uint8_t     _readTailLines(char out[][64], uint8_t maxLines) const;
     uint16_t    _countLines() const;
     uint32_t    _fileSize(const char* path) const;
     uint32_t    _currentFileSize() const;

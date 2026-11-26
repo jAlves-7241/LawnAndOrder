@@ -564,23 +564,40 @@ static void test_history_periodic_remount_and_force_repair(void) {
     TEST_ASSERT_FALSE(history.clear(false));
     TEST_ASSERT_FALSE(history.isReady());
 
-    // Clear transient mount error -> periodic 24h update() remounts non-destructively
-    LittleFS.mountFail = false;
+    // Clear transient mount error -> progressive backoff starts at 60 s, then 5 min, 30 min, 24 h
     LittleFS.files[HISTORY_FILE] = "2026-05-10T08:00,A,10,0,0,0\r\n";
-    advanceMockMillis(86400000UL - 1000UL);
+    advanceMockMillis(60000UL - 1000UL);
+    history.update();
+    TEST_ASSERT_FALSE(history.isReady());
+
+    // First retry fails -> escalates backoff to 300 s (5 min)
+    advanceMockMillis(1000UL);
+    history.update();
+    TEST_ASSERT_FALSE(history.isReady());
+    TEST_ASSERT_EQUAL_UINT8(1, history._mountRetryAttempts);
+
+    // Clear mount error: must wait full 300 s before second retry
+    LittleFS.mountFail = false;
+    advanceMockMillis(300000UL - 1000UL);
     history.update();
     TEST_ASSERT_FALSE(history.isReady());
 
     advanceMockMillis(1000UL);
     history.update();
     TEST_ASSERT_TRUE(history.isReady());
+    TEST_ASSERT_EQUAL_UINT8(0, history._mountRetryAttempts);
     TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
 
-    // Persistent mount failure can be explicitly repaired via clear(true)
+    // Persistent mount failure can be explicitly repaired via clear(true) with TWDT paused/resumed
     LittleFS.mountFail = true;
     TEST_ASSERT_FALSE(history.begin(true));
     TEST_ASSERT_FALSE(history.isReady());
+    const uint32_t wdtDelBefore = _mock_wdt_delete_calls;
+    const uint32_t wdtAddBefore = _mock_wdt_add_calls;
     TEST_ASSERT_TRUE(history.clear(true));
+    TEST_ASSERT_EQUAL_UINT32(wdtDelBefore + 1, _mock_wdt_delete_calls);
+    TEST_ASSERT_EQUAL_UINT32(wdtAddBefore + 1, _mock_wdt_add_calls);
+    TEST_ASSERT_FALSE(_mock_wdt_paused);
     TEST_ASSERT_TRUE(history.isReady());
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
     TEST_ASSERT_FALSE(storage.hasHistoryData());
@@ -1020,6 +1037,95 @@ static void test_history_rotation_finishing_pending_read_failure_preserves_entri
     TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-06-10T08:00,M,9,0,0,0") != std::string::npos);
 }
 
+static void test_history_corrupt_rotation_preserves_valid_and_multi_pending_dedup(void) {
+    // 1. [H-2] Rotation on a file with 1400 corrupt lines + 100 valid lines preserves ALL 100 valid lines
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    gState.rtc_valid = true;
+    TEST_ASSERT_TRUE(history.begin(true));
+
+    std::string degraded;
+    degraded.reserve(HISTORY_MAX_ENTRIES * 30);
+    for (int i = 0; i < 50; i++) {
+        char buf[40];
+        snprintf(buf, sizeof(buf), "2026-05-01T%02d:%02d,A,5,0,0,0\r\n", i / 60, i % 60);
+        degraded.append(buf);
+    }
+    for (int i = 0; i < 1400; i++) {
+        degraded.append("CORRUPT_GARBAGE_ROW\r\n");
+    }
+    for (int i = 50; i < 100; i++) {
+        char buf[40];
+        snprintf(buf, sizeof(buf), "2026-05-02T%02d:%02d,M,6,0,0,0\r\n", i / 60, i % 60);
+        degraded.append(buf);
+    }
+    LittleFS.files[HISTORY_FILE] = std::move(degraded);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+
+    HistoryEntry trig = { 2026, 5, 3, 7, 0, { 8, 0, 0, 0 }, WaterTrigger::CUSTOM, 0 };
+    history.record(trig);
+    TEST_ASSERT_TRUE(history.isRotating());
+    int guard = 2000;
+    while (history.isRotating() && guard-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isRotating());
+    TEST_ASSERT_EQUAL_UINT16(101, history.entryCount());
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-05-01T00:00,A,5,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-05-02T01:39,M,6,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("2026-05-03T07:00,C,8,0,0,0") != std::string::npos);
+    TEST_ASSERT_TRUE(LittleFS.files[HISTORY_FILE].find("CORRUPT_GARBAGE_ROW") == std::string::npos);
+
+    // 2. [H-3] Multi-entry /hist_pend.txt partial replay deduplicates [E1, E2] and appends only E3
+    Preferences::resetStorage();
+    storage.begin();
+    LittleFS.reset();
+    LittleFS.files[HISTORY_FILE] =
+        "2026-06-01T07:00,A,5,0,0,0\r\n"
+        "2026-06-02T07:00,M,6,0,0,0\r\n"
+        "2026-06-03T07:00,C,7,0,0,0\r\n";
+    LittleFS.files["/hist_pend.txt"] =
+        "2026-06-02T07:00,M,6,0,0,0\r\n"
+        "2026-06-03T07:00,C,7,0,0,0\r\n"
+        "2026-06-04T07:00,A,8,0,0,0\r\n";
+    History replay;
+    TEST_ASSERT_TRUE(replay.begin(false));
+    TEST_ASSERT_FALSE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_EQUAL_UINT16(4, replay.entryCount());
+    const std::string& histData = LittleFS.files[HISTORY_FILE];
+    size_t p1 = histData.find("2026-06-02T07:00,M,6,0,0,0");
+    TEST_ASSERT_TRUE(p1 != std::string::npos);
+    TEST_ASSERT_TRUE(histData.find("2026-06-02T07:00,M,6,0,0,0", p1 + 1) == std::string::npos);
+    TEST_ASSERT_TRUE(histData.find("2026-06-04T07:00,A,8,0,0,0") != std::string::npos);
+
+    // Identical consecutive entries in /hist_pend.txt are both preserved when not yet committed
+    LittleFS.files["/hist_pend.txt"] =
+        "2026-06-05T08:00,M,1,0,0,0\r\n"
+        "2026-06-05T08:00,M,1,0,0,0\r\n";
+    History dupSame;
+    TEST_ASSERT_TRUE(dupSame.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(6, dupSame.entryCount());
+
+    // 3. [M-1] flushDeferredBeforeReboot() persists queued RAM entries to /hist_pend.txt during export
+    gState.rtc_valid = true;
+    TEST_ASSERT_TRUE(dupSame.startExport());
+    HistoryEntry defEntry = { 2026, 6, 6, 9, 15, { 4, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    dupSame.record(defEntry);
+    TEST_ASSERT_NOT_EQUAL(dupSame._defHead, dupSame._defTail);
+    dupSame.flushDeferredBeforeReboot();
+    TEST_ASSERT_EQUAL_UINT8(dupSame._defHead, dupSame._defTail);
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_TRUE(LittleFS.files["/hist_pend.txt"].find("2026-06-06T09:15,M,4,0,0,0") != std::string::npos);
+
+    History afterReboot;
+    TEST_ASSERT_TRUE(afterReboot.begin(false));
+    TEST_ASSERT_EQUAL_UINT16(7, afterReboot.entryCount());
+    HistoryEntry last[1] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, afterReboot.readLast(1, last));
+    TEST_ASSERT_EQUAL_UINT8(6, last[0].day);
+}
+
 };
 
 int main(void) {
@@ -1048,5 +1154,6 @@ int main(void) {
     RUN_UT(test_history_partial_write_isolation_pending_dedup_corrupt_settle_export_overflow_and_tail_fallback);
     RUN_UT(test_history_clear_failure_preserves_pending_and_calendar_validation);
     RUN_UT(test_history_rotation_finishing_pending_read_failure_preserves_entries);
+    RUN_UT(test_history_corrupt_rotation_preserves_valid_and_multi_pending_dedup);
     return UNITY_END();
 }
