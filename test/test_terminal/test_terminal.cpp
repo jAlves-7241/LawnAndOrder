@@ -1073,6 +1073,40 @@ static void test_terminal_status_reports_config_lost_and_skipped_slot(void) {
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(expectedSkip) != std::string::npos);
 }
 
+static void test_terminal_truncated_csi_timeout_and_reboot_flushes_pending_save(void) {
+    // 1. Truncated CSI sequence (ESC [) expires after 200 ms instead of swallowing next letter
+    Serial.reset();
+    Serial.feedInput("\033[");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._in_ansi);
+    TEST_ASSERT_EQUAL_UINT8(1, terminal._ansi_bytes);
+
+    advanceMockMillis(250UL);
+    Serial.feedInput("help\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+
+    // 2. reboot flushes a pending failed storage.save() when not in setup
+    gState.setup_done = true;
+    gState.mode = AppMode::INTENSO;
+    ui.syncSetupState();
+    Preferences::writeFail = true;
+    TEST_ASSERT_FALSE(storage.save());
+    TEST_ASSERT_TRUE(storage.hasPendingSave());
+    Preferences::writeFail = false;
+
+    ESP.reset();
+    Serial.reset();
+    Serial.feedInput("reboot\r");
+    terminal.update();
+    TEST_ASSERT_TRUE(ESP.rebooted);
+    TEST_ASSERT_FALSE(storage.hasPendingSave());
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::INTENSO, gState.mode);
+}
+
 };
 
 int main(void) {
@@ -1111,5 +1145,6 @@ int main(void) {
     RUN_UT(test_terminal_ansi_control_abort_and_zero_zones_status);
     RUN_UT(test_terminal_lone_esc_preserves_next_char);
     RUN_UT(test_terminal_status_reports_config_lost_and_skipped_slot);
+    RUN_UT(test_terminal_truncated_csi_timeout_and_reboot_flushes_pending_save);
     return UNITY_END();
 }

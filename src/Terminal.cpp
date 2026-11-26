@@ -275,9 +275,11 @@ bool Terminal::_feedAnsi(char c) {
 
     if (!_in_ansi) return false;
 
-    // Expire a lone ESC if no sequence introducer arrived promptly
-    if (_ansi_bytes == 0 && (uint32_t)(millis() - _ansiStartMs) >= 50UL) {
+    // Expire a lone ESC (50 ms) or truncated CSI/SS3 sequence (200 ms)
+    const uint32_t ansiTimeoutMs = (_ansi_bytes == 0) ? 50UL : 200UL;
+    if ((uint32_t)(millis() - _ansiStartMs) >= ansiTimeoutMs) {
         _in_ansi = false;
+        _ansi_bytes = 0;
         return false;
     }
 
@@ -509,9 +511,13 @@ void Terminal::update() {
         return;
     }
 
-    // Expirar ESC isolado se nenhum introdutor CSI/SS3 chegar em 50 ms
-    if (_in_ansi && _ansi_bytes == 0 && (uint32_t)(millis() - _ansiStartMs) >= 50UL) {
-        _in_ansi = false;
+    // Expirar ESC isolado (50 ms) ou sequencia CSI/SS3 truncada (200 ms)
+    if (_in_ansi) {
+        const uint32_t ansiTimeoutMs = (_ansi_bytes == 0) ? 50UL : 200UL;
+        if ((uint32_t)(millis() - _ansiStartMs) >= ansiTimeoutMs) {
+            _in_ansi = false;
+            _ansi_bytes = 0;
+        }
     }
 
     // Expirar confirmação pendente de limpeza após 30 s de inatividade
@@ -885,6 +891,9 @@ void Terminal::_cmdReboot(char* /*args*/) {
     wateringCtrl.deenergizeRelays();
     if (!ui.inSetup()) {
         ui.goIdle();
+        if (storage.hasPendingSave()) {
+            storage.save();
+        }
     }
     Serial.println(TXT_TERM_REBOOT);
     Serial.println();
