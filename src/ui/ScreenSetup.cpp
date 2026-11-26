@@ -23,8 +23,10 @@ void ScreenSetupWelcome::handleClick(UI& ui) {
         LOG_I(TXT_LOG_TAG_UI, TXT_SETUP_DONE_LOG);
         ui.setInSetup(false);
         gState.setup_done = true;
-        ui.flagConfigChanged();
         scheduler.onModeChanged();
+        if (!storage.hasPendingSave()) {
+            ui.flagConfigChanged();
+        }
         ui.goIdle();
     } else {
         ui.advanceSetup();

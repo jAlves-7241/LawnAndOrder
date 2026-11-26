@@ -1588,6 +1588,103 @@ static void test_ui_shows_config_lost_alert_only_on_load_failure(void) {
     TEST_ASSERT_EQUAL_PTR(&testUi.getScreenSetupWelcome(), testUi._currentScreen);
 }
 
+static void test_display_late_hotplug_runs_lcd_init_before_writing_rows(void) {
+    // Boot with LCD missing (NACK on begin()): HD44780 4-bit init never ran
+    Display hotDisp;
+    hotDisp._lcd.mockI2cError = 1;
+    hotDisp.begin();
+    TEST_ASSERT_TRUE(hotDisp.hasBusFault());
+    TEST_ASSERT_TRUE(hotDisp._initNeeded);
+    TEST_ASSERT_FALSE(hotDisp._lcd.initialized);
+
+    // One frame fails before hitting 3 consecutive errors (stages shadow rows)
+    hotDisp.setRows("Row0", "Row1", "Row2", "Row3");
+    TEST_ASSERT_TRUE(hotDisp.hasBusFault());
+    TEST_ASSERT_TRUE(hotDisp._initNeeded);
+    TEST_ASSERT_EQUAL_UINT8(2, hotDisp._consecErrors);
+
+    // LCD comes online before 3rd error -> next sync() MUST run 4-bit init() before printing rows
+    hotDisp._lcd.mockI2cError = 0;
+    const uint32_t initsBefore = hotDisp._lcd.initCalls;
+    advanceMockMillis(1000UL);
+    hotDisp.sync();
+    TEST_ASSERT_FALSE(hotDisp.hasBusFault());
+    TEST_ASSERT_FALSE(hotDisp._initNeeded);
+    TEST_ASSERT_TRUE(hotDisp._lcd.initialized);
+    TEST_ASSERT_EQUAL_UINT32(initsBefore + 1, hotDisp._lcd.initCalls);
+    TEST_ASSERT_TRUE(hotDisp._lcd.displayState);
+    TEST_ASSERT_TRUE(hotDisp._lcd.backlightState);
+    TEST_ASSERT_EQUAL_STRING("Row0                ", hotDisp._lcd.getRow(0));
+    TEST_ASSERT_EQUAL_STRING("Row3                ", hotDisp._lcd.getRow(3));
+}
+
+static void test_ui_confirm_done_back_menu_config_lost_no_flash_and_custom_setup_single_save(void) {
+    initUiIdleFixture();
+    gState.zones[0] = { "Z1", true, 5 };
+    gState.zones[1].enabled = false;
+    gState.zones[2].enabled = false;
+    gState.zones[3].enabled = false;
+    gState.custom_sel[0] = true;
+    gState.custom_dur_min = 3;
+
+    // 1. Confirming custom run routes ScreenDone back to MAIN (not MANUAL while watering is active)
+    testUi.getScreenConfirm().setup("Zonas: Z1", "Dur: 3 min", MenuID::MANUAL, "custom");
+    testUi.changeScreen(&testUi.getScreenConfirm());
+    advanceMockMillis(400UL);
+    simulateRotate(testUi, 1); // select OK
+    simulateClick(testUi);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDone(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::MAIN, testUi.getScreenDone()._backMenu);
+    wateringCtrl.stop();
+
+    // Confirming test run also routes ScreenDone back to MAIN (while Cancel still returns to TESTES)
+    testUi.getScreenConfirm().setup("Test Z1", "5s?", MenuID::TESTES, "test_0");
+    testUi.changeScreen(&testUi.getScreenConfirm());
+    simulateClick(testUi); // Cancel (default selection is Back)
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenMenu(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::TESTES, testUi.getScreenMenu()._mid);
+
+    testUi.getScreenConfirm().setup("Test Z1", "5s?", MenuID::TESTES, "test_0");
+    testUi.changeScreen(&testUi.getScreenConfirm());
+    advanceMockMillis(400UL);
+    simulateRotate(testUi, 1); // select OK
+    simulateClick(testUi);
+    TEST_ASSERT_TRUE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenDone(), testUi._currentScreen);
+    TEST_ASSERT_EQUAL(MenuID::MAIN, testUi.getScreenDone()._backMenu);
+    wateringCtrl.stop();
+
+    // 2. Corrupt NVS boot does NOT flash Welcome screen before ScreenInfo config-lost alert
+    uint8_t garbage[44];
+    memset(garbage, 0xEE, sizeof(garbage));
+    prefs.putBytes("cfg", garbage, sizeof(garbage));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+    testDisp.begin();
+    testDisp._lcd.printCalls = 0;
+    testUi.begin();
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(4, testDisp._lcd.printCalls);
+
+    // 3. Completing Setup Wizard in PERSONALIZADO performs a single NVS config save (no double seq bump)
+    storage.clear();
+    initAppState();
+    rtclock.begin();
+    rtclock.set(2026, 6, 15, 10, 0, 0);
+    gState.mode = AppMode::PERSONALIZADO;
+    gState.custom_ref_day = 0xFFFFFFFFUL;
+    testUi.setInSetup(true);
+    testUi.flagConfigChanged();
+    testUi.getScreenSetupWelcome().setup(true);
+    testUi.changeScreen(&testUi.getScreenSetupWelcome());
+    simulateClick(testUi);
+    TEST_ASSERT_TRUE(gState.setup_done);
+    TEST_ASSERT_NOT_EQUAL(0xFFFFFFFFUL, gState.custom_ref_day);
+    TEST_ASSERT_EQUAL_UINT32(1UL, storage._configSeq);
+}
+
 };
 
 void setUp(void) {
@@ -1670,5 +1767,7 @@ int main(void) {
     RUN_UT(test_ui_blocks_manual_and_test_while_watering_active);
     RUN_UT(test_ui_idle_displays_skipped_slot_notice);
     RUN_UT(test_ui_shows_config_lost_alert_only_on_load_failure);
+    RUN_UT(test_display_late_hotplug_runs_lcd_init_before_writing_rows);
+    RUN_UT(test_ui_confirm_done_back_menu_config_lost_no_flash_and_custom_setup_single_save);
     return UNITY_END();
 }

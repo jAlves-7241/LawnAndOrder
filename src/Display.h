@@ -58,6 +58,7 @@ private:
     bool _backlightOn;
     bool _displayOn;
     bool _busFault = false;
+    bool _initNeeded = true;
     bool _commErrWarned = false;
     bool _hasRecoverAttempt = false;
     bool _inErrorCallback = false;

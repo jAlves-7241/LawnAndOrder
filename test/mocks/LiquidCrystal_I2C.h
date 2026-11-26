@@ -13,6 +13,8 @@ public:
     uint8_t cursorRow = 0;
     bool backlightState = false;
     bool displayState = false;
+    bool initialized = false;
+    uint32_t initCalls = 0;
     uint32_t printCalls = 0;
     uint32_t clearCalls = 0;
     uint32_t initWireCalls = 0;
@@ -35,8 +37,13 @@ public:
     void init(bool initWire, bool displayOn = true) {
         lastInstance = this;
         if (initWire) initWireCalls++;
+        initCalls++;
         _i2cErr = mockI2cError;
-        if (_i2cErr != 0) return;
+        if (_i2cErr != 0) {
+            initialized = false;
+            return;
+        }
+        initialized = true;
         displayState = displayOn;
         clear();
     }

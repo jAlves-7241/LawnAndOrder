@@ -29,6 +29,7 @@ void Display::begin() {
     _lastAttemptMs = _lastFullRefresh;
     _lastPeriodicRecoverMs = _lastFullRefresh;
     _busFault = (_lcd.lastError() != 0);
+    _initNeeded = _busFault;
     _consecErrors = _busFault ? 1 : 0;
     _recoverAttempts = 0;
     _hasRecoverAttempt = false;
@@ -57,6 +58,7 @@ void Display::recover(bool quiet, bool flushShadow) {
     _recoverExecSeq++;
     _lcd.clearError();
     _lcd.init(false, _displayOn); // clears DDRAM and applies _displayOn without flashing pixels
+    _initNeeded = (_lcd.lastError() != 0);
     if (_backlightOn) {
         _lcd.backlight();
     } else {
@@ -223,7 +225,37 @@ void Display::setRows(const char* r0, const char* r1,
     _lcd.clearError();
     bool frameError = false;
     bool wroteAny = false;
-    if (_displaySyncNeeded && _displayOn) {
+    if (_initNeeded) {
+        wroteAny = true;
+        _lcd.init(false, _displayOn);
+        if (_lcd.lastError() != 0) {
+            frameError = true;
+        } else {
+            _initNeeded = false;
+            _displaySyncNeeded = false;
+            _invalidateShadow();
+            if (_backlightOn) {
+                _lcd.backlight();
+                if (_lcd.lastError() != 0) {
+                    frameError = true;
+                    _backlightSyncNeeded = true;
+                } else {
+                    _backlightSyncNeeded = false;
+                }
+            } else {
+                _lcd.noBacklight();
+                if (_lcd.lastError() != 0) {
+                    frameError = true;
+                } else {
+                    _backlightSyncNeeded = false;
+                }
+            }
+            if (!frameError) {
+                _lastPeriodicRecoverMs = millis();
+            }
+        }
+    }
+    if (!frameError && _displaySyncNeeded && _displayOn) {
         wroteAny = true;
         _lcd.display();
         if (_lcd.lastError() != 0) {
@@ -315,13 +347,13 @@ void Display::setRows(const char* r0, const char* r1,
 
                 if (_errorDeferred) {
                     // Shared I2C throttle suppressed bus recovery; retry after 10 s without escalating backoff
-                    _lastRecoverMs = now;
+                    _lastRecoverMs = millis();
                     _hasRecoverAttempt = true;
                     _recoverCooldownMs = 10000UL;
                 } else if (_recoverExecSeq != seqBefore && !_busFault) {
                     // recover() succeeded and already reset backoff counters
                 } else {
-                    _lastRecoverMs = now;
+                    _lastRecoverMs = millis();
                     _hasRecoverAttempt = true;
                     if (_recoverAttempts < 255) _recoverAttempts++;
                     _recoverCooldownMs = _cooldownForAttempts(_recoverAttempts);

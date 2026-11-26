@@ -53,8 +53,10 @@ UI::UI(Display& disp, Encoder& enc)
 void UI::begin() {
     _lastActivity = millis();
     if (!gState.setup_done) {
-        _startSetup();
         if (storage.configLoadFailed()) {
+            _inSetup   = true;
+            _setupStep = SetupStep::WELCOME;
+            _screenSetupWelcome.setup(false);
             _screenInfo.setup(TXT_ERR_CFG_LOST_TITLE,
                               TXT_ERR_CFG_LOST_L1,
                               TXT_ERR_CFG_LOST_L2,
@@ -62,6 +64,8 @@ void UI::begin() {
                               MenuID::MAIN,
                               &_screenSetupWelcome);
             changeScreen(&_screenInfo);
+        } else {
+            _startSetup();
         }
     } else {
         _inSetup = false;
@@ -85,7 +89,9 @@ void UI::changeScreen(UIScreen* screen) {
 void UI::goIdle() {
     if (_configChanged && !_inSetup) {
         _configChanged = false;
-        storage.save(); // Storage owns 5 s retry throttling on transient write failure
+        if (!storage.hasPendingSave()) {
+            storage.save(); // Storage owns 5 s retry throttling on transient write failure
+        }
     }
     changeScreen(&_screenIdle);
 }

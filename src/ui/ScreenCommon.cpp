@@ -67,13 +67,12 @@ void ScreenConfirm::handleClick(UI& ui) {
     if (_selectionOk) {
         if (!ui.executeConfirmed(_tag)) {
             if (!strcmp(_tag, "general") || !strcmp(_tag, "custom")) {
-                ui.getScreenDone().setup(TXT_WATERING_STARTED, "");
+                ui.getScreenDone().setup(TXT_WATERING_STARTED, "", MenuID::MAIN);
             } else if (!strncmp(_tag, "test_", 5)) {
-                ui.getScreenDone().setup(TXT_TEST_STARTED, "");
+                ui.getScreenDone().setup(TXT_TEST_STARTED, "", MenuID::MAIN);
             } else {
-                ui.getScreenDone().setup(_rows[1], _rows[2]);
+                ui.getScreenDone().setup(_rows[1], _rows[2], _backMenu);
             }
-            ui.getScreenDone().setBackMenu(_backMenu);
             ui.changeScreen(&ui.getScreenDone());
         }
     } else {
