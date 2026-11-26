@@ -68,7 +68,6 @@ private:
     bool     _batteryLow = false;
     bool     _batRecoveryWarned = false;
     uint32_t _lastReadMs;
-    uint32_t _lastRtcRetryMs;
     uint8_t  _consecErrors;
     uint32_t _anchorMs;
     uint32_t _anchorUnix;

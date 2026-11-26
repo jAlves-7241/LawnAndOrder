@@ -20,6 +20,7 @@ private:
     char _ansi_buf[8] = {};
 
     bool _in_ansi = false;
+    bool _ansi_overflow = false;
     uint8_t _ansi_bytes = 0;
     uint32_t _ansiStartMs = 0;
     bool _ignore_rest = false;

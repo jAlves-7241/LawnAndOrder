@@ -1107,6 +1107,60 @@ static void test_terminal_truncated_csi_timeout_and_reboot_flushes_pending_save(
     TEST_ASSERT_EQUAL(AppMode::INTENSO, gState.mode);
 }
 
+static void test_terminal_overlong_ansi_swallowed_and_reboot_flushes_deferred_history(void) {
+    // 1. Overlong CSI sequence (>7 bytes, e.g. SGR mouse event) is swallowed cleanly without leaking trailing chars
+    Serial.reset();
+    Serial.feedInput("\033[<0;45;12Mhelp\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_FALSE(terminal._ansi_overflow);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(";12M") == std::string::npos);
+
+    // Unterminated overlong CSI expires after 200 ms without leaking subsequent commands
+    Serial.reset();
+    Serial.feedInput("\033[<0;45;12");
+    terminal.update();
+    TEST_ASSERT_TRUE(terminal._in_ansi);
+    TEST_ASSERT_TRUE(terminal._ansi_overflow);
+    advanceMockMillis(250UL);
+    Serial.feedInput("help\r");
+    terminal.update();
+    TEST_ASSERT_FALSE(terminal._in_ansi);
+    TEST_ASSERT_FALSE(terminal._ansi_overflow);
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_TERM_WELCOME_HDR) != std::string::npos);
+
+    // 2. reboot persists deferred RAM history entries and flushes pending NVS saves even while inSetup()
+    gState.rtc_valid = true;
+    HistoryEntry seed = { 2026, 6, 10, 7, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(seed);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    HistoryEntry rotTrig = { 2026, 6, 11, 7, 0, { 6, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(rotTrig);
+    TEST_ASSERT_TRUE(history.isRotating());
+    HistoryEntry deferred = { 2026, 6, 12, 8, 30, { 9, 0, 0, 0 }, WaterTrigger::CUSTOM, 0 };
+    history.record(deferred); // queued in RAM while rotating
+
+    _ui_in_setup = true;
+    _ui_went_idle = false;
+    gState.mode = AppMode::FRACO;
+    Preferences::writeFail = true;
+    TEST_ASSERT_FALSE(storage.save());
+    TEST_ASSERT_TRUE(storage.hasPendingSave());
+    Preferences::writeFail = false;
+
+    ESP.reset();
+    Serial.reset();
+    Serial.feedInput("reboot\r");
+    terminal.update();
+    TEST_ASSERT_TRUE(ESP.rebooted);
+    TEST_ASSERT_FALSE(_ui_went_idle);
+    TEST_ASSERT_FALSE(storage.hasPendingSave());
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_TRUE(LittleFS.files["/hist_pend.txt"].find("2026-06-12T08:30,C,9,0,0,0") != std::string::npos);
+    _ui_in_setup = false;
+}
+
 };
 
 int main(void) {
@@ -1146,5 +1200,6 @@ int main(void) {
     RUN_UT(test_terminal_lone_esc_preserves_next_char);
     RUN_UT(test_terminal_status_reports_config_lost_and_skipped_slot);
     RUN_UT(test_terminal_truncated_csi_timeout_and_reboot_flushes_pending_save);
+    RUN_UT(test_terminal_overlong_ansi_swallowed_and_reboot_flushes_deferred_history);
     return UNITY_END();
 }

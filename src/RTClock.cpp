@@ -17,7 +17,7 @@ static const char* DOW_NAMES[] = {
 // ─────────────────────────────────────────────────────────
 RTClock::RTClock()
     : _found(false), _rtcDriverReady(false), _lostPower(false), _batteryLow(false), _batRecoveryWarned(false), _lastReadMs(0),
-      _lastRtcRetryMs(0), _consecErrors(0),
+      _consecErrors(0),
       _anchorMs(0), _anchorUnix(0), _lastKnownUnix(0),
       _errorCb(nullptr)
 {}
@@ -199,86 +199,92 @@ void RTClock::update() {
     _lastReadMs = nowMs;
 
     if (!_found) {
-        // Retry hotplug detection at most once per 30s update interval
-        if (nowMs - _lastRtcRetryMs >= 30000UL) {
-            _lastRtcRetryMs = nowMs;
-            LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_DETECT);
-            if (_ensureRtcDriver()) {
-                bool wasValid = gState.rtc_valid;
-                bool readOk = false;
-                bool hwLostPower = false;
-                DateTime utcDt = _readRtc(readOk, hwLostPower);
-                if (!readOk) {
-                    LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
-                          0, 0, 0, 0, 0, 0);
-                    _found = false;
-                } else {
-                    _found = true;
-                    _lostPower = hwLostPower;
+        // Retry hotplug detection once per 30s update interval (already gated by _lastReadMs above)
+        LOG_D(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_DETECT);
+        if (_ensureRtcDriver()) {
+            bool wasValid = gState.rtc_valid;
+            bool readOk = false;
+            bool hwLostPower = false;
+            DateTime utcDt = _readRtc(readOk, hwLostPower);
+            if (!readOk) {
+                LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                      0, 0, 0, 0, 0, 0);
+                _found = false;
+            } else {
+                _found = true;
+                _lostPower = hwLostPower;
 
-                    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_FOUND);
+                LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_FOUND);
 
-                    if (!_lostPower && _isValidDateTime(utcDt)) {
-                        _batRecoveryWarned = false;
-                        if (!wasValid) _batteryLow = false;
-                        gState.rtc_valid = true;
-                        DateTime localDt = utcToLocal(utcDt);
+                if (!_lostPower && _isValidDateTime(utcDt)) {
+                    _batRecoveryWarned = false;
+                    if (!wasValid) _batteryLow = false;
+                    const uint32_t newUnix = utcDt.unixtime();
+                    if (wasValid && _anchorUnix >= UNIX_MIN_VALID) {
+                        uint32_t elapsedSec = (nowMs - _anchorMs) / 1000UL;
+                        uint32_t expectedUnix = _anchorUnix + elapsedSec;
+                        int64_t drift = (int64_t)newUnix - (int64_t)expectedUnix;
+                        if (drift > 300 || drift < -300) {
+                            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_TIME_JUMP);
+                        }
+                    }
+                    gState.rtc_valid = true;
+                    DateTime localDt = utcToLocal(utcDt);
+                    _copyToState(localDt);
+                    gState.now.unix = newUnix;
+                    _anchorMs = nowMs;
+                    _anchorUnix = gState.now.unix;
+                    _lastKnownUnix = gState.now.unix;
+                    _revision++;
+                    LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_SYNC,
+                          (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
+                          (int)gState.now.hour, (int)gState.now.min, (int)gState.now.sec);
+
+                } else if (_lostPower && wasValid) {
+                    // Restore RAM time only when hardware oscillator genuinely stopped
+                    _batteryLow = true;
+                    if (!_batRecoveryWarned) {
+                        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
+                        _batRecoveryWarned = true;
+                    }
+                    if (_anchorUnix >= UNIX_MIN_VALID && gState.now.unix == _lastKnownUnix) {
+                        _incrementSoftwareClock();
+                    }
+                    DateTime restoredUtc = (gState.now.unix >= UNIX_MIN_VALID)
+                        ? DateTime(gState.now.unix)
+                        : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
+                                              gState.now.hour, gState.now.min, gState.now.sec));
+                    bool adjOk = false;
+                    DateTime verifiedUtc = _adjustAndVerify(restoredUtc, adjOk);
+                    if (adjOk) {
+                        _lostPower = false;
+                        DateTime localDt = utcToLocal(verifiedUtc);
                         _copyToState(localDt);
-                        gState.now.unix = utcDt.unixtime();
+                        gState.now.unix = verifiedUtc.unixtime();
                         _anchorMs = nowMs;
                         _anchorUnix = gState.now.unix;
                         _lastKnownUnix = gState.now.unix;
                         _revision++;
-                        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_SYNC,
-                              (int)gState.now.year, (int)gState.now.month, (int)gState.now.day,
-                              (int)gState.now.hour, (int)gState.now.min, (int)gState.now.sec);
-
-                    } else if (_lostPower && wasValid) {
-                        // Restore RAM time only when hardware oscillator genuinely stopped
-                        _batteryLow = true;
-                        if (!_batRecoveryWarned) {
-                            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
-                            _batRecoveryWarned = true;
-                        }
-                        if (_anchorUnix >= UNIX_MIN_VALID && gState.now.unix == _lastKnownUnix) {
-                            _incrementSoftwareClock();
-                        }
-                        DateTime restoredUtc = (gState.now.unix >= UNIX_MIN_VALID)
-                            ? DateTime(gState.now.unix)
-                            : localToUtc(DateTime(gState.now.year, gState.now.month, gState.now.day,
-                                                  gState.now.hour, gState.now.min, gState.now.sec));
-                        bool adjOk = false;
-                        DateTime verifiedUtc = _adjustAndVerify(restoredUtc, adjOk);
-                        if (adjOk) {
-                            _lostPower = false;
-                            DateTime localDt = utcToLocal(verifiedUtc);
-                            _copyToState(localDt);
-                            gState.now.unix = verifiedUtc.unixtime();
-                            _anchorMs = nowMs;
-                            _anchorUnix = gState.now.unix;
-                            _lastKnownUnix = gState.now.unix;
-                            _revision++;
-                            LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
-                        } else {
-                            _found = false;
-                        }
-                    } else if (!_lostPower) {
-                        // Invalid calendar values without OSF indicate a corrupt read
+                        LOG_I(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_HOT_RESTORED);
+                    } else {
+                        _found = false;
+                    }
+                } else if (!_lostPower) {
+                    // Invalid calendar values without OSF indicate a corrupt read
+                    LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
+                          (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
+                          (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
+                    _found = false;
+                } else {
+                    _batteryLow = true;
+                    gState.rtc_valid = false;
+                    if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
                         LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
                               (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
                               (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
                         _found = false;
                     } else {
-                        _batteryLow = true;
-                        gState.rtc_valid = false;
-                        if (utcDt.month() < 1 || utcDt.month() > 12 || utcDt.day() < 1 || utcDt.day() > 31) {
-                            LOG_E(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_READ_CORRUPT,
-                                  (int)utcDt.year(), (int)utcDt.month(), (int)utcDt.day(),
-                                  (int)utcDt.hour(), (int)utcDt.minute(), (int)utcDt.second());
-                            _found = false;
-                        } else {
-                            LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
-                        }
+                        LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_LOW);
                     }
                 }
             }
@@ -460,8 +466,7 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
     }
 
     if (!hwOk && !allowSwFallback) {
-        _lastRtcRetryMs = millis();
-        _lastReadMs = _lastRtcRetryMs;
+        _lastReadMs = millis();
         return false;
     }
 
@@ -471,8 +476,7 @@ bool RTClock::set(uint16_t year, uint8_t month,  uint8_t day,
         _batRecoveryWarned = false;
         _lastReadMs = millis();
     } else {
-        _lastRtcRetryMs = millis();
-        _lastReadMs = _lastRtcRetryMs;
+        _lastReadMs = millis();
     }
     gState.rtc_valid = true;
 

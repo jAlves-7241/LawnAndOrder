@@ -134,7 +134,7 @@ static bool parseExactSetTime(const char* s, int& yr, int& mo, int& dy,
 Terminal::Terminal()
     : _bufLen(0), _cursorPos(0), _pendingClearHistory(false), _pendingClearForce(false),
       _pendingClearAtMs(0),
-      _ansi_buf{}, _in_ansi(false), _ansi_bytes(0), _ansiStartMs(0), _ignore_rest(false),
+      _ansi_buf{}, _in_ansi(false), _ansi_overflow(false), _ansi_bytes(0), _ansiStartMs(0), _ignore_rest(false),
       _tailDirty(false), _last_c(0)
 {
     memset(_buffer, 0, sizeof(_buffer));
@@ -147,6 +147,7 @@ void Terminal::begin() {
     _pendingClearForce = false;
     _pendingClearAtMs = 0;
     _in_ansi = false;
+    _ansi_overflow = false;
     _ansi_bytes = 0;
     _ansiStartMs = 0;
     _ignore_rest = false;
@@ -252,6 +253,7 @@ void Terminal::_drainInput() {
     _pendingClearForce = false;
     _pendingClearAtMs = 0;
     _in_ansi = false;
+    _ansi_overflow = false;
     _ansi_bytes = 0;
     _ansiStartMs = 0;
     _ignore_rest = false;
@@ -267,6 +269,7 @@ bool Terminal::_feedAnsi(char c) {
     // Start of a new escape sequence
     if (c == 27) {
         _in_ansi = true;
+        _ansi_overflow = false;
         _ansi_bytes = 0;
         _ansiStartMs = millis();
         _last_c = c;
@@ -276,9 +279,10 @@ bool Terminal::_feedAnsi(char c) {
     if (!_in_ansi) return false;
 
     // Expire a lone ESC (50 ms) or truncated CSI/SS3 sequence (200 ms)
-    const uint32_t ansiTimeoutMs = (_ansi_bytes == 0) ? 50UL : 200UL;
+    const uint32_t ansiTimeoutMs = (_ansi_bytes == 0 && !_ansi_overflow) ? 50UL : 200UL;
     if ((uint32_t)(millis() - _ansiStartMs) >= ansiTimeoutMs) {
         _in_ansi = false;
+        _ansi_overflow = false;
         _ansi_bytes = 0;
         return false;
     }
@@ -287,8 +291,20 @@ bool Terminal::_feedAnsi(char c) {
     // so Enter, Backspace, Ctrl+C, and Ctrl+U are never swallowed.
     if ((unsigned char)c < 32 || (unsigned char)c == 127) {
         _in_ansi = false;
+        _ansi_overflow = false;
         _ansi_bytes = 0;
         return false;
+    }
+
+    // Swallow remaining bytes of an overlong CSI/SS3 sequence until its ECMA-48 final byte
+    if (_ansi_overflow) {
+        if ((unsigned char)c >= 0x40 && (unsigned char)c <= 0x7E) {
+            _in_ansi = false;
+            _ansi_overflow = false;
+            _ansi_bytes = 0;
+        }
+        _last_c = c;
+        return true;
     }
 
     // After ESC, only '[' (CSI) and 'O' (SS3) start sequences we handle;
@@ -303,9 +319,15 @@ bool Terminal::_feedAnsi(char c) {
         _ansi_buf[_ansi_bytes] = c;
     }
 
-    // Abort sequences that are too long (protection against invalid sequences)
+    // Keep swallowing overlong sequences until ECMA-48 final byte (or timeout/control char)
     if (_ansi_bytes >= sizeof(_ansi_buf) - 1) {
-        _in_ansi = false;
+        if ((unsigned char)c >= 0x40 && (unsigned char)c <= 0x7E) {
+            _in_ansi = false;
+            _ansi_overflow = false;
+            _ansi_bytes = 0;
+        } else {
+            _ansi_overflow = true;
+        }
         _last_c = c;
         return true;
     }
@@ -513,9 +535,10 @@ void Terminal::update() {
 
     // Expirar ESC isolado (50 ms) ou sequencia CSI/SS3 truncada (200 ms)
     if (_in_ansi) {
-        const uint32_t ansiTimeoutMs = (_ansi_bytes == 0) ? 50UL : 200UL;
+        const uint32_t ansiTimeoutMs = (_ansi_bytes == 0 && !_ansi_overflow) ? 50UL : 200UL;
         if ((uint32_t)(millis() - _ansiStartMs) >= ansiTimeoutMs) {
             _in_ansi = false;
+            _ansi_overflow = false;
             _ansi_bytes = 0;
         }
     }
@@ -889,11 +912,12 @@ void Terminal::_cmdClearHistory(char* args) {
 void Terminal::_cmdReboot(char* /*args*/) {
     LOG_I(TXT_LOG_TAG_TERM, TXT_LOG_TERM_REBOOT);
     wateringCtrl.deenergizeRelays();
+    history.flushDeferredBeforeReboot();
     if (!ui.inSetup()) {
         ui.goIdle();
-        if (storage.hasPendingSave()) {
-            storage.save();
-        }
+    }
+    if (storage.hasPendingSave()) {
+        storage.save();
     }
     Serial.println(TXT_TERM_REBOOT);
     Serial.println();

@@ -510,7 +510,7 @@ static void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
     TEST_ASSERT_TRUE(gState.rtc_valid);
     TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
 
-    // Hotplug sync bumps revision() but NOT manualRevision()
+    // Hotplug sync bumps revision() but NOT manualRevision(), and logs TIME_JUMP on >300s drift
     rtclock._found = false;
     rtclock._rtc.mockPresent = true;
     rtclock._rtc.adjust(DateTime(2026, 6, 15, 9, 10, 0));
@@ -519,6 +519,16 @@ static void test_rtclock_manual_revision_only_tracks_valid_sets(void) {
     rtclock.update();
     TEST_ASSERT_EQUAL_UINT32(revBefore + 1, rtclock.revision());
     TEST_ASSERT_EQUAL_UINT32(2, rtclock.manualRevision());
+
+    // Large >300s jump on hotplug logs TXT_LOG_RTC_TIME_JUMP
+    rtclock._found = false;
+    rtclock._rtc.adjust(DateTime(gState.now.unix + 7200UL));
+    Serial.reset();
+    advanceMockMillis(31000);
+    rtclock.update();
+#if LOG_LEVEL >= LVL_WARN
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_RTC_TIME_JUMP) != std::string::npos);
+#endif
 
     // Hotplug OSF restore bumps revision() but NOT manualRevision()
     rtclock._found = false;
