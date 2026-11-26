@@ -254,13 +254,25 @@ void test_lcd_set_cursor_bounds_uninitialized_guard_and_create_char(void) {
     TEST_ASSERT_EQUAL_HEX8(0x01, progCgram[1].second);
     TEST_ASSERT_EQUAL_HEX8(0x02, progCgram[8].second);
 
-    // 4. init(false, false) keeps LCD_DISPLAYOFF during init (zero pixel flash on sleeping recovery)
+    // 4. init(false, false, 0) keeps LCD_DISPLAYOFF and LCD_NOBACKLIGHT during init (zero flash even after backlight ON)
+    lcd.backlight();
     gPcf.reset();
-    lcd.init(false, false);
+    lcd.init(false, false, 0);
     TEST_ASSERT_EQUAL_UINT8(0, lcd.lastError());
+    TEST_ASSERT_FALSE(gPcf.rawBytes.empty());
+    for (uint8_t b : gPcf.rawBytes) {
+        TEST_ASSERT_TRUE((b & LCD_BACKLIGHT) == 0);
+    }
     auto sleepCmds = decodeBytesFrom(decodeLatchedNibbles(gPcf.rawBytes), 4);
     TEST_ASSERT_EQUAL_UINT32(5, (uint32_t)sleepCmds.size());
     TEST_ASSERT_EQUAL_HEX8(LCD_DISPLAYCONTROL | LCD_DISPLAYOFF | LCD_CURSOROFF | LCD_BLINKOFF, sleepCmds[1].second);
+
+    // 5. setCursor() clamps out-of-range column to _cols - 1
+    gPcf.reset();
+    lcd.setCursor(99, 1);
+    auto colClampCmd = decodeBytesFrom(decodeLatchedNibbles(gPcf.rawBytes), 0);
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)colClampCmd.size());
+    TEST_ASSERT_EQUAL_HEX8(LCD_SETDDRAMADDR | (19 + 0x40), colClampCmd[0].second);
 }
 
 void test_lcd_state_rollback_on_i2c_error_preserves_backlight_and_display(void) {

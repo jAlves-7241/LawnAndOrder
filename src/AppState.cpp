@@ -125,13 +125,14 @@ void sortCustomSlots(ModeSchedule& sched) {
 bool hasCustomSlotOverlap(const ModeSchedule& sched, uint16_t minSpacingMin) {
     uint8_t count = (sched.slot_count <= MAX_SLOTS_PER_MODE) ? sched.slot_count : MAX_SLOTS_PER_MODE;
     if (count <= 1) return false;
+    const bool wrapMidnight = !(sched.day_pattern == DayPattern::EVERY_X_DAYS && sched.interval_days > 1);
     for (uint8_t i = 0; i < count; i++) {
         for (uint8_t j = (uint8_t)(i + 1); j < count; j++) {
             uint16_t s1 = (uint16_t)sched.slots[i].hour * 60U + sched.slots[i].minute;
             uint16_t s2 = (uint16_t)sched.slots[j].hour * 60U + sched.slots[j].minute;
             int16_t diff = (int16_t)s1 - (int16_t)s2;
             if (diff < 0) diff = (int16_t)(-diff);
-            if (diff > 720) diff = (int16_t)(1440 - diff);
+            if (wrapMidnight && diff > 720) diff = (int16_t)(1440 - diff);
             if ((uint16_t)diff < minSpacingMin) return true;
         }
     }

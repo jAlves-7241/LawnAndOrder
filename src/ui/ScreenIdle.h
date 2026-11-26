@@ -11,6 +11,7 @@ public:
                    _lastNextH(0xFF), _lastNextM(0xFF),
                    _lastZoneIdx(0xFF), _lastRtcValid(false), _lastRtcPresent(false),
                    _lastBatteryLow(false), _lastHistReady(false), _lastHistCount(0xFFFF),
+                   _lastHistRev(0),
                    _lastHasEnabledZones(false), _lastSkippedSlot(false),
                    _lastSkippedHour(0xFF), _lastSkippedMin(0xFF) {}
 
@@ -40,6 +41,7 @@ private:
     bool _lastBatteryLow;
     bool _lastHistReady;
     uint16_t _lastHistCount;
+    uint32_t _lastHistRev;
     bool _lastHasEnabledZones;
     bool _lastSkippedSlot;
     uint8_t _lastSkippedHour;

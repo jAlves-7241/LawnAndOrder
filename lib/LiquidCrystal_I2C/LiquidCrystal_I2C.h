@@ -55,7 +55,7 @@
 class LiquidCrystal_I2C : public Print {
 public:
   LiquidCrystal_I2C(uint8_t lcd_Addr,uint8_t lcd_cols,uint8_t lcd_rows);
-  void begin(uint8_t cols, uint8_t rows, uint8_t charsize = LCD_5x8DOTS, bool displayOn = true);
+  void begin(uint8_t cols, uint8_t rows, uint8_t charsize = LCD_5x8DOTS, bool displayOn = true, int8_t backlightOn = -1);
   void clear();
   void home();
   void noDisplay();
@@ -88,7 +88,7 @@ public:
 #endif
   void command(uint8_t);
   void init();
-  void init(bool initWire, bool displayOn = true);
+  void init(bool initWire, bool displayOn = true, int8_t backlightOn = -1);
   void oled_init();
   uint8_t lastError() const { return _i2cErr; }
   void clearError() { _i2cErr = 0; }
@@ -115,7 +115,7 @@ void draw_vertical_graph(uint8_t row, uint8_t column, uint8_t len,  uint8_t pixe
 	 
 
 private:
-  void init_priv(bool initWire = false, bool displayOn = true);
+  void init_priv(bool initWire = false, bool displayOn = true, int8_t backlightOn = -1);
   void send(uint8_t, uint8_t);
   void write4bits(uint8_t);
   void expanderWrite(uint8_t);

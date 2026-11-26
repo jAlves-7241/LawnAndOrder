@@ -63,25 +63,27 @@ void LiquidCrystal_I2C::oled_init(){
 }
 
 void LiquidCrystal_I2C::init(){
-	init_priv(false, true);
+	init_priv(false, true, -1);
 }
 
-void LiquidCrystal_I2C::init(bool initWire, bool displayOn){
-	init_priv(initWire, displayOn);
+void LiquidCrystal_I2C::init(bool initWire, bool displayOn, int8_t backlightOn){
+	init_priv(initWire, displayOn, backlightOn);
 }
 
-void LiquidCrystal_I2C::init_priv(bool initWire, bool displayOn)
+void LiquidCrystal_I2C::init_priv(bool initWire, bool displayOn, int8_t backlightOn)
 {
 	if (initWire) {
 		Wire.begin();
 	}
 	_i2cErr = 0;
 	_displayfunction = LCD_4BITMODE | LCD_1LINE | LCD_5x8DOTS;
-	begin(_cols, _rows, LCD_5x8DOTS, displayOn);  
+	begin(_cols, _rows, LCD_5x8DOTS, displayOn, backlightOn);  
 }
 
-void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize, bool displayOn) {
-	(void)cols;
+void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize, bool displayOn, int8_t backlightOn) {
+	if (cols > 0) {
+		_cols = cols;
+	}
 	if (lines > 1) {
 		_displayfunction |= LCD_2LINE;
 	}
@@ -101,14 +103,24 @@ void LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsize, bool
 		return;
 	}
 
+	// Apply requested backlight state before the first expander write so sleeping
+	// recoveries never emit a transient backlight flash.
+	uint8_t prevBacklight = _backlightval;
+	if (backlightOn >= 0) {
+		_backlightval = (backlightOn != 0) ? LCD_BACKLIGHT : LCD_NOBACKLIGHT;
+	}
+
 	// SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
 	// according to datasheet, we need at least 40ms after power rises above 2.7V
 	// before sending commands. Arduino can turn on way befer 4.5V so we'll wait 50
 	delay(50); 
   
 	// Now we pull both RS and R/W low to begin commands
-	expanderWrite(_backlightval);	// reset expanderand turn backlight off (Bit 8 =1)
-	if (_i2cErr != 0) return;
+	expanderWrite(_backlightval);	// reset expander and apply desired backlight bit
+	if (_i2cErr != 0) {
+		_backlightval = prevBacklight;
+		return;
+	}
 	delay(10);
 
   	//put the LCD into 4 bit mode
@@ -177,6 +189,9 @@ void LiquidCrystal_I2C::setCursor(uint8_t col, uint8_t row){
 	int row_offsets[] = { 0x00, 0x40, 0x14, 0x54 };
 	if (_numlines == 0) {
 		return;
+	}
+	if (_cols > 0 && col >= _cols) {
+		col = _cols - 1;
 	}
 	if ( row >= _numlines ) {
 		row = _numlines-1;    // we count rows starting w/0

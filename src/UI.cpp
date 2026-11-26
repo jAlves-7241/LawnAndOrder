@@ -216,6 +216,10 @@ void UI::flagConfigChanged() {
 
 void UI::syncSetupState() {
     _configChanged = false;
+    _lastActivity = millis();
+    if (!_d.isDisplayOn() || !_d.isBacklightOn()) {
+        _d.wake(true);
+    }
     if (!gState.setup_done) {
         _startSetup();
     } else {

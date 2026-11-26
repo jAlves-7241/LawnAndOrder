@@ -35,6 +35,7 @@ void ScreenIdle::onEnter(UI& ui) {
     _lastBatteryLow = !rtclock.isBatteryLow();
     _lastHistReady = !history.isReady();
     _lastHistCount = 0xFFFF;
+    _lastHistRev = history.revision() ^ 1UL;
     _lastHasEnabledZones = !Scheduler::hasEnabledZones();
     _lastSkippedSlot = !scheduler.hasSkippedSlot();
     _lastSkippedHour = 0xFF;
@@ -72,7 +73,8 @@ void ScreenIdle::update(UI& ui) {
     if (_lastRtcValid != gState.rtc_valid) needsRender = true;
     if (_lastRtcPresent != rtclock.isPresent()) needsRender = true;
     if (_lastBatteryLow != rtclock.isBatteryLow()) needsRender = true;
-    if (_lastHistReady != history.isReady() || _lastHistCount != history.entryCount()) needsRender = true;
+    if (_lastHistReady != history.isReady() || _lastHistCount != history.entryCount() ||
+        _lastHistRev != history.revision()) needsRender = true;
     if (_lastSuspended != gState.suspended) needsRender = true;
     if (_lastMode != gState.mode) needsRender = true;
     if (_lastNextH != gState.next_hour || _lastNextM != gState.next_min) needsRender = true;
@@ -114,6 +116,7 @@ void ScreenIdle::fullRender(UI& ui) {
     const bool histReady = history.isReady();
     _lastHistReady = histReady;
     _lastHistCount = history.entryCount();
+    _lastHistRev = history.revision();
     const bool hasZones = Scheduler::hasEnabledZones();
     _lastHasEnabledZones = hasZones;
     const bool skippedSlot = scheduler.hasSkippedSlot();

@@ -125,6 +125,13 @@ void test_calendar_and_custom_schedule_helpers(void) {
     TEST_ASSERT_TRUE(hasCustomSlotOverlap(sched, 15));  // 23:55 -> 00:05 is 10 min < 15
     TEST_ASSERT_FALSE(hasCustomSlotOverlap(sched, 10)); // exactly 10 min >= 10
 
+    // EVERY_X_DAYS with interval_days > 1 has no consecutive watering day, so 23:55 and 00:05 do not wrap-overlap
+    sched.day_pattern = DayPattern::EVERY_X_DAYS;
+    sched.interval_days = 2;
+    TEST_ASSERT_FALSE(hasCustomSlotOverlap(sched, 15));
+    sched.interval_days = 1;
+    TEST_ASSERT_TRUE(hasCustomSlotOverlap(sched, 15));
+
     sched.slots[3] = { 22, 22 };
     respaceCustomSlots(sched);
     TEST_ASSERT_FALSE(hasCustomSlotOverlap(sched, 16));

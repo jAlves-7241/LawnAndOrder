@@ -1685,6 +1685,45 @@ static void test_ui_confirm_done_back_menu_config_lost_no_flash_and_custom_setup
     TEST_ASSERT_EQUAL_UINT32(1UL, storage._configSeq);
 }
 
+static void test_ui_sync_setup_resets_activity_and_history_menu_live_refreshes(void) {
+    // 1. Exiting Setup Wizard via syncSetupState() (e.g. import_config) resets _lastActivity so LCD stays lit
+    gState.setup_done = false;
+    gState.backlight_timeout_ms = 120000UL;
+    testUi.begin();
+    TEST_ASSERT_TRUE(testUi.inSetup());
+
+    advanceMockMillis(300000UL); // 5 min sitting in Setup Wizard (> backlight + display off)
+    gState.setup_done = true;
+    testUi.syncSetupState();
+    testUi.update();
+    TEST_ASSERT_FALSE(testUi.inSetup());
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenIdle(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(testDisp.isBacklightOn());
+    TEST_ASSERT_TRUE(testDisp.isDisplayOn());
+
+    // 2. MenuID::HISTORICO live-rebuilds when a watering record is added while viewing History
+    gState.rtc_valid = true;
+    history.clear();
+    testUi.goMenu(MenuID::HISTORICO);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), TXT_NO_RECORDS) != nullptr);
+
+    HistoryEntry he = { 2026, 6, 18, 9, 45, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(he);
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(1), "09:45") != nullptr);
+
+    // 3. ScreenIdle updates row 2 on history.revision() change even if entryCount stays unchanged at rotation start
+    testUi.goIdle();
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "09:45") != nullptr);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    HistoryEntry he2 = { 2026, 6, 19, 11, 20, { 6, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(he2);
+    TEST_ASSERT_TRUE(history.isRotating());
+    testUi.update();
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "11:20") != nullptr);
+}
+
 };
 
 void setUp(void) {
@@ -1769,5 +1808,6 @@ int main(void) {
     RUN_UT(test_ui_shows_config_lost_alert_only_on_load_failure);
     RUN_UT(test_display_late_hotplug_runs_lcd_init_before_writing_rows);
     RUN_UT(test_ui_confirm_done_back_menu_config_lost_no_flash_and_custom_setup_single_save);
+    RUN_UT(test_ui_sync_setup_resets_activity_and_history_menu_live_refreshes);
     return UNITY_END();
 }

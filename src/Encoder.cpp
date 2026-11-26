@@ -48,6 +48,10 @@ void Encoder::begin() {
     _has_last_isr = false;
     portEXIT_CRITICAL(&mux);
 
+    if (_attached) {
+        detachInterrupt(digitalPinToInterrupt(_clk));
+        _attached = false;
+    }
     attachInterrupt(digitalPinToInterrupt(_clk), _isr, FALLING);
     _attached = true;
 }

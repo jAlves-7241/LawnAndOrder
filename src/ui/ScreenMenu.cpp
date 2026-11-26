@@ -1,6 +1,7 @@
 #include "../i18n.h"
 #include "ScreenMenu.h"
 #include "../UI.h"
+#include "../History.h"
 #include <string.h>
 
 void ScreenMenu::setup(MenuID mid, bool preserveCursor) {
@@ -12,6 +13,7 @@ void ScreenMenu::setup(MenuID mid, bool preserveCursor) {
     }
     _lastWateringActive = gState.watering.active;
     _lastSuspended = gState.suspended;
+    _lastHistRev = history.revision();
     MenuBuilder::build(mid, _items, _itemCount);
     if (keepPos) {
         if (_itemCount == 0) {
@@ -34,13 +36,15 @@ void ScreenMenu::onEnter(UI& ui) {
 
 void ScreenMenu::update(UI& ui) {
     if ((_mid == MenuID::MAIN && _lastWateringActive != gState.watering.active) ||
-        (_mid == MenuID::PROG && _lastSuspended != gState.suspended)) {
+        (_mid == MenuID::PROG && _lastSuspended != gState.suspended) ||
+        (_mid == MenuID::HISTORICO && _lastHistRev != history.revision())) {
         char prevAction[sizeof(_items[0].action)] = {};
         if (_itemCount > 0 && _cur < _itemCount) {
             strlcpy(prevAction, _items[_cur].action, sizeof(prevAction));
         }
         _lastWateringActive = gState.watering.active;
         _lastSuspended = gState.suspended;
+        _lastHistRev = history.revision();
         MenuBuilder::build(_mid, _items, _itemCount);
         if (_itemCount == 0) {
             _cur = 0;

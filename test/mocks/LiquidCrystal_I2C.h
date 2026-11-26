@@ -34,7 +34,7 @@ public:
         init(false, true);
     }
 
-    void init(bool initWire, bool displayOn = true) {
+    void init(bool initWire, bool displayOn = true, int8_t backlightOn = -1) {
         lastInstance = this;
         if (initWire) initWireCalls++;
         initCalls++;
@@ -45,6 +45,9 @@ public:
         }
         initialized = true;
         displayState = displayOn;
+        if (backlightOn >= 0) {
+            backlightState = (backlightOn != 0);
+        }
         clear();
     }
 

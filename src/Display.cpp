@@ -57,7 +57,7 @@ uint32_t Display::_cooldownForAttempts(uint8_t attempts) {
 void Display::recover(bool quiet, bool flushShadow) {
     _recoverExecSeq++;
     _lcd.clearError();
-    _lcd.init(false, _displayOn); // clears DDRAM and applies _displayOn without flashing pixels
+    _lcd.init(false, _displayOn, _backlightOn ? 1 : 0); // clears DDRAM and applies _displayOn/_backlightOn without flashing
     _initNeeded = (_lcd.lastError() != 0);
     if (_backlightOn) {
         _lcd.backlight();
@@ -227,7 +227,7 @@ void Display::setRows(const char* r0, const char* r1,
     bool wroteAny = false;
     if (_initNeeded) {
         wroteAny = true;
-        _lcd.init(false, _displayOn);
+        _lcd.init(false, _displayOn, _backlightOn ? 1 : 0);
         if (_lcd.lastError() != 0) {
             frameError = true;
         } else {
