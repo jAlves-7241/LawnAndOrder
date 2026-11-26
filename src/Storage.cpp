@@ -99,7 +99,8 @@ static bool _validateImportBlob(const AppConfigBlob& blob) {
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_BACKLIGHT);
         return false;
     }
-    if (blob.suspended_until > UNIX_MAX_VALID) { // > 2099-12-31 23:59:59 UTC
+    if (blob.suspended_until != 0 &&
+        (blob.suspended_until < UNIX_MIN_VALID || blob.suspended_until > UNIX_MAX_VALID)) { // 2020..2099 UTC
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_IMP_INV_FIELD, TXT_IMP_FLD_SUSP_END);
         return false;
     }
@@ -852,7 +853,13 @@ bool Storage::_blobToState(const AppConfigBlob& blob) {
     } else {
         gState.backlight_timeout_ms = blob.backlight_timeout_ms;
     }
-    gState.suspended_until = (blob.suspended_until > UNIX_MAX_VALID) ? UNIX_MAX_VALID : blob.suspended_until;
+    if (blob.suspended_until > UNIX_MAX_VALID) {
+        gState.suspended_until = UNIX_MAX_VALID;
+    } else if (blob.suspended_until < UNIX_MIN_VALID) {
+        gState.suspended_until = 0;
+    } else {
+        gState.suspended_until = blob.suspended_until;
+    }
     gState.custom_ref_day = (blob.custom_ref_day != 0xFFFFFFFFUL && blob.custom_ref_day > CUSTOM_REF_DAY_MAX)
                             ? 0xFFFFFFFFUL : blob.custom_ref_day;
     gState.auto_dst = !!blob.auto_dst;

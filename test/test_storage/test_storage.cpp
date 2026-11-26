@@ -764,6 +764,41 @@ static void test_storage_dedup_checks_slot_crc_and_max_seq_on_backup_fallback(vo
     TEST_ASSERT_EQUAL_UINT32(11UL, storage._configSeq);
 }
 
+static void test_storage_rejects_and_sanitizes_pre_2020_suspended_until(void) {
+    char hexBuf[sizeof(AppConfigBlob) * 2 + 1];
+
+    // 1. importConfigHex rejects non-zero suspended_until < UNIX_MIN_VALID (pre-2020)
+    gState.suspended = true;
+    gState.suspended_until = 1UL;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.importConfigHex(hexBuf));
+
+    gState.suspended = true;
+    gState.suspended_until = UNIX_MIN_VALID - 1UL;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_FALSE(storage.importConfigHex(hexBuf));
+
+    // Accepts valid lower bound UNIX_MIN_VALID
+    gState.suspended = true;
+    gState.suspended_until = UNIX_MIN_VALID;
+    storage.exportConfigHex(hexBuf, sizeof(hexBuf));
+    initAppState();
+    TEST_ASSERT_TRUE(storage.importConfigHex(hexBuf));
+    TEST_ASSERT_TRUE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(UNIX_MIN_VALID, gState.suspended_until);
+
+    // 2. NVS load() defensively sanitizes pre-2020 suspended_until to 0 (not suspended)
+    gState.suspended = true;
+    gState.suspended_until = 12345UL;
+    TEST_ASSERT_TRUE(storage.save());
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_FALSE(gState.suspended);
+    TEST_ASSERT_EQUAL_UINT32(0UL, gState.suspended_until);
+}
+
 };
 
 void setUp(void) {
@@ -796,5 +831,6 @@ int main(void) {
     RUN_UT(test_storage_backlight_upper_bound_import_and_load);
     RUN_UT(test_storage_begin_idempotent_oversized_blobs_write_rollback_and_range_clamp);
     RUN_UT(test_storage_dedup_checks_slot_crc_and_max_seq_on_backup_fallback);
+    RUN_UT(test_storage_rejects_and_sanitizes_pre_2020_suspended_until);
     return UNITY_END();
 }
