@@ -165,7 +165,7 @@ Disponível através de `pio device monitor` ou qualquer terminal série:
 | `export_history` | Exporta todo o histórico de regas em CSV via Serial |
 | `clear_history [force]` | Apaga permanentemente o histórico de regas (pede confirmação; `force`/`--force` formata LittleFS em erro persistente) |
 | `stop` | Aborta imediatamente a rega ativa |
-| `reboot` | Reinicia o controlador |
+| `reboot` | Reinicia o controlador (desenergiza relés preservando o estado de retoma; use `stop` primeiro para cancelar uma rega ativa) |
 | `i2c_scan` | Executa um scan ao barramento I2C (rejeitado durante rega ativa) |
 
 ---

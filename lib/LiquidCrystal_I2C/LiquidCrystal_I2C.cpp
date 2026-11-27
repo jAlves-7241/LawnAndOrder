@@ -359,7 +359,7 @@ void LiquidCrystal_I2C::write4bits(uint8_t value) {
 void LiquidCrystal_I2C::expanderWrite(uint8_t _data){                                        
 	if (_i2cErr != 0) return;
 	Wire.beginTransmission(_Addr);
-	printIIC((int)(_data) | _backlightval);
+	printIIC((uint8_t)(_data | _backlightval));
 	uint8_t err = Wire.endTransmission();
 	if (err != 0) {
 		_i2cErr = err;
