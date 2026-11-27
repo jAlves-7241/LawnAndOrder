@@ -129,8 +129,12 @@ void WateringController::begin() {
               (unsigned)rs.queue[rs.queuePos].zone_idx + 1U);
         if (!gState.rtc_valid) {
             LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_RTC_INVALID_RESUME);
+        } else if (storage.configLoadFailed() || !gState.setup_done) {
+            LOG_W(TXT_LOG_TAG_WATER, TXT_LOG_REC_SKIP_CFG);
         } else if (gState.suspended && rs.trigger == WaterTrigger::AUTO) {
             LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_REC_SKIP_SUSP);
+        } else if (gState.mode == AppMode::DESATIVADO && rs.trigger == WaterTrigger::AUTO) {
+            LOG_I(TXT_LOG_TAG_WATER, TXT_LOG_REC_SKIP_DISABLED);
         } else if (rs.start_unix_time >= UNIX_MIN_VALID && rs.start_unix_time <= UNIX_MAX_VALID) {
             uint64_t remaining_ms = 0;
             for (uint8_t i = rs.queuePos; i < rs.queueLen; i++) {

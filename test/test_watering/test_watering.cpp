@@ -15,6 +15,7 @@
 void setUp(void) {
     resetAllTestMocks();
     gState.rtc_valid = true;
+    gState.setup_done = true;
     storage.begin();
     history.begin();
     wateringCtrl.begin();
@@ -862,6 +863,7 @@ static void test_watering_mid_cycle_rtc_set_and_aborted_recovery_history(void) {
     TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
 
     // 4. Single-zone recovery completion logs TXT_LOG_REC_STABLE, and early stop on resumed zone logs cumulative min
+    gState.setup_done = true;
     gState.mode = AppMode::DESATIVADO;
     gState.now = { 2026, 6, 15, 8, 10, 0, 1, (uint32_t)(startUtc.unixtime() + 600UL) };
     RecoveryState srs = {};
@@ -1121,6 +1123,72 @@ static void test_watering_retries_failed_recovery_clear_even_after_test_run(void
     TEST_ASSERT_FALSE(rs.active);
 }
 
+static void test_watering_recovery_blocked_on_config_failure_incomplete_setup_and_disabled_auto(void) {
+    const uint32_t startUtc = RTClock::localToUtc(DateTime(2026, 6, 15, 8, 0, 0)).unixtime();
+    const uint32_t bootUtc  = startUtc + 300UL;
+    gState.auto_dst = true;
+    gState.rtc_valid = true;
+    gState.now = { 2026, 6, 15, 8, 5, 0, 1, bootUtc };
+
+    auto seedRec = [&](WaterTrigger trig) {
+        RecoveryState rs = {};
+        rs.version = NVS_VERSION;
+        rs.active = true;
+        rs.start_unix_time = startUtc;
+        rs.queuePos = 0;
+        rs.queueLen = 1;
+        rs.queue[0] = { 0, 6UL * 60000UL };
+        rs.zone_dur_min[0] = 4;
+        rs.trigger = trig;
+        rs.retry_count = 0;
+        TEST_ASSERT_TRUE(storage.saveRecoveryState(rs));
+    };
+
+    // 1. Incomplete setup (!setup_done) refuses to resume relays, preserves partial history, clears recv
+    history.clear();
+    gState.setup_done = false;
+    gState.mode = AppMode::MEDIO;
+    seedRec(WaterTrigger::MANUAL);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+    RecoveryState cleared = {};
+    TEST_ASSERT_TRUE(storage.loadRecoveryState(cleared));
+    TEST_ASSERT_FALSE(cleared.active);
+
+    // 2. Corrupt NVS config load failure (storage.configLoadFailed()) refuses to resume relays
+    history.clear();
+    uint8_t bad[44];
+    memset(bad, 0xEE, sizeof(bad));
+    prefs.putBytes("cfg", bad, sizeof(bad));
+    prefs.putBytes("cfg_b", bad, sizeof(bad));
+    TEST_ASSERT_FALSE(storage.load());
+    TEST_ASSERT_TRUE(storage.configLoadFailed());
+    gState.setup_done = true; // Even if RAM flag were true, configLoadFailed() must block resume
+    seedRec(WaterTrigger::MANUAL);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+
+    // 3. AUTO recovery under AppMode::DESATIVADO is skipped (while MANUAL still resumes under DESATIVADO)
+    storage.clear();
+    history.clear();
+    gState.setup_done = true;
+    gState.mode = AppMode::DESATIVADO;
+    TEST_ASSERT_TRUE(storage.save());
+    TEST_ASSERT_FALSE(storage.configLoadFailed());
+    seedRec(WaterTrigger::AUTO);
+    wateringCtrl = WateringController();
+    wateringCtrl.begin();
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
+}
+
 };
 
 int main(void) {
@@ -1148,5 +1216,6 @@ int main(void) {
     RUN_UT(test_watering_manual_recovery_under_suspension_and_dead_rtc_partial_history);
     RUN_UT(test_watering_refuses_preemption_while_active);
     RUN_UT(test_watering_retries_failed_recovery_clear_even_after_test_run);
+    RUN_UT(test_watering_recovery_blocked_on_config_failure_incomplete_setup_and_disabled_auto);
     return UNITY_END();
 }

@@ -269,17 +269,28 @@ static void test_boot_system_full_order_and_recovery_invariants(void) {
     TEST_ASSERT_FALSE(scheduler._catchUpPending);
     wateringCtrl.stop();
 
-    // 3. Corrupt both NVS config slots -> bootSystem() surfaces persistent config-lost alert in UI
+    // 3. Corrupt both NVS config slots while an active RecoveryState exists ->
+    //    bootSystem() must refuse to resume watering, preserve partial history, and surface config-lost alert
+    history.clear();
+    rs.zone_dur_min[0] = 3;
+    TEST_ASSERT_TRUE(storage.saveRecoveryState(rs));
     uint8_t bad[44];
     memset(bad, 0xCC, sizeof(bad));
     prefs.putBytes("cfg", bad, sizeof(bad));
     prefs.putBytes("cfg_b", bad, sizeof(bad));
+    rtclock = RTClock();
+    rtclock._rtc.adjust(DateTime(bootUtc));
     storage = Storage();
+    wateringCtrl = WateringController();
+    scheduler = Scheduler();
     ui.~UI();
     new (&ui) UI(sysDisp, sysEnc);
 
     bootSystem({ sysDisp, sysEnc, ui, sysRecoverI2C, nullptr });
     TEST_ASSERT_TRUE(storage.configLoadFailed());
+    TEST_ASSERT_FALSE(wateringCtrl.isActive());
+    TEST_ASSERT_EQUAL_UINT8(RELAY_OFF, digitalRead(PIN_RELAY_1));
+    TEST_ASSERT_EQUAL_UINT16(1, history.entryCount());
     TEST_ASSERT_TRUE(ui.inSetup());
     TEST_ASSERT_EQUAL_PTR(&ui.getScreenInfo(), ui._currentScreen);
     TEST_ASSERT_TRUE(strstr(sysDisp._lcd.getRow(0), TXT_ERR_CFG_LOST_TITLE) != nullptr);
