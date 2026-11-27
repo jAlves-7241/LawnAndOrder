@@ -1724,6 +1724,41 @@ static void test_ui_sync_setup_resets_activity_and_history_menu_live_refreshes(v
     TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(2), "11:20") != nullptr);
 }
 
+static void test_ui_freq_days_rejects_midnight_wrap_overlap(void) {
+    initUiIdleFixture();
+    gState.mode = AppMode::PERSONALIZADO;
+    gState.zones[0] = { "Z1", true, 15 };
+    gState.zones[1] = { "Z2", true, 15 };
+    gState.zones[2].enabled = false;
+    gState.zones[2].duration_min = 0;
+    gState.zones[3].enabled = false;
+    gState.zones[3].duration_min = 0;
+
+    // With interval_days == 2, midnight wrap does not apply, so 00:05 and 23:55 are valid
+    ModeSchedule& cs = MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO];
+    cs.interval_days = 2;
+    cs.slot_count = 2;
+    cs.slots[0] = { 0, 5 };
+    cs.slots[1] = { 23, 55 };
+    TEST_ASSERT_FALSE(hasCustomSlotOverlap(cs, computeMinCustomSpacing()));
+    TEST_ASSERT_TRUE(storage.save());
+
+    // Changing frequency to 1 day enables midnight wrap (10 min gap < 31 min spacing) -> must reject
+    testUi.getScreenDurPick().setup(1, DurContext::FREQ_DAYS, 0, MenuID::CFG_CUSTOM);
+    testUi.changeScreen(&testUi.getScreenDurPick());
+    simulateClick(testUi);
+
+    TEST_ASSERT_EQUAL_UINT8(2, cs.interval_days);
+    TEST_ASSERT_EQUAL_PTR(&testUi.getScreenInfo(), testUi._currentScreen);
+    TEST_ASSERT_TRUE(strstr(testDisp._lcd.getRow(0), TXT_ERR_OVERLAP) != nullptr);
+
+    // Persisted NVS config must remain valid and loadable across reboot
+    initAppState();
+    TEST_ASSERT_TRUE(storage.load());
+    TEST_ASSERT_EQUAL(AppMode::PERSONALIZADO, gState.mode);
+    TEST_ASSERT_EQUAL_UINT8(2, MODE_SCHEDULES[(uint8_t)AppMode::PERSONALIZADO].interval_days);
+}
+
 };
 
 void setUp(void) {
@@ -1809,5 +1844,6 @@ int main(void) {
     RUN_UT(test_display_late_hotplug_runs_lcd_init_before_writing_rows);
     RUN_UT(test_ui_confirm_done_back_menu_config_lost_no_flash_and_custom_setup_single_save);
     RUN_UT(test_ui_sync_setup_resets_activity_and_history_menu_live_refreshes);
+    RUN_UT(test_ui_freq_days_rejects_midnight_wrap_overlap);
     return UNITY_END();
 }

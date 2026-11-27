@@ -87,7 +87,16 @@ void ScreenDurPick::handleClick(UI& ui) {
             ui.goMenu(_backMenu);
             return;
         }
+        uint8_t oldInterval = cs.interval_days;
         cs.interval_days = newInterval;
+        if (hasCustomSlotOverlap(cs, computeMinCustomSpacing())) {
+            cs.interval_days = oldInterval;
+            ui.getScreenInfo().setup(TXT_ERR_OVERLAP, TXT_ERR_CYCLES_CLOSE,
+                                     TXT_ERR_FOR_DUR, TXT_ERR_ADJUST_TIME,
+                                     _backMenu);
+            ui.changeScreen(&ui.getScreenInfo());
+            return;
+        }
         if (!gState.rtc_valid) { gState.custom_ref_day = 0xFFFFFFFFUL; } else {
             DateTime localDate(gState.now.year, gState.now.month, gState.now.day, 0, 0, 0);
             gState.custom_ref_day = localDate.unixtime() / 86400UL;
