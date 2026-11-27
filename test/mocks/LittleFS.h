@@ -7,6 +7,7 @@
 class MockLittleFS {
 public:
     std::map<std::string, std::string> files;
+    uint64_t generation = 0;
 
     bool mountFail = false;
     bool writeFail = false;
@@ -27,12 +28,14 @@ public:
         renameFail = false;
         bufferedSize = false;
         files.clear();
+        generation++;
     }
 
     bool begin(bool formatOnFail = true) {
         if (mountFail) {
             if (formatOnFail && !formatFail) {
                 files.clear();
+                generation++;
                 mountFail = false;
                 writeFail = false;
                 partialWriteFail = false;
@@ -49,6 +52,7 @@ public:
     bool format() {
         if (formatFail) return false;
         files.clear();
+        generation++;
         mountFail = false;
         writeFail = false;
         partialWriteFail = false;
@@ -67,17 +71,17 @@ public:
 
         if (m == "w") {
             files[p] = "";
-            return File(p, m, &files[p], &writeFail, nullptr, &bufferedSize, &partialWriteFail);
+            return File(p, m, &files, &generation, generation, &writeFail, nullptr, &bufferedSize, &partialWriteFail);
         } else if (m == "a") {
             if (files.find(p) == files.end()) {
                 files[p] = "";
             }
-            return File(p, m, &files[p], &writeFail, nullptr, &bufferedSize, &partialWriteFail);
+            return File(p, m, &files, &generation, generation, &writeFail, nullptr, &bufferedSize, &partialWriteFail);
         } else {
             // Read mode
             auto it = files.find(p);
             if (it == files.end()) return File();
-            return File(p, m, &it->second, nullptr, &readFail, &bufferedSize, nullptr);
+            return File(p, m, &files, &generation, generation, nullptr, &readFail, &bufferedSize, nullptr);
         }
     }
 

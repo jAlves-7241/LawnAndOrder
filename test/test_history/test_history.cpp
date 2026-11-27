@@ -11,6 +11,7 @@
 void setUp(void) {
     resetAllTestMocks();
     gState.rtc_valid = true;
+    history = History();
     history.begin();
 }
 

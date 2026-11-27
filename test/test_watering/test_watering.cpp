@@ -16,6 +16,8 @@ void setUp(void) {
     resetAllTestMocks();
     gState.rtc_valid = true;
     gState.setup_done = true;
+    storage = Storage();
+    history = History();
     storage.begin();
     history.begin();
     wateringCtrl.begin();

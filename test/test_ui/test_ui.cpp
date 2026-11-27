@@ -1764,6 +1764,8 @@ static void test_ui_freq_days_rejects_midnight_wrap_overlap(void) {
 void setUp(void) {
     resetAllTestMocks();
     rtclock = RTClock();
+    storage = Storage();
+    history = History();
     storage.begin();
     history.begin();
     wateringCtrl.begin();
