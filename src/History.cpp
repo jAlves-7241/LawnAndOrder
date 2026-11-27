@@ -51,6 +51,7 @@ static bool _isValidCachedEntry(const HistoryEntry& e) {
 template <typename Fn>
 static void _forEachTrimmedLine(File& f, Fn&& fn, bool* outReadErr = nullptr) {
     if (outReadErr) *outReadErr = false;
+    char chunk[256];
     char lineBuf[LINE_BUF];
     size_t linePos = 0;
     bool overflow = false;
@@ -73,19 +74,23 @@ static void _forEachTrimmedLine(File& f, Fn&& fn, bool* outReadErr = nullptr) {
     };
     while (f.available()) {
         esp_task_wdt_reset();
-        int cInt = f.read();
-        if (cInt < 0) {
-            if (outReadErr) *outReadErr = true;
+        int bytesRead = f.read((uint8_t*)chunk, sizeof(chunk));
+        if (bytesRead <= 0) {
+            if (bytesRead < 0 || f.available() > 0) {
+                if (outReadErr) *outReadErr = true;
+            }
             return;
         }
-        char c = (char)cInt;
-        if (c == '\n') {
-            flushLine();
-        } else if (c != '\r') {
-            if (linePos < sizeof(lineBuf) - 1) {
-                lineBuf[linePos++] = c;
-            } else {
-                overflow = true;
+        for (int i = 0; i < bytesRead; i++) {
+            char c = chunk[i];
+            if (c == '\n') {
+                flushLine();
+            } else if (c != '\r') {
+                if (linePos < sizeof(lineBuf) - 1) {
+                    lineBuf[linePos++] = c;
+                } else {
+                    overflow = true;
+                }
             }
         }
     }
@@ -993,7 +998,13 @@ void History::_rotateAndAppend(const char* newLine) {
 }
 
 void History::flushDeferredBeforeReboot() {
-    if (!_ready || _defHead == _defTail) return;
+    if (!_ready) return;
+    if (_rotState != RotState::IDLE && !_rotPendingInFile && _rotPendingLine[0] != '\0') {
+        if (_appendPendingLine(_rotPendingLine)) {
+            _rotPendingInFile = true;
+        }
+    }
+    if (_defHead == _defTail) return;
     while (_defHead != _defTail && _rotState == RotState::IDLE && _exportState == ExportState::IDLE) {
         _drainOneDeferred();
     }
@@ -1211,6 +1222,7 @@ void History::update() {
             if (_cacheCount == 0 && _lineCount > 0) {
                 _lineCount = 0;
             }
+            _revision++;
             storage.saveHistoryCache(_cache, sizeof(_cache), _lineCount, _currentFileSize());
         }
         _rotPendingInFile = false;

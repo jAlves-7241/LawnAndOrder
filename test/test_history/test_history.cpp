@@ -1126,6 +1126,71 @@ static void test_history_corrupt_rotation_preserves_valid_and_multi_pending_dedu
     TEST_ASSERT_EQUAL_UINT8(6, last[0].day);
 }
 
+static void test_history_export_backpressure_fallback_revision_and_reboot_pending_flush(void) {
+    // 1. Export backpressure: when Serial.availableForWrite() < 64, ExportState::SENDING yields without emitting
+    gState.rtc_valid = true;
+    history.clear();
+    HistoryEntry e1 = { 2026, 6, 10, 7, 0, { 5, 0, 0, 0 }, WaterTrigger::AUTO, 0 };
+    history.record(e1);
+
+    Serial.reset();
+    TEST_ASSERT_TRUE(history.startExport());
+    Serial.outputBuffer.clear();
+    Serial.mockAvailableForWrite = 32;
+    history.update();
+    TEST_ASSERT_TRUE(history.isExporting());
+    TEST_ASSERT_EQUAL_UINT16(0, history.exportSent());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.empty());
+
+    Serial.mockAvailableForWrite = 128;
+    int guard = 20;
+    while (history.isExporting() && guard-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_FALSE(history.isExporting());
+    TEST_ASSERT_EQUAL_UINT16(1, history.exportSent());
+    TEST_ASSERT_TRUE(Serial.outputBuffer.find("2026-06-10T07:00,A,5,0,0,0") != std::string::npos);
+
+    // 2. Rotation failure fallback to 0 valid entries still increments revision() so UI live-refreshes
+    history.clear();
+    LittleFS.files[HISTORY_FILE] = "CORRUPT_ONLY_LINE\r\n";
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    HistoryEntry e2 = { 2026, 6, 11, 8, 0, { 6, 0, 0, 0 }, WaterTrigger::MANUAL, 0 };
+    history.record(e2);
+    TEST_ASSERT_TRUE(history.isRotating());
+    const uint32_t revAtRotStart = history.revision();
+
+    guard = 20;
+    while (history._rotState == History::RotState::COPYING && guard-- > 0) {
+        history.update();
+    }
+    TEST_ASSERT_EQUAL((int)History::RotState::FINISHING, (int)history._rotState);
+
+    // Force rename + fallback append failure so original file has 0 valid entries
+    LittleFS.renameFail = true;
+    LittleFS.writeFail = true;
+    history.update();
+    LittleFS.renameFail = false;
+    LittleFS.writeFail = false;
+    TEST_ASSERT_FALSE(history.isRotating());
+    TEST_ASSERT_EQUAL_UINT16(0, history.entryCount());
+    TEST_ASSERT_GREATER_THAN_UINT32(revAtRotStart, history.revision());
+
+    // 3. flushDeferredBeforeReboot() persists unjournaled _rotPendingLine when _rotPendingInFile == false
+    history.clear();
+    history.record(e1);
+    history._lineCount = HISTORY_MAX_ENTRIES;
+    history.record(e2);
+    TEST_ASSERT_TRUE(history.isRotating());
+    LittleFS.remove("/hist_pend.txt");
+    history._rotPendingInFile = false;
+
+    history.flushDeferredBeforeReboot();
+    TEST_ASSERT_TRUE(history._rotPendingInFile);
+    TEST_ASSERT_TRUE(LittleFS.exists("/hist_pend.txt"));
+    TEST_ASSERT_TRUE(LittleFS.files["/hist_pend.txt"].find("2026-06-11T08:00,M,6,0,0,0") != std::string::npos);
+}
+
 };
 
 int main(void) {
@@ -1155,5 +1220,6 @@ int main(void) {
     RUN_UT(test_history_clear_failure_preserves_pending_and_calendar_validation);
     RUN_UT(test_history_rotation_finishing_pending_read_failure_preserves_entries);
     RUN_UT(test_history_corrupt_rotation_preserves_valid_and_multi_pending_dedup);
+    RUN_UT(test_history_export_backpressure_fallback_revision_and_reboot_pending_flush);
     return UNITY_END();
 }

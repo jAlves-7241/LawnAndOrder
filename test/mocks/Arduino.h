@@ -195,11 +195,13 @@ public:
     std::string outputBuffer;
     std::string inputBuffer;
     size_t inputPos = 0;
+    int mockAvailableForWrite = 512;
 
     void reset() {
         outputBuffer.clear();
         inputBuffer.clear();
         inputPos = 0;
+        mockAvailableForWrite = 512;
     }
 
     void feedInput(const std::string& s) {
@@ -300,7 +302,7 @@ public:
         return 0;
     }
 
-    int availableForWrite() const { return 512; }
+    int availableForWrite() const { return mockAvailableForWrite; }
 
     size_t setRxBufferSize(size_t sz) { return sz; }
 
