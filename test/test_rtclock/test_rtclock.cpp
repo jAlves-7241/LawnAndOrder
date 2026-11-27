@@ -744,6 +744,22 @@ static void test_rtclock_hotplug_osf_restore_reanchors_sw_clock(void) {
     TEST_ASSERT_EQUAL_UINT32(gState.now.unix, rtclock._lastKnownUnix);
 }
 
+static void test_rtclock_begin_osf_restore_accepts_valid_utc_across_year_2100_local(void) {
+    // 2099-12-31 23:30:00 UTC is valid (<= UNIX_MAX_VALID), even if a positive timezone maps local year to 2100
+    const uint32_t late2099Utc = DateTime(2099, 12, 31, 23, 30, 0).unixtime();
+    gState.rtc_valid = true;
+    gState.now = { 2100, 1, 1, 0, 30, 0, 5, late2099Utc };
+    rtclock._anchorMs = millis();
+    rtclock._anchorUnix = late2099Utc;
+    rtclock._lastKnownUnix = late2099Utc;
+
+    rtclock._rtc.mockLostPower = true;
+    TEST_ASSERT_TRUE(rtclock.begin());
+    TEST_ASSERT_TRUE(gState.rtc_valid);
+    TEST_ASSERT_FALSE(rtclock._lostPower);
+    TEST_ASSERT_EQUAL_UINT32(late2099Utc, rtclock._rtc.now().unixtime());
+}
+
 };
 
 int main(void) {
@@ -768,5 +784,6 @@ int main(void) {
     RUN_UT(test_rtclock_osf_recovery_advances_sw_clock_before_restore);
     RUN_UT(test_rtclock_failed_set_aligns_hotplug_retry_interval);
     RUN_UT(test_rtclock_hotplug_osf_restore_reanchors_sw_clock);
+    RUN_UT(test_rtclock_begin_osf_restore_accepts_valid_utc_across_year_2100_local);
     return UNITY_END();
 }

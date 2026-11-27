@@ -450,9 +450,20 @@ static void test_storage_dual_slot_ping_pong_backup_and_legacy_compat(void) {
     TEST_ASSERT_TRUE(storage.load());
     TEST_ASSERT_EQUAL(AppMode::MEDIO, gState.mode);
     TEST_ASSERT_FALSE(storage.configLoadFailed());
+    TEST_ASSERT_TRUE(storage.hasPendingSave());
 #if LOG_LEVEL >= LVL_WARN
     TEST_ASSERT_TRUE(Serial.outputBuffer.find(TXT_LOG_NVS_BACKUP_USED) != std::string::npos);
 #endif
+    // Delayed self-heal via Storage::update() restores dual-slot redundancy after 5 s
+    advanceMockMillis(5000UL);
+    storage.update();
+    TEST_ASSERT_FALSE(storage.hasPendingSave());
+    TEST_ASSERT_TRUE(storage._backupSeeded);
+    AppConfigSlot healedA = {}, healedB = {};
+    TEST_ASSERT_EQUAL_UINT32(sizeof(healedA), prefs.getBytes(KEY_CFG, &healedA, sizeof(healedA)));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(healedB), prefs.getBytes(KEY_CFG_B, &healedB, sizeof(healedB)));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)AppMode::MEDIO, healedA.blob.mode);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)AppMode::MEDIO, healedB.blob.mode);
 
     // 4. Version mismatch on stored config reports VERSION_MISMATCH (configLoadFailed == true),
     //    while seq == 0 on a version-mismatched envelope is rejected as CORRUPT.

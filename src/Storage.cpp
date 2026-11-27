@@ -14,6 +14,8 @@ static const char* KEY_SCHED_TR = "sched_tr";
 static const char* KEY_RECV     = "recv";
 static const uint8_t CFG_SLOT_MAGIC = 0xA5;
 static const size_t HIST_CACHE_MAX_BYTES = 64;
+static_assert(sizeof(HistoryEntry) * HISTORY_DISPLAY <= HIST_CACHE_MAX_BYTES,
+              "History NVS cache exceeds HIST_CACHE_MAX_BYTES");
 
 struct __attribute__((packed)) HistoryNvsHeader {
     uint8_t  version;
@@ -390,7 +392,10 @@ bool Storage::load() {
     _backupSeeded = (okA && okB && envA && envB && !usedBackup);
     _lastLoadResult = ConfigLoadResult::OK;
 
+    _savePending = usedBackup;
     if (usedBackup) {
+        // Schedule delayed self-healing of the damaged slot via Storage::update()
+        _lastSaveRetryMs = millis();
         LOG_W(TXT_LOG_TAG_STORAGE, TXT_LOG_NVS_BACKUP_USED);
     }
 

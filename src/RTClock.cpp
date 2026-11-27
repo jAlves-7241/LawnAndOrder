@@ -119,10 +119,12 @@ bool RTClock::begin() {
 
     if (_lostPower) {
         _batteryLow = true;
-        if (wasValid && prevTime.year >= DATE_YEAR_MIN && prevTime.year <= DATE_YEAR_MAX) {
+        if (wasValid &&
+            ((prevTime.unix >= UNIX_MIN_VALID && prevTime.unix <= UNIX_MAX_VALID) ||
+             (prevTime.year >= DATE_YEAR_MIN && prevTime.year <= DATE_YEAR_MAX))) {
             LOG_W(TXT_LOG_TAG_CLOCK, TXT_LOG_RTC_BAT_FAIL_REC);
             _batRecoveryWarned = true;
-            DateTime restoredUtc = (prevTime.unix >= UNIX_MIN_VALID)
+            DateTime restoredUtc = (prevTime.unix >= UNIX_MIN_VALID && prevTime.unix <= UNIX_MAX_VALID)
                 ? DateTime(prevTime.unix)
                 : localToUtc(DateTime(prevTime.year, prevTime.month, prevTime.day,
                                       prevTime.hour, prevTime.min, prevTime.sec));
