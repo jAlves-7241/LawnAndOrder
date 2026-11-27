@@ -134,7 +134,7 @@ pio device monitor
 Host-native unit test suite executed via PlatformIO and Unity:
 
 ```bash
-# Execute fast unit suites (246 tests across 11 suites)
+# Execute fast unit suites (250 tests across 11 suites)
 pio test -e native
 
 # Execute longevity soak & wraparound suite last, only if unit tests pass (compiled with -O2, 13 tests)
